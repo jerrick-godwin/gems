@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --exclude \"src/**\" --exclude \"node_modules/**\" --exclude \"vite.config.ts.timestamp-*.mjs\" server/server.ts",
     "dev:admin": "vite --config vite.admin.config.ts --host 127.0.0.1 --port 4200",
-    "build": "tsc -p tsconfig.json && vite build && npm run build:server",
+    "build": "npm run build --workspace @gems/schemas && tsc -p tsconfig.json && vite build && npm run build:server",
     "build:server": "esbuild server/server.ts --bundle --platform=node --format=esm --outfile=server-dist/server.js --external:vite && node -e \"fs.mkdirSync('server-dist/db',{recursive:true}); fs.copyFileSync('server/db/database.json','server-dist/db/database.json')\"",
     "start": "NODE_ENV=production node server-dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
