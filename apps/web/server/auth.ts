@@ -43,8 +43,23 @@ export function readBearerToken(request: IncomingMessage) {
 
 export async function verifyFirebaseIdToken(token: string, options: { allowDevelopmentFallback: boolean }): Promise<FirebaseAuthClaims> {
   if (options.allowDevelopmentFallback && token.startsWith("dev:")) {
+    const payload = token.slice("dev:".length);
+    try {
+      const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
+      const claims = JSON.parse(Buffer.from(normalizedPayload, "base64").toString("utf8")) as Partial<FirebaseAuthClaims>;
+      if (claims.uid && claims.email) {
+        return {
+          uid: claims.uid,
+          email: claims.email,
+          name: claims.name ?? claims.email
+        };
+      }
+    } catch {
+      // Keep compatibility with the original plain dev token format.
+    }
+
     return {
-      uid: token.slice("dev:".length) || "dev-user",
+      uid: payload || "dev-user",
       email: "dev@example.com",
       name: "Development User"
     };

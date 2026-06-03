@@ -1,47 +1,34 @@
 import { LogIn } from "lucide-react";
 import { useState } from "react";
-import { GoogleAuthProvider, signInWithPopup, signInWithRedirect } from "firebase/auth";
-import { auth } from "../../firebase";
-
-function shouldUseRedirectSignIn() {
-  const userAgent = navigator.userAgent;
-  const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(userAgent);
-  const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-  const isAndroidWebView = /\bwv\b|; wv\)/i.test(userAgent);
-  const isIosWebView = /iPhone|iPad|iPod/i.test(userAgent) && !/Safari/i.test(userAgent);
-
-  return isAndroidWebView || isIosWebView || (isMobileDevice && isCoarsePointer);
-}
+import { authClient } from "../../firebase";
 
 export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: () => void, initialSignUp?: boolean }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [statusTone, setStatusTone] = useState<"neutral" | "error">("neutral");
+  const [loading, setLoading] = useState(false);
 
-  const signIn = async () => {
-    setStatus("Opening Google sign in...");
+  const authenticate = async () => {
+    const normalizedEmail = email.trim();
+    setLoading(true);
+    setStatusTone("neutral");
+    setStatus(initialSignUp ? "Creating your account..." : "Signing you in...");
     try {
-      const provider = new GoogleAuthProvider();
-      if (shouldUseRedirectSignIn()) {
-        sessionStorage.setItem("gems_post_auth_view", "dashboard");
-        await signInWithRedirect(auth, provider);
-        return;
-      }
-
-      await signInWithPopup(auth, provider);
-      setStatus("Signed in.");
+      await authClient.signInOrSignUp({ email: normalizedEmail, password });
+      setStatus(initialSignUp ? "Account ready." : "Signed in.");
       onSignedIn();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to sign in.");
+      setStatusTone("error");
+      setStatus(error instanceof Error ? error.message : "Unable to continue.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <section className="login-screen">
-      <div className="login-visual">
-        <div className="login-visual-content">
-          <h2>Discover the World's Finest Gems</h2>
-          <p>Join Gems Marketplace and access a curated collection of premium sapphires, rubies, and precious stones.</p>
-        </div>
-      </div>
+      <div className="login-visual" aria-hidden="true" />
       <div className="login-panel">
         <div className="brand-mark" style={{ width: 56, height: 56, marginBottom: 16 }}>
           <img src="/assets/logo-mark.svg" alt="" />
@@ -50,15 +37,43 @@ export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: (
           <h1>{initialSignUp ? "Create your account" : "Sign in to Gems Marketplace"}</h1>
           <p>Use your secure marketplace account to manage listings, saved gems, cart, checkout, settings, and order history.</p>
         </div>
-        <div className="login-actions">
-          <button className="primary-action" onClick={() => void signIn()} id="login-page-submit">
+        <form
+          className="login-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void authenticate();
+          }}
+        >
+          <label>
+            Email address
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              autoComplete="username"
+              required
+              placeholder="you@example.com"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              autoComplete={initialSignUp ? "new-password" : "current-password"}
+              required
+              minLength={6}
+              placeholder="At least 6 characters"
+            />
+          </label>
+          <button className="primary-action" type="submit" id="login-page-submit" disabled={loading}>
             <LogIn size={18} strokeWidth={2.4} />
-            Sign in with Google
+            {loading ? "Please wait..." : "Continue"}
           </button>
-        </div>
-        {status && <p style={{ color: "var(--sage)", fontWeight: 600, margin: 0, textAlign: "center", marginTop: 16 }}>{status}</p>}
+        </form>
+        {status && <p className={`login-status ${statusTone === "error" ? "login-status-error" : ""}`}>{status}</p>}
       </div>
     </section>
   );
 }
-

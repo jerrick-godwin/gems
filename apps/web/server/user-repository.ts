@@ -56,6 +56,21 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
     const existing = await db.select().from(users).where(eq(users.firebaseUid, claims.uid)).limit(1);
     if (existing[0]) return toUser(existing[0]);
 
+    const existingByEmail = await db.select().from(users).where(eq(users.email, claims.email)).limit(1);
+    if (existingByEmail[0]) {
+      const [updated] = await db
+        .update(users)
+        .set({
+          firebaseUid: claims.uid,
+          name: existingByEmail[0].name || claims.name,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, existingByEmail[0].id))
+        .returning();
+      await ensureSettings(updated.id);
+      return toUser(updated);
+    }
+
     const created = await db
       .insert(users)
       .values({

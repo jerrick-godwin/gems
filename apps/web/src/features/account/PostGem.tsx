@@ -1,9 +1,19 @@
 import { Camera, Check, CheckCircle2, ChevronRight, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
-import type { ListingMedia, Treatment } from "@gems/schemas";
+import type { ListingMedia, Treatment, UserDashboard } from "@gems/schemas";
 
-export function PostGem({ gemTypes, locations, api }: { gemTypes: MarketplaceSnapshot["gemTypes"]; locations: string[]; api: GemsApiClient }) {
+export function PostGem({
+  gemTypes,
+  locations,
+  api,
+  onDashboardChange
+}: {
+  gemTypes: MarketplaceSnapshot["gemTypes"];
+  locations: string[];
+  api: GemsApiClient;
+  onDashboardChange: (dashboard: UserDashboard) => void;
+}) {
   const [status, setStatus] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [certificate, setCertificateFile] = useState<File | null>(null);
@@ -150,6 +160,7 @@ export function PostGem({ gemTypes, locations, api }: { gemTypes: MarketplaceSna
         await api.updateMyListing(listing.id, { media: uploadedMedia });
       }
 
+      onDashboardChange(await api.dashboard());
       form.reset();
       handleClear();
       setStatus("Listing submitted for moderation.");

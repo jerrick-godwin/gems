@@ -1,8 +1,7 @@
 import { Heart, LogIn, LogOut, Plus, Settings, ShoppingCart, Store, User, Flag } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
-import type { User as FirebaseUser } from "firebase/auth";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
-import { auth } from "../../firebase";
+import { authClient, type MarketplaceAuthUser } from "../../firebase";
 import type { View } from "../../shared/types";
 
 function ProfileMenu({
@@ -16,7 +15,7 @@ function ProfileMenu({
   view: View;
   setView: (view: View) => void;
   handleLogout: () => void;
-  user?: FirebaseUser | null;
+  user?: MarketplaceAuthUser | null;
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
 }) {
@@ -156,10 +155,10 @@ export function AppFrame({
   isSignedIn: boolean;
   theme: "system" | "light" | "dark";
   setTheme: (t: "system" | "light" | "dark") => void;
-  user?: FirebaseUser | null;
+  user?: MarketplaceAuthUser | null;
 }) {
   const handleLogout = () => {
-    auth.signOut().then(() => {
+    authClient.signOut().then(() => {
       setView("market");
     });
   };
@@ -227,5 +226,4 @@ export function AppFrame({
     </div>
   );
 }
-
 

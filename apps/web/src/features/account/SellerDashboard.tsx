@@ -10,12 +10,14 @@ export function SellerDashboard({
   listings,
   content,
   dashboard,
-  orders
+  orders,
+  accountError
 }: {
   listings: Listing[];
   content?: MarketplaceContent;
   dashboard: UserDashboard | null;
   orders: Order[];
+  accountError?: string | null;
 }) {
   const metrics = dashboard
     ? [
@@ -32,6 +34,7 @@ export function SellerDashboard({
         <h1>Dashboard</h1>
         <p>Listings, inquiries, boosts, and trust signals — all in one place.</p>
       </div>
+      {accountError && <div className="empty-results"><h2>Account unavailable</h2><p>{accountError}</p></div>}
       <div className="metric-grid" style={{ gridTemplateColumns: `repeat(${metrics.length}, minmax(0, 1fr))` }}>
         {metrics.map((metric) => (
           <Metric icon={metricIcon(metric.label)} label={metric.label} value={metric.value} key={metric.label} />

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getRedirectResult, onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
 import { GemsApiClient } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
-import { auth } from "./firebase";
+import { authClient, type MarketplaceAuthUser } from "./firebase";
 import { CartView } from "./features/account/CartView";
 import { CheckoutView } from "./features/account/CheckoutView";
 import { LoginPage } from "./features/account/LoginPage";
@@ -19,22 +18,13 @@ import { StatusState } from "./shared/StatusState";
 import { protectedViews, type View } from "./shared/types";
 
 function App() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<MarketplaceAuthUser | null>(null);
   const [view, setView] = useState<View>("market");
   const isSignedIn = user !== null;
   const [theme, setTheme] = useTheme("app-theme");
 
   useEffect(() => {
-    void getRedirectResult(auth).then((result) => {
-      if (!result?.user) return;
-      setUser(result.user);
-      sessionStorage.removeItem("gems_post_auth_view");
-      setView("dashboard");
-    }).catch((error) => {
-      console.error("Unable to complete Google sign in redirect.", error);
-    });
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = authClient.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
     });
     return () => unsubscribe();
@@ -172,8 +162,8 @@ function App() {
           onReport={marketplace.handleReportListing}
         />
       )}
-      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} />}
-      {view === "dashboard" && <SellerDashboard listings={account.dashboard?.sellerListings ?? listings} content={marketplace.snapshot.content} dashboard={account.dashboard} orders={account.orders} />}
+      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "dashboard" && <SellerDashboard listings={account.dashboard?.sellerListings ?? []} content={marketplace.snapshot.content} dashboard={account.dashboard} orders={account.orders} accountError={account.accountError} />}
       {view === "my_listings" && <MyListingsView dashboard={account.dashboard} api={api} onDashboardChange={account.setDashboard} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} />}
