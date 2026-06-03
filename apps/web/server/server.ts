@@ -628,4 +628,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 }
 
-void main();
+if (!process.env.VERCEL) {
+  void main();
+}
