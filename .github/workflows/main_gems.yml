@@ -55,6 +55,15 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_CDED7A82DD804DCBAF37ECB0872F53C3 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_07052B43316C42B5A1C190E61D366D6B }}
 
+      - name: Start Azure Web App
+        run: |
+          resource_group="$(az webapp list --query "[?name=='gems'].resourceGroup | [0]" -o tsv)"
+          if [ -z "$resource_group" ]; then
+            echo "::error::Azure Web App 'gems' was not found in the configured subscription."
+            exit 1
+          fi
+          az webapp start --name gems --resource-group "$resource_group"
+
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
