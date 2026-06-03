@@ -1,0 +1,165 @@
+import { XCircle } from "lucide-react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import type { AdminModerationSnapshot } from "@gems/api-client";
+import type { Listing } from "@gems/schemas";
+
+export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing; snapshot: AdminModerationSnapshot; onModerate: (listingId: string, decision: "approve" | "reject", reason?: string) => Promise<void> }) {
+  const isQueued = listing.moderationStatus === "queued";
+  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [showRejectPrompt, setShowRejectPrompt] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const runModeration = async (decision: "approve" | "reject") => {
+    let reason: string | undefined;
+    if (decision === "reject") {
+      if (!rejectReason.trim()) {
+        alert("A reason is required to reject a listing.");
+        return;
+      }
+      reason = rejectReason.trim();
+    }
+    setBusy(decision);
+    try {
+      await onModerate(listing.id, decision, reason);
+      if (decision === "reject") setShowRejectPrompt(false);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const seller = snapshot.sellers.find(s => s.id === listing.sellerId);
+  const user = seller ? snapshot.users.find(u => u.id === seller.userId) : null;
+  
+  return (
+    <div className="review-row" style={{ background: "var(--panel-strong)", padding: 16, borderRadius: "var(--radius)", marginBottom: 12, border: "1px solid var(--line)", boxShadow: "var(--shadow-xs)", display: "block" }}>
+      <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        <img src={listing.media[0]?.url} alt={listing.title} style={{ width: 80, height: 80, borderRadius: "var(--radius-sm)", objectFit: "cover", border: "1px solid var(--line)" }} />
+        <div style={{ flex: 1 }}>
+          <strong style={{ fontSize: 16, fontWeight: 700 }}>{listing.title}</strong>
+          <span style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
+            {listing.attributes.carat} ct ·
+            <span style={{
+              display: "inline-block",
+              padding: "2px 6px",
+              background: listing.attributes.certificateStatus === "admin_verified" ? "var(--mint)" : "var(--soft)",
+              color: listing.attributes.certificateStatus === "admin_verified" ? "var(--emerald-dark)" : "var(--ink)",
+              borderRadius: 4,
+              fontWeight: 700,
+              fontSize: 11,
+              textTransform: "uppercase"
+            }}>
+              {listing.attributes.certificateStatus.replace("_", " ")}
+            </span>
+          </span>
+        </div>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600 }} onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Hide Details" : "View Details"}
+        </button>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--emerald-soft)", color: "var(--emerald)" }} disabled={busy !== null || !isQueued} onClick={() => void runModeration("approve")}>
+          {busy === "approve" ? "Approving..." : "Approve"}
+        </button>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-sm)", border: "none", cursor: busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }} disabled={busy !== null} onClick={() => setShowRejectPrompt(true)}>
+          {busy === "reject" ? "Rejecting..." : "Reject"}
+        </button>
+      </div>
+
+      {showRejectPrompt && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <XCircle size={20} className="text-danger" style={{ color: "var(--danger)" }} /> Reject Listing
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
+              Please provide a reason for rejecting the listing:
+              <br />
+              <strong style={{ display: "block", marginTop: 4, marginBottom: 8, color: "var(--ink)" }}>{listing.title}</strong>
+              This will be sent to the seller to help them correct the issue.
+            </p>
+            <textarea
+              autoFocus
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="e.g., The certificate image is illegible. Please upload a clearer copy."
+              style={{ width: "100%", height: 100, padding: 12, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--soft)", color: "var(--ink)", marginBottom: 20, resize: "none", boxSizing: "border-box", fontFamily: "inherit", fontSize: 14 }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => { setShowRejectPrompt(false); setRejectReason(""); }}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void runModeration("reject")}
+                disabled={busy !== null || !rejectReason.trim()}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null || !rejectReason.trim() ? "not-allowed" : "pointer", fontWeight: 600, opacity: !rejectReason.trim() ? 0.5 : 1 }}
+              >
+                {busy === "reject" ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {expanded && (
+        <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24, marginBottom: 24 }}>
+            <div>
+              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Seller Details</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
+                <div><strong>Name:</strong> {user?.name || seller?.displayName || "Unknown"}</div>
+                <div><strong>Email:</strong> {user?.email || "Unknown"}</div>
+                <div><strong>Phone:</strong> {user?.phone || "Unknown"}</div>
+              </div>
+            </div>
+            <div>
+              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Listing Details</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
+                <div><strong>Description:</strong> <span style={{ color: "var(--muted)" }}>{listing.description}</span></div>
+                <div><strong>Price:</strong> LKR {listing.priceLkr.toLocaleString()} {listing.negotiable ? <span style={{ color: "var(--muted)", fontSize: 12 }}>(Negotiable)</span> : ""}</div>
+                <div><strong>Location:</strong> {listing.location}</div>
+              </div>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Gem Attributes</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", fontSize: 14 }}>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Carat:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.carat}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Dimensions:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.dimensions}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Shape:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.shape}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Cut:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.cut}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Color:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.color}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Clarity:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.clarity}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Origin:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.origin}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Treatment:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.treatment}</span></div>
+                <div><strong style={{ display: "block", marginBottom: 2 }}>Certificate:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.certificateStatus.replace("_", " ")}</span></div>
+                {listing.attributes.labName && <div><strong style={{ display: "block", marginBottom: 2 }}>Lab:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.labName}</span></div>}
+                {listing.attributes.reportNumber && <div><strong style={{ display: "block", marginBottom: 2 }}>Report #:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.reportNumber}</span></div>}
+              </div>
+            </div>
+          </div>
+
+          <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Uploaded Files</h4>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", background: "var(--soft)", padding: 16, borderRadius: 8 }}>
+            {listing.media.map(m => (
+              <a key={m.id} href={m.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", flexDirection: "column", alignItems: "center", textDecoration: "none", color: "inherit", background: "var(--panel)", padding: 8, borderRadius: 6, border: "1px solid var(--line)", transition: "transform 0.2s" }} onMouseOver={e => e.currentTarget.style.transform = "translateY(-2px)"} onMouseOut={e => e.currentTarget.style.transform = "none"}>
+                {m.url.endsWith(".pdf") ? (
+                  <div style={{ width: 120, height: 120, background: "var(--soft)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>PDF</span>
+                  </div>
+                ) : m.url.match(/\.(mp4|webm|ogg)$/i) ? (
+                  <video src={m.url} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 4 }} muted playsInline />
+                ) : (
+                  <img src={m.url} alt={m.alt} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 4 }} />
+                )}
+                <div style={{ fontSize: 11, textAlign: "center", color: "var(--ink)", marginTop: 8, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.02em" }}>{m.kind}</div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

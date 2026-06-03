@@ -1,0 +1,139 @@
+import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import type { GemsApiClient } from "@gems/api-client";
+import { formatLkr, type Listing, type UserDashboard } from "@gems/schemas";
+
+export function MyListingsView({
+  dashboard,
+  api,
+  onDashboardChange
+}: {
+  dashboard: UserDashboard | null;
+  api: GemsApiClient;
+  onDashboardChange: (dashboard: UserDashboard) => void;
+}) {
+  const listings = dashboard?.sellerListings ?? [];
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const getStatusLabel = (listing: Listing) => {
+    if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
+      return { label: "Rejected", color: "var(--danger)", bg: "var(--danger-soft)" };
+    }
+    if (listing.moderationStatus === "approved") {
+      return { label: "Approved", color: "var(--emerald)", bg: "var(--emerald-soft)" };
+    }
+    if (listing.moderationStatus === "queued" || listing.moderationStatus === "needs_changes" || listing.status === "pending_review") {
+      return { label: "Review in Progress", color: "var(--gold)", bg: "rgba(251,191,36,0.15)" };
+    }
+    if (listing.status === "expired") {
+      return { label: "Closed", color: "var(--sage)", bg: "var(--line-subtle)" };
+    }
+    return { label: listing.status.replace("_", " "), color: "var(--ink)", bg: "var(--line-subtle)" };
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      setDeletingId(id);
+      await api.removeMyListing(id);
+      const newDashboard = await api.dashboard();
+      onDashboardChange(newDashboard);
+    } catch (error) {
+      alert("Failed to delete listing: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  };
+
+
+
+  return (
+    <section className="dashboard">
+      <div className="section-heading">
+        <h1>My Listings</h1>
+        <p>Manage your submitted listings and view their approval status.</p>
+      </div>
+      <section className="data-panel">
+        {listings.length === 0 ? (
+          <p style={{ color: "var(--sage)", fontWeight: 600 }}>No listings found.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {listings.map((listing) => {
+              const statusInfo = getStatusLabel(listing);
+              return (
+                <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
+                  {listing.media[0] && (
+                    <img src={listing.media[0].url} alt={listing.title} style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} />
+                  )}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <h3 style={{ margin: 0, fontSize: 18, color: 'var(--ink)' }}>{listing.title}</h3>
+                    <div style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 600 }}>
+                      {listing.attributes.carat} ct · {listing.attributes.color} · {listing.attributes.shape} · {listing.attributes.treatment}
+                    </div>
+                    <strong style={{ fontSize: 16, color: 'var(--emerald)' }}>
+                      {formatLkr(listing.priceLkr)}
+                    </strong>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
+                          {statusInfo.label}
+                        </span>
+                      </div>
+                      {(listing.status === "rejected" || listing.moderationStatus === "rejected") && listing.rejectionReason && (
+                        <div style={{ fontSize: 13, color: "var(--danger)", padding: "8px 12px", borderRadius: "6px", border: "1px solid rgba(248,113,113,0.2)" }}>
+                          <strong>Reason:</strong> {listing.rejectionReason}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                    <button 
+                      onClick={() => setConfirmDeleteId(listing.id)}
+                      disabled={deletingId === listing.id}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--danger)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}
+                    >
+                      <Trash2 size={16} strokeWidth={2.5} />
+                      {deletingId === listing.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {confirmDeleteId && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <Trash2 size={20} className="text-danger" style={{ color: "var(--danger)" }} /> Delete Listing
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+              Are you sure you want to delete this listing? This action <strong>cannot be undone</strong> and the data cannot be recovered.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleDelete(confirmDeleteId)}
+                disabled={deletingId !== null}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+              >
+                {deletingId === confirmDeleteId ? "Deleting..." : "Proceed to Delete"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </section>
+  );
+}
+

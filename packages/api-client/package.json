@@ -1,0 +1,16 @@
+{
+  "name": "@gems/api-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@gems/schemas": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3"
+  }
+}

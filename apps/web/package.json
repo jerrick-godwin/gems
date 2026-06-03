@@ -1,0 +1,42 @@
+{
+  "name": "@gems/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --exclude \"src/**\" --exclude \"node_modules/**\" --exclude \"vite.config.ts.timestamp-*.mjs\" server/server.ts",
+    "dev:admin": "vite --config vite.admin.config.ts --host 127.0.0.1 --port 4200",
+    "build": "tsc -p tsconfig.json && vite build && npm run build:server",
+    "build:server": "esbuild server/server.ts --bundle --platform=node --format=esm --outfile=server-dist/server.js --external:vite && node -e \"fs.mkdirSync('server-dist/db',{recursive:true}); fs.copyFileSync('server/db/database.json','server-dist/db/database.json')\"",
+    "start": "NODE_ENV=production node server-dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx server/db/seed.ts",
+    "preview": "NODE_ENV=production node server-dist/server.js",
+    "preview:admin": "vite preview --config vite.admin.config.ts --host 127.0.0.1 --port 4200"
+  },
+  "dependencies": {
+    "@azure/storage-blob": "^12.31.0",
+    "@gems/api-client": "0.1.0",
+    "@gems/schemas": "0.1.0",
+    "@gems/ui": "0.1.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "drizzle-orm": "^0.45.2",
+    "firebase": "^12.14.0",
+    "firebase-admin": "^13.10.0",
+    "lucide-react": "^0.468.0",
+    "postgres": "^3.4.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.3.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.21.5",
+    "tsx": "^4.22.4",
+    "typescript": "^5.5.3"
+  }
+}

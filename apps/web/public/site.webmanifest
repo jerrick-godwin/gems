@@ -1,0 +1,23 @@
+{
+  "name": "Gems Marketplace",
+  "short_name": "Gems",
+  "description": "A trusted loose gemstone marketplace for certified sapphires, rubies, spinels, and more.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#08715c",
+  "icons": [
+    {
+      "src": "/assets/logo-mark-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/logo-mark-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

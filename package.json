@@ -1,0 +1,26 @@
+{
+  "name": "gems-marketplace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @gems/web",
+    "dev:admin": "npm run dev:admin --workspace @gems/web",
+    "build": "npm run build --workspace @gems/web",
+    "start": "npm run start --workspace @gems/web",
+    "test": "npm run test --workspace @gems/schemas",
+    "typecheck": "npm run typecheck --workspace @gems/web && npm run typecheck --workspace @gems/ui && npm run typecheck --workspace @gems/schemas && npm run typecheck --workspace @gems/api-client"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.3"
+  }
+}
