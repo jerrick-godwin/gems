@@ -1,7 +1,17 @@
 import { LogIn } from "lucide-react";
 import { useState } from "react";
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { GoogleAuthProvider, signInWithPopup, signInWithRedirect } from "firebase/auth";
 import { auth } from "../../firebase";
+
+function shouldUseRedirectSignIn() {
+  const userAgent = navigator.userAgent;
+  const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(userAgent);
+  const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  const isAndroidWebView = /\bwv\b|; wv\)/i.test(userAgent);
+  const isIosWebView = /iPhone|iPad|iPod/i.test(userAgent) && !/Safari/i.test(userAgent);
+
+  return isAndroidWebView || isIosWebView || (isMobileDevice && isCoarsePointer);
+}
 
 export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: () => void, initialSignUp?: boolean }) {
   const [status, setStatus] = useState<string | null>(null);
@@ -10,6 +20,12 @@ export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: (
     setStatus("Opening Google sign in...");
     try {
       const provider = new GoogleAuthProvider();
+      if (shouldUseRedirectSignIn()) {
+        sessionStorage.setItem("gems_post_auth_view", "dashboard");
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
       await signInWithPopup(auth, provider);
       setStatus("Signed in.");
       onSignedIn();
@@ -45,5 +61,4 @@ export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: (
     </section>
   );
 }
-
 

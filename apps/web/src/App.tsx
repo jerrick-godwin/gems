@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
+import { getRedirectResult, onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
 import { GemsApiClient } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
 import { auth } from "./firebase";
@@ -25,6 +25,15 @@ function App() {
   const [theme, setTheme] = useTheme("app-theme");
 
   useEffect(() => {
+    void getRedirectResult(auth).then((result) => {
+      if (!result?.user) return;
+      setUser(result.user);
+      sessionStorage.removeItem("gems_post_auth_view");
+      setView("dashboard");
+    }).catch((error) => {
+      console.error("Unable to complete Google sign in redirect.", error);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
