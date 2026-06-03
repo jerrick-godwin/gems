@@ -123,7 +123,7 @@ function numberBody(value: unknown, fallback: number) {
   return Number.isFinite(next) ? next : fallback;
 }
 
-async function handleApi(request: IncomingMessage, response: ServerResponse) {
+export async function handleApi(request: IncomingMessage, response: ServerResponse) {
   if (!request.url) {
     sendJson(response, 404, { error: "Not found" });
     return true;
