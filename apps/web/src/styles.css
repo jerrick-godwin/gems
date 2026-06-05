@@ -536,7 +536,7 @@ main {
   gap: 12px;
   align-items: end;
   padding: 14px;
-  margin-bottom: 24px;
+  margin-top: 24px;
   animation: slide-down var(--duration-slow) var(--ease-out);
 }
 
@@ -966,6 +966,12 @@ main {
   letter-spacing: -0.01em;
 }
 
+.detail-title-row h2 {
+  font-size: clamp(24px, 2.4vw, 34px);
+  font-weight: 800;
+  line-height: 1.08;
+}
+
 .listing-card strong,
 .detail-title-row span {
   color: var(--emerald);
@@ -978,6 +984,43 @@ main {
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
+}
+
+.seller-listing-attributes {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.seller-listing-attributes {
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  margin: 6px 0 2px;
+}
+
+.seller-listing-attributes div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--foreground-rgb), 0.03);
+}
+
+.seller-listing-attributes dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.seller-listing-attributes dd {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .seller-line svg {
@@ -1234,6 +1277,38 @@ main {
   color: var(--ink);
   border-left: 1px solid var(--line);
   border-right: 1px solid var(--line);
+}
+
+.cart-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.phone-action-group {
+  display: flex;
+  flex: 2 1 300px;
+  min-width: min(100%, 300px);
+  gap: 2px;
+}
+
+.phone-number-action {
+  flex: 1 1 auto;
+  min-width: max-content;
+  padding-inline: 18px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  letter-spacing: 0.01em;
+  overflow: visible;
+}
+
+.phone-hide-action {
+  flex: 0 0 48px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 
@@ -3257,13 +3332,13 @@ main {
   }
 
   .filters {
-    order: 1;
+    order: 2;
     grid-template-columns: 1fr;
     align-items: stretch;
   }
 
   .feed {
-    order: 2;
+    order: 1;
   }
 
   .detail-rail {
@@ -3523,6 +3598,17 @@ main {
   .listing-card {
     flex-basis: min(84vw, 320px);
     min-height: 356px;
+  }
+
+  .phone-action-group {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .phone-number-action {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .report-card {

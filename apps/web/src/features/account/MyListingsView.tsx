@@ -2,14 +2,16 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, type Listing, type UserDashboard } from "@gems/schemas";
+import { formatLkr, type GemType, type Listing, type Treatment, type UserDashboard } from "@gems/schemas";
 
 export function MyListingsView({
   dashboard,
+  gemTypes,
   api,
   onDashboardChange
 }: {
   dashboard: UserDashboard | null;
+  gemTypes: GemType[];
   api: GemsApiClient;
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
@@ -62,6 +64,8 @@ export function MyListingsView({
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {listings.map((listing) => {
               const statusInfo = getStatusLabel(listing);
+              const gemTypeName = gemTypes.find((gemType) => gemType.id === listing.gemTypeId)?.name;
+              const attributes = getListingAttributes(listing, gemTypeName);
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -75,6 +79,14 @@ export function MyListingsView({
                     <strong style={{ fontSize: 16, color: 'var(--emerald)' }}>
                       {formatLkr(listing.priceLkr)}
                     </strong>
+                    <dl className="seller-listing-attributes">
+                      {attributes.map((attribute) => (
+                        <div key={attribute.label}>
+                          <dt>{attribute.label}</dt>
+                          <dd>{attribute.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
@@ -137,3 +149,26 @@ export function MyListingsView({
   );
 }
 
+function getListingAttributes(listing: Listing, gemTypeName?: string) {
+  const attributes = [
+    ["Gem type", gemTypeName ?? listing.gemTypeId],
+    ["Location", listing.location],
+    ["Carat", `${listing.attributes.carat} ct`],
+    ["Dimensions", listing.attributes.dimensions],
+    ["Shape", listing.attributes.shape],
+    ["Cut", listing.attributes.cut],
+    ["Color", listing.attributes.color],
+    ["Clarity", listing.attributes.clarity],
+    ["Origin", listing.attributes.origin],
+    ["Treatment", formatTreatment(listing.attributes.treatment)]
+  ];
+
+  return attributes.map(([label, value]) => ({
+    label,
+    value
+  }));
+}
+
+function formatTreatment(treatment: Treatment) {
+  return treatment.charAt(0).toUpperCase() + treatment.slice(1);
+}

@@ -164,7 +164,7 @@ function App() {
       )}
       {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} onDashboardChange={account.setDashboard} />}
       {view === "dashboard" && <SellerDashboard listings={account.dashboard?.sellerListings ?? []} content={marketplace.snapshot.content} dashboard={account.dashboard} orders={account.orders} accountError={account.accountError} />}
-      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} api={api} onDashboardChange={account.setDashboard} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} />}
       {view === "cart" && <CartView cart={account.cart} setCart={account.setCart} setView={setView} removeItem={api.removeCartItem.bind(api)} updateItem={api.updateCartItem.bind(api)} />}

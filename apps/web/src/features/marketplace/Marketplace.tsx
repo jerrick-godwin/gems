@@ -48,47 +48,6 @@ export function Marketplace(props: MarketplaceProps) {
 
   return (
     <section className="market-grid">
-      <aside className="filters" aria-label="Gem filters">
-        <div className="global-search" style={{ gridColumn: "1 / -1", marginBottom: 12 }}>
-          <Search size={17} strokeWidth={2} />
-          <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="Search Gems" id="global-search-input" />
-        </div>
-        <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: "var(--ink)", marginBottom: 8 }}>
-          <Filter size={17} strokeWidth={2} />
-          Filters
-        </div>
-        <label>
-          Gem type
-          <select value={props.gemType} onChange={(event) => props.setGemType(event.target.value)} id="filter-gem-type">
-            <option value="all">All gem types</option>
-            {props.gemTypes.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
-          </select>
-        </label>
-        <label>
-          Treatment
-          <select value={props.treatment} onChange={(event) => props.setTreatment(event.target.value as Treatment | "all")} id="filter-treatment">
-            <option value="all">Any treatment</option>
-            <option value="untreated">Untreated</option>
-            <option value="heated">Heated</option>
-            <option value="diffused">Diffused</option>
-            <option value="filled">Filled</option>
-          </select>
-        </label>
-        <label>
-          Certification
-          <select value={props.certificate} onChange={(event) => props.setCertificate(event.target.value as CertificateStatus | "all")} id="filter-certificate">
-            <option value="all">Any certificate</option>
-            <option value="admin_verified">Lab report on file</option>
-            <option value="seller_provided">Seller lab report</option>
-            <option value="none">No certificate</option>
-          </select>
-        </label>
-        <label>
-          Origin Country
-          <MultiSelectDropdown options={props.locations} selected={props.selectedLocations} onChange={props.setSelectedLocations} placeholder="Worldwide" />
-        </label>
-      </aside>
-
       <section className="feed">
         <div className="feed-header">
           <div>
@@ -138,6 +97,47 @@ export function Marketplace(props: MarketplaceProps) {
         )}
       </section>
 
+      <aside className="filters" aria-label="Gem filters">
+        <div className="global-search" style={{ gridColumn: "1 / -1", marginBottom: 12 }}>
+          <Search size={17} strokeWidth={2} />
+          <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="Search Gems" id="global-search-input" />
+        </div>
+        <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: "var(--ink)", marginBottom: 8 }}>
+          <Filter size={17} strokeWidth={2} />
+          Filters
+        </div>
+        <label>
+          Gem type
+          <select value={props.gemType} onChange={(event) => props.setGemType(event.target.value)} id="filter-gem-type">
+            <option value="all">All gem types</option>
+            {props.gemTypes.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <label>
+          Treatment
+          <select value={props.treatment} onChange={(event) => props.setTreatment(event.target.value as Treatment | "all")} id="filter-treatment">
+            <option value="all">Any treatment</option>
+            <option value="untreated">Untreated</option>
+            <option value="heated">Heated</option>
+            <option value="diffused">Diffused</option>
+            <option value="filled">Filled</option>
+          </select>
+        </label>
+        <label>
+          Certification
+          <select value={props.certificate} onChange={(event) => props.setCertificate(event.target.value as CertificateStatus | "all")} id="filter-certificate">
+            <option value="all">Any certificate</option>
+            <option value="admin_verified">Lab report on file</option>
+            <option value="seller_provided">Seller lab report</option>
+            <option value="none">No certificate</option>
+          </select>
+        </label>
+        <label>
+          Origin Country
+          <MultiSelectDropdown options={props.locations} selected={props.selectedLocations} onChange={props.setSelectedLocations} placeholder="Worldwide" />
+        </label>
+      </aside>
+
       {props.selectedListing && (
         <div className="modal-overlay" onClick={() => props.setSelectedId("")}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
@@ -146,6 +146,7 @@ export function Marketplace(props: MarketplaceProps) {
             </button>
             <ListingDetail
               listing={props.selectedListing}
+              gemTypes={props.gemTypes}
               sellers={props.sellers}
               revealedPhone={props.revealedPhone}
               onReveal={() => props.revealPhone(props.selectedListing!.id)}
@@ -187,7 +188,7 @@ function ListingCard({ listing, gemTypes, sellers, selected, saved, onSelect, on
           <span>{listing.attributes.carat} ct</span>
           <span>{listing.attributes.color}</span>
           <span>{listing.attributes.shape}</span>
-          <span style={{ textTransform: "capitalize" }}>{listing.attributes.treatment}</span>
+          <span>{formatTreatment(listing.attributes.treatment)}</span>
         </div>
         <div className="seller-line"><MapPin size={14} strokeWidth={2} />Country: {listing.location}</div>
       </div>
@@ -195,8 +196,9 @@ function ListingCard({ listing, gemTypes, sellers, selected, saved, onSelect, on
   );
 }
 
-function ListingDetail({ listing, sellers, revealedPhone, onReveal, onAddCart, isSignedIn, isReported, onReport }: { listing: Listing; sellers: SellerProfile[]; revealedPhone?: string; onReveal: () => void; onAddCart: (qty: number) => void; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
+function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, onAddCart, isSignedIn, isReported, onReport }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; revealedPhone?: string; onReveal: () => void; onAddCart: (qty: number) => void; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
+  const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -206,6 +208,7 @@ function ListingDetail({ listing, sellers, revealedPhone, onReveal, onAddCart, i
   const [reportReason, setReportReason] = useState("");
   const images = useMemo(() => listing.media.filter((media) => media.kind !== "certificate"), [listing.media]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const attributes = getListingAttributes(listing, gemType?.name);
 
   useEffect(() => {
     if (images.length <= 1) return;
@@ -253,20 +256,22 @@ function ListingDetail({ listing, sellers, revealedPhone, onReveal, onAddCart, i
         <div className="detail-title-row"><h2>{listing.title}</h2><span>{formatLkr(listing.priceLkr)}</span></div>
         <p style={{ fontSize: 14, lineHeight: 1.6, fontWeight: 500 }}>{listing.description}</p>
         <dl className="spec-grid">
-          <div><dt>Carat</dt><dd>{listing.attributes.carat}</dd></div>
-          <div><dt>Dimensions</dt><dd>{listing.attributes.dimensions}</dd></div>
-          <div><dt>Origin</dt><dd>{listing.attributes.origin}</dd></div>
-          <div><dt>Treatment</dt><dd style={{ textTransform: "capitalize" }}>{listing.attributes.treatment}</dd></div>
+          {attributes.map((attribute) => (
+            <div key={attribute.label}>
+              <dt>{attribute.label}</dt>
+              <dd>{attribute.value}</dd>
+            </div>
+          ))}
         </dl>
         <div className="certificate-box" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}><BadgeCheck size={17} strokeWidth={2} /><span>{listing.media.some((media) => media.kind === "certificate") ? "Gem Certificate is Provided" : "Certificate not Provided"}</span></div>
           {listing.media.some((media) => media.kind === "certificate") && <a href={listing.media.find((media) => media.kind === "certificate")?.url} target="_blank" rel="noreferrer" className="primary-action btn-blue" style={{ padding: "4px 12px", fontSize: 13, height: "auto", minHeight: 32, borderRadius: 6, textDecoration: "none" }}><Download size={14} style={{ marginRight: 4 }} />Download</a>}
         </div>
         <div className="seller-card"><div className="avatar">{seller?.displayName.slice(0, 1)}</div><div><strong style={{ fontWeight: 700 }}>{seller?.displayName}</strong><span style={{ display: "flex", alignItems: "center", gap: 4 }}>{sellerProfileLabel(seller?.verificationStatus)} · <MapPin size={12} /> {listing.location}</span></div></div>
-        <div className="cart-action-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <div className="cart-action-row">
           <div className="qty-stepper"><button type="button" onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease quantity"><Minus size={16} strokeWidth={2.5} /></button><span>{qty}</span><button type="button" onClick={() => setQty(qty + 1)} aria-label="Increase quantity"><Plus size={16} strokeWidth={2.5} /></button></div>
           <button className="primary-action btn-add-cart" onClick={handleAddCart} style={{ flex: "1 1 180px" }}>{added ? <Check size={18} /> : <ShoppingCart size={18} />}{added ? "" : "Add to Cart"}</button>
-          {revealedPhone && !phoneHidden ? <div style={{ display: "flex", flex: "1 1 180px", gap: 2 }}><button className="primary-action btn-blue" style={{ flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0, cursor: "default" }}><Phone size={18} />{revealedPhone}</button><button className="primary-action btn-blue" onClick={() => setPhoneHidden(true)} aria-label="Hide phone number" style={{ padding: "0 12px", borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}><EyeOff size={18} /></button></div> : <button className="primary-action btn-blue" onClick={() => { if (revealedPhone) setPhoneHidden(false); else onReveal(); }} style={{ flex: "1 1 180px" }}><Phone size={18} />{isSignedIn ? "Show Phone Number" : "Sign in to view"}</button>}
+          {revealedPhone && !phoneHidden ? <div className="phone-action-group"><button className="primary-action btn-blue phone-number-action" style={{ cursor: "default" }}><Phone size={18} />{revealedPhone}</button><button className="primary-action btn-blue phone-hide-action" onClick={() => setPhoneHidden(true)} aria-label="Hide phone number"><EyeOff size={18} /></button></div> : <button className="primary-action btn-blue" onClick={() => { if (revealedPhone) setPhoneHidden(false); else onReveal(); }} style={{ flex: "1 1 180px" }}><Phone size={18} />{isSignedIn ? "Show Phone Number" : "Sign in to view"}</button>}
           {isReported || reported ? <div className="primary-action" aria-label="Listing already reported" style={{ flex: "1 1 120px", background: "var(--line-subtle)", color: "var(--sage)", cursor: "default" }}><Check size={16} strokeWidth={2.5} />Reported</div> : <button className="primary-action btn-red" id="report-listing" onClick={handleReportClick} aria-label="Report listing" style={{ flex: "1 1 120px" }}><Flag size={16} strokeWidth={2} />Report</button>}
         </div>
       </div>
@@ -291,6 +296,30 @@ function sellerProfileLabel(status?: SellerProfile["verificationStatus"]) {
   if (status === "business_verified") return "Business profile";
   if (status === "identity_verified") return "Seller profile";
   return "Seller profile";
+}
+
+function getListingAttributes(listing: Listing, gemTypeName?: string) {
+  const attributes = [
+    gemTypeName ? ["Gem type", gemTypeName] : undefined,
+    ["Location", listing.location],
+    ["Carat", `${listing.attributes.carat} ct`],
+    ["Dimensions", listing.attributes.dimensions],
+    ["Shape", listing.attributes.shape],
+    ["Cut", listing.attributes.cut],
+    ["Color", listing.attributes.color],
+    ["Clarity", listing.attributes.clarity],
+    ["Origin", listing.attributes.origin],
+    ["Treatment", formatTreatment(listing.attributes.treatment)]
+  ].filter(Boolean) as [string, string][];
+
+  return attributes.map(([label, value]) => ({
+    label,
+    value
+  }));
+}
+
+function formatTreatment(treatment: Treatment) {
+  return treatment.charAt(0).toUpperCase() + treatment.slice(1);
 }
 
 function gemImageStyle(gemTypeId: string) {
