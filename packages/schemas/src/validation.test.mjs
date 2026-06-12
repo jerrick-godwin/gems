@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orderStatuses, validateCheckoutRequest } from "./index.ts";
+import { orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "./index.ts";
 
 const validDetails = {
   fullName: "Jerrick Godwin",
@@ -44,4 +44,13 @@ test("admin order statuses match the supported workflow", () => {
     "closed",
     "rejected"
   ]);
+});
+
+test("listing subscription pricing follows plan photo allowances", () => {
+  assert.equal(quoteListingSubscription("basic", 3).totalLkr, 500);
+  assert.equal(quoteListingSubscription("basic", 4).totalLkr, 750);
+  assert.equal(quoteListingSubscription("pro", 6).totalLkr, 1000);
+  assert.equal(quoteListingSubscription("pro", 7).totalLkr, 1500);
+  assert.equal(quoteListingSubscription("plus", 10).totalLkr, 20000);
+  assert.equal(quoteListingSubscription("plus", 11).totalLkr, 20500);
 });

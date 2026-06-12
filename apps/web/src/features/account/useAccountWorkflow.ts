@@ -1,20 +1,16 @@
 import { useEffect, useState } from "react";
 import type { GemsApiClient } from "@gems/api-client";
-import type { Cart, Order, Report, UserDashboard, WishlistItem } from "@gems/schemas";
+import type { Report, UserDashboard, WishlistItem } from "@gems/schemas";
 
 export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
   const [accountError, setAccountError] = useState<string | null>(null);
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
-  const [cart, setCart] = useState<Cart | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
   const [dashboard, setDashboard] = useState<UserDashboard | null>(null);
   const [myReports, setMyReports] = useState<Report[]>([]);
 
   useEffect(() => {
     if (!isSignedIn) {
       setWishlistItems([]);
-      setCart(null);
-      setOrders([]);
       setDashboard(null);
       setMyReports([]);
       setAccountError(null);
@@ -22,12 +18,10 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
     }
 
     let active = true;
-    Promise.all([api.wishlist(), api.cart(), api.orders(), api.dashboard(), api.myReports()])
-      .then(([nextWishlist, nextCart, nextOrders, nextDashboard, nextReports]) => {
+    Promise.all([api.wishlist(), api.dashboard(), api.myReports()])
+      .then(([nextWishlist, nextDashboard, nextReports]) => {
         if (!active) return;
         setWishlistItems(nextWishlist);
-        setCart(nextCart);
-        setOrders(nextOrders);
         setDashboard(nextDashboard);
         setMyReports(nextReports);
         setAccountError(null);
@@ -42,5 +36,5 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
     };
   }, [api, isSignedIn]);
 
-  return { accountError, wishlistItems, setWishlistItems, cart, setCart, orders, setOrders, dashboard, setDashboard, myReports, setMyReports };
+  return { accountError, wishlistItems, setWishlistItems, dashboard, setDashboard, myReports, setMyReports };
 }

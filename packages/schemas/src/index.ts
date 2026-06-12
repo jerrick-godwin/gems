@@ -4,6 +4,45 @@ export type ModerationStatus = "not_submitted" | "queued" | "needs_changes" | "a
 export type Treatment = "untreated" | "heated" | "diffused" | "filled";
 export type CertificateStatus = "none" | "seller_provided" | "admin_verified";
 export type PromotionType = "bump" | "top" | "urgent" | "featured" | "scheduled";
+export type ListingSubscriptionPlanId = "basic" | "pro" | "plus";
+export type ListingSubscriptionStatus = "pending_payment" | "active" | "past_due" | "cancelled" | "expired";
+export type PaymentPurpose = "listing_subscription" | "listing_subscription_renewal";
+export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled";
+
+export interface ListingSubscriptionPlan {
+  id: ListingSubscriptionPlanId;
+  name: string;
+  priceLkr: number;
+  includedPhotos: number;
+  extraPhotoPriceLkr: number;
+  validityMonths: number;
+}
+
+export const listingSubscriptionPlans: ListingSubscriptionPlan[] = [
+  { id: "basic", name: "Basic", priceLkr: 500, includedPhotos: 3, extraPhotoPriceLkr: 250, validityMonths: 1 },
+  { id: "pro", name: "Pro", priceLkr: 1000, includedPhotos: 6, extraPhotoPriceLkr: 500, validityMonths: 2 },
+  { id: "plus", name: "Plus", priceLkr: 20000, includedPhotos: 10, extraPhotoPriceLkr: 500, validityMonths: 3 }
+];
+
+export interface ListingPaymentQuote {
+  plan: ListingSubscriptionPlan;
+  photoCount: number;
+  extraPhotoCount: number;
+  basePriceLkr: number;
+  extraPhotoTotalLkr: number;
+  totalLkr: number;
+}
+
+export interface ListingSubscriptionSummary {
+  id: string;
+  listingId: string;
+  planId: ListingSubscriptionPlanId;
+  status: ListingSubscriptionStatus;
+  autoRenew: boolean;
+  startsAt?: string;
+  expiresAt?: string;
+  cancelledAt?: string;
+}
 
 export interface PromotionCampaign {
   id: string;
@@ -96,6 +135,34 @@ export interface Listing {
     chats: number;
     whatsappClicks: number;
   };
+  subscription?: ListingSubscriptionSummary;
+}
+
+export interface ListingSubscription extends ListingSubscriptionSummary {
+  userId: string;
+  paymentIntentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentIntent {
+  id: string;
+  userId: string;
+  listingId: string;
+  subscriptionId?: string;
+  purpose: PaymentPurpose;
+  status: PaymentStatus;
+  planId: ListingSubscriptionPlanId;
+  quote: ListingPaymentQuote;
+  amountLkr: number;
+  currency: "LKR";
+  gateway: "webxpay";
+  gatewayReference?: string;
+  paymentUrl?: string;
+  policyVersion: string;
+  policyAcceptedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Conversation {
@@ -247,6 +314,8 @@ export interface UserDashboard {
   wishlistCount: number;
   cartCount: number;
   recentOrders: Order[];
+  listingSubscriptions: ListingSubscription[];
+  recentPayments: PaymentIntent[];
 }
 
 export interface StorageUploadRequest {
@@ -269,6 +338,27 @@ export function formatLkr(value: number) {
     currency: "LKR",
     maximumFractionDigits: 0
   }).format(value);
+}
+
+export function getListingSubscriptionPlan(planId: ListingSubscriptionPlanId) {
+  const plan = listingSubscriptionPlans.find((item) => item.id === planId);
+  if (!plan) throw new Error("Unknown listing subscription plan.");
+  return plan;
+}
+
+export function quoteListingSubscription(planId: ListingSubscriptionPlanId, photoCount: number): ListingPaymentQuote {
+  const plan = getListingSubscriptionPlan(planId);
+  const normalizedPhotoCount = Math.max(0, Math.floor(photoCount));
+  const extraPhotoCount = Math.max(0, normalizedPhotoCount - plan.includedPhotos);
+  const extraPhotoTotalLkr = extraPhotoCount * plan.extraPhotoPriceLkr;
+  return {
+    plan,
+    photoCount: normalizedPhotoCount,
+    extraPhotoCount,
+    basePriceLkr: plan.priceLkr,
+    extraPhotoTotalLkr,
+    totalLkr: plan.priceLkr + extraPhotoTotalLkr
+  };
 }
 
 export function orderStatusLabel(status: OrderStatus) {

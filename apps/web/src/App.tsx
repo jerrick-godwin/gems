@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { GemsApiClient } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
 import { authClient, type MarketplaceAuthUser } from "./firebase";
-import { CartView } from "./features/account/CartView";
-import { CheckoutView } from "./features/account/CheckoutView";
 import { LoginPage } from "./features/account/LoginPage";
 import { MyListingsView } from "./features/account/MyListingsView";
 import { MyReportsView } from "./features/account/MyReportsView";
@@ -16,6 +14,7 @@ import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
 import { protectedViews, type View } from "./shared/types";
+import { PrivacyPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 
 function App() {
   const [user, setUser] = useState<MarketplaceAuthUser | null>(null);
@@ -43,8 +42,6 @@ function App() {
     setView,
     wishlistItems: account.wishlistItems,
     setWishlistItems: account.setWishlistItems,
-    setCart: account.setCart,
-    setOrders: account.setOrders,
     myReports: account.myReports,
     setMyReports: account.setMyReports
   });
@@ -62,6 +59,14 @@ function App() {
     setTheme,
     user
   };
+
+  if (view === "terms" || view === "privacy") {
+    return (
+      <AppFrame {...frameProps}>
+        {view === "terms" ? <TermsAndConditions /> : <PrivacyPolicy />}
+      </AppFrame>
+    );
+  }
 
   if (!marketplace.snapshot) {
     return (
@@ -121,7 +126,6 @@ function App() {
           revealPhone={marketplace.handleRevealPhone}
           savedIds={marketplace.savedIds}
           toggleSaved={marketplace.toggleSaved}
-          addToCart={marketplace.addToCart}
           isSignedIn={isSignedIn}
           reportedListingIds={marketplace.reportedListingIds}
           onReport={marketplace.handleReportListing}
@@ -156,19 +160,16 @@ function App() {
           revealPhone={marketplace.handleRevealPhone}
           savedIds={marketplace.savedIds}
           toggleSaved={marketplace.toggleSaved}
-          addToCart={marketplace.addToCart}
           isSignedIn={isSignedIn}
           reportedListingIds={marketplace.reportedListingIds}
           onReport={marketplace.handleReportListing}
         />
       )}
       {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} onDashboardChange={account.setDashboard} />}
-      {view === "dashboard" && <SellerDashboard listings={account.dashboard?.sellerListings ?? []} content={marketplace.snapshot.content} dashboard={account.dashboard} orders={account.orders} accountError={account.accountError} />}
-      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "dashboard" && <SellerDashboard listings={account.dashboard?.sellerListings ?? []} content={marketplace.snapshot.content} dashboard={account.dashboard} accountError={account.accountError} />}
+      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} api={api} onDashboardChange={account.setDashboard} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} />}
-      {view === "cart" && <CartView cart={account.cart} setCart={account.setCart} setView={setView} removeItem={api.removeCartItem.bind(api)} updateItem={api.updateCartItem.bind(api)} />}
-      {view === "checkout" && <CheckoutView cart={account.cart} profile={account.dashboard?.user} setView={setView} checkout={marketplace.checkout} />}
     </AppFrame>
   );
 }

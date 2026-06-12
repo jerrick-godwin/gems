@@ -1,4 +1,4 @@
-import { Heart, LogIn, LogOut, Plus, Settings, ShoppingCart, Store, User, Flag } from "lucide-react";
+import { Heart, LogIn, LogOut, Plus, Settings, Store, User, Flag } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import { authClient, type MarketplaceAuthUser } from "../../firebase";
@@ -109,6 +109,20 @@ function ProfileMenu({
           >
             <Settings size={16} /> Profile
           </button>
+          <button
+            className={`menu-item ${view === "terms" ? "active" : ""}`}
+            onClick={() => { setView("terms"); setIsOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: view === "terms" ? "var(--emerald-subtle)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: view === "terms" ? "var(--emerald)" : "var(--ink)", width: "100%", justifyContent: "flex-start", fontSize: 14, textAlign: "left", fontWeight: view === "terms" ? 600 : 500 }}
+          >
+            Terms and Conditions
+          </button>
+          <button
+            className={`menu-item ${view === "privacy" ? "active" : ""}`}
+            onClick={() => { setView("privacy"); setIsOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: view === "privacy" ? "var(--emerald-subtle)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: view === "privacy" ? "var(--emerald)" : "var(--ink)", width: "100%", justifyContent: "flex-start", fontSize: 14, textAlign: "left", fontWeight: view === "privacy" ? 600 : 500 }}
+          >
+            Privacy Policy
+          </button>
           <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", gap: 8 }}>
             <span style={{ fontSize: 13, color: "var(--sage)", fontWeight: 500 }}>Theme</span>
@@ -166,13 +180,13 @@ export function AppFrame({
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => setView("market")} aria-label="Gems Marketplace home">
+        <button className="brand" onClick={() => setView("market")} aria-label="gemslanka.lk home">
           <span className="brand-mark">
             <img src="/assets/logo-mark.svg" alt="" />
           </span>
-          <span>
-            Gems
-            <strong>Marketplace</strong>
+          <span className="brand-wordmark">
+            gemslanka
+            <strong>.lk</strong>
           </span>
         </button>
 
@@ -187,14 +201,6 @@ export function AppFrame({
           </button>
           
           {isSignedIn ? ( <>
-            <button
-              className={view === "cart" ? "active" : ""}
-              onClick={() => setView("cart")}
-              id="nav-cart"
-            >
-              <ShoppingCart size={16} strokeWidth={2.5} />
-              Cart
-            </button>
             <button
               className={view === "post" ? "active" : ""}
               onClick={() => setView("post")}
@@ -223,7 +229,10 @@ export function AppFrame({
         </nav>
       </header>
       <main>{children}</main>
+      <footer className="site-footer">
+        <button type="button" onClick={() => setView("terms")}>Terms and Conditions</button>
+        <button type="button" onClick={() => setView("privacy")}>Privacy Policy</button>
+      </footer>
     </div>
   );
 }
-

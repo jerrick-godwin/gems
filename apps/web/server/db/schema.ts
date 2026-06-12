@@ -1,5 +1,21 @@
 import { boolean, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
-import type { CheckoutDetails, GemAttributes, ListingMedia, ListingStatus, ModerationStatus, OrderStatus, PaymentMethod, PromotionCampaign, PromotionType, UserRole } from "@gems/schemas";
+import type {
+  CheckoutDetails,
+  GemAttributes,
+  ListingMedia,
+  ListingStatus,
+  ListingSubscriptionPlanId,
+  ListingSubscriptionStatus,
+  ListingPaymentQuote,
+  ModerationStatus,
+  OrderStatus,
+  PaymentMethod,
+  PaymentPurpose,
+  PaymentStatus,
+  PromotionCampaign,
+  PromotionType,
+  UserRole
+} from "@gems/schemas";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey(),
@@ -76,6 +92,60 @@ export const listings = pgTable("listings", {
   }>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const listingSubscriptions = pgTable("listing_subscriptions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  planId: varchar("plan_id").$type<ListingSubscriptionPlanId>().notNull(),
+  status: varchar("status").$type<ListingSubscriptionStatus>().notNull().default("pending_payment"),
+  autoRenew: boolean("auto_renew").notNull().default(true),
+  startsAt: timestamp("starts_at"),
+  expiresAt: timestamp("expires_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  paymentIntentId: varchar("payment_intent_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const paymentIntents = pgTable("payment_intents", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  subscriptionId: varchar("subscription_id"),
+  purpose: varchar("purpose").$type<PaymentPurpose>().notNull(),
+  status: varchar("status").$type<PaymentStatus>().notNull().default("pending"),
+  planId: varchar("plan_id").$type<ListingSubscriptionPlanId>().notNull(),
+  quote: jsonb("quote").$type<ListingPaymentQuote>().notNull(),
+  amountLkr: integer("amount_lkr").notNull(),
+  currency: varchar("currency").notNull().default("LKR"),
+  gateway: varchar("gateway").notNull().default("webxpay"),
+  gatewayReference: varchar("gateway_reference"),
+  paymentUrl: text("payment_url"),
+  policyVersion: varchar("policy_version").notNull(),
+  policyAcceptedAt: timestamp("policy_accepted_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const renewalEvents = pgTable("renewal_events", {
+  id: varchar("id").primaryKey(),
+  subscriptionId: varchar("subscription_id").references(() => listingSubscriptions.id).notNull(),
+  paymentIntentId: varchar("payment_intent_id"),
+  status: varchar("status").notNull(),
+  gatewayReference: varchar("gateway_reference"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const policyAcceptances = pgTable("policy_acceptances", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  listingId: varchar("listing_id").references(() => listings.id),
+  paymentIntentId: varchar("payment_intent_id"),
+  policyVersion: varchar("policy_version").notNull(),
+  acceptedAt: timestamp("accepted_at").defaultNow().notNull()
 });
 
 export const listingMedia = pgTable("listing_media", {

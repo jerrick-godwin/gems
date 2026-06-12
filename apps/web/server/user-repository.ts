@@ -8,9 +8,13 @@ import type {
   GemAttributes,
   Listing,
   ListingMedia,
+  ListingSubscription,
+  ListingSubscriptionPlanId,
   Order,
   OrderItem,
   OrderStatus,
+  PaymentIntent,
+  PaymentStatus,
   StorageUploadRequest,
   User,
   UserDashboard,
@@ -18,12 +22,13 @@ import type {
   UserSettings,
   WishlistItem
 } from "@gems/schemas";
-import { orderStatuses, validateCheckoutRequest } from "@gems/schemas";
+import { listingSubscriptionPlans, orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
-import { cartItems, carts, conversations, listings, orderItems, orders, sellerProfiles, userSettings, users, wishlists } from "./db/schema.js";
+import { cartItems, carts, conversations, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, sellerProfiles, userSettings, users, wishlists } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
+import { createWebxpayPaymentUrl } from "./webxpay.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "locale" | "profileImageKey" | "profileImageUrl">>;
 type SettingsPatch = Partial<Pick<UserSettings, "theme" | "notificationsEnabled" | "language" | "dashboardDefaultView" | "savedMarketplaceFilters">>;
@@ -46,6 +51,8 @@ interface MemoryState {
   carts: Cart[];
   orders: Order[];
   wishlists: WishlistItem[];
+  listingSubscriptions: ListingSubscription[];
+  paymentIntents: PaymentIntent[];
 }
 
 let memoryState: MemoryState | undefined;
@@ -404,6 +411,15 @@ export async function getAdminOrders(): Promise<Order[]> {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export async function getAdminPaymentIntents(): Promise<PaymentIntent[]> {
+  if (hasDatabase) {
+    const rows = await db.select().from(paymentIntents).orderBy(desc(paymentIntents.createdAt));
+    return rows.map(toPaymentIntent);
+  }
+
+  return [...(await getMemoryState()).paymentIntents].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | undefined> {
   if (!orderStatuses.includes(status)) {
     throw new Error("Invalid order status");
@@ -423,7 +439,12 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
 }
 
 export async function getDashboard(userId: string): Promise<UserDashboard> {
-  const [{ user, settings }, cart, wishlist, recentOrders] = await Promise.all([getUserProfile(userId), getCart(userId), getWishlist(userId), getOrders(userId)]);
+  const [{ user, settings }, wishlist, subscriptions, payments] = await Promise.all([
+    getUserProfile(userId),
+    getWishlist(userId),
+    getListingSubscriptions(userId),
+    getPaymentIntents(userId)
+  ]);
 
   if (hasDatabase) {
     const sellerRows = await db.select().from(sellerProfiles).where(eq(sellerProfiles.userId, userId));
@@ -443,10 +464,12 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
           status: conversation.status as "new" | "active" | "closed",
           lastMessage: conversation.lastMessage,
           updatedAt: conversation.updatedAt.toISOString()
-        })),
+      })),
       wishlistCount: wishlist.length,
-      cartCount: cart.items.length,
-      recentOrders: recentOrders.slice(0, 5)
+      cartCount: 0,
+      recentOrders: [],
+      listingSubscriptions: subscriptions,
+      recentPayments: payments.slice(0, 10)
     };
   }
 
@@ -458,8 +481,10 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
     sellerListings: state.database.listings.filter((listing) => sellerIds.has(listing.sellerId)),
     conversations: state.database.conversations.filter((conversation) => sellerIds.has(conversation.sellerId)),
     wishlistCount: wishlist.length,
-    cartCount: cart.items.length,
-    recentOrders: recentOrders.slice(0, 5)
+    cartCount: 0,
+    recentOrders: [],
+    listingSubscriptions: subscriptions,
+    recentPayments: payments.slice(0, 10)
   };
 }
 
@@ -475,8 +500,8 @@ export async function createListing(userId: string, input: ListingInput) {
     priceLkr: Number(input.priceLkr ?? 0),
     negotiable: Boolean(input.negotiable),
     location: input.location ?? seller.location,
-    status: "pending_review",
-    moderationStatus: "queued",
+    status: "draft",
+    moderationStatus: "not_submitted",
     attributes: {
       carat: Number(input.attributes?.carat ?? 0),
       dimensions: input.attributes?.dimensions ?? "",
@@ -552,8 +577,10 @@ export async function updateUserListing(userId: string, listingId: string, input
     if (input.media !== undefined) updates.media = input.media;
     if (input.attributes !== undefined) updates.attributes = updatedAttributes;
     
-    updates.moderationStatus = "queued";
-    updates.status = "pending_review";
+    if (existing.moderationStatus !== "not_submitted" || existing.status !== "draft") {
+      updates.moderationStatus = "queued";
+      updates.status = "pending_review";
+    }
     updates.updatedAt = new Date();
 
     const [updated] = await db.update(listings).set(updates).where(eq(listings.id, listingId)).returning();
@@ -572,9 +599,160 @@ export async function updateUserListing(userId: string, listingId: string, input
   if (input.media !== undefined) listing.media = input.media;
   if (input.attributes !== undefined) listing.attributes = { ...listing.attributes, ...input.attributes } as GemAttributes;
   
-  listing.moderationStatus = "queued";
-  listing.status = "pending_review";
+  if (listing.moderationStatus !== "not_submitted" || listing.status !== "draft") {
+    listing.moderationStatus = "queued";
+    listing.status = "pending_review";
+  }
   return listing;
+}
+
+export async function createListingPaymentIntent(userId: string, listingId: string, input: { planId?: string; photoCount?: number; acceptedPolicies?: boolean }): Promise<PaymentIntent> {
+  const seller = await ensureSellerProfile(userId);
+  const planId = input.planId as ListingSubscriptionPlanId;
+  if (!listingSubscriptionPlans.some((plan) => plan.id === planId)) {
+    throw new Error("Select a valid listing subscription plan.");
+  }
+  if (!input.acceptedPolicies) {
+    throw new Error("Terms and Privacy Policy acceptance is required before payment.");
+  }
+
+  const quote = quoteListingSubscription(planId, Number(input.photoCount ?? 0));
+  const now = new Date();
+  const policyVersion = "2026-06-11";
+
+  if (hasDatabase) {
+    const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+    if (!rows[0]) throw new Error("Listing not found.");
+
+    const [subscription] = await db.insert(listingSubscriptions).values({
+      id: `sub-${randomUUID()}`,
+      userId,
+      listingId,
+      planId,
+      status: "pending_payment",
+      autoRenew: true,
+      createdAt: now,
+      updatedAt: now
+    }).returning();
+
+    const intentId = `pay-${randomUUID()}`;
+    let intent: PaymentIntent = {
+      id: intentId,
+      userId,
+      listingId,
+      subscriptionId: subscription.id,
+      purpose: "listing_subscription",
+      status: "pending",
+      planId,
+      quote,
+      amountLkr: quote.totalLkr,
+      currency: "LKR",
+      gateway: "webxpay",
+      policyVersion,
+      policyAcceptedAt: now.toISOString(),
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    };
+    intent = { ...intent, paymentUrl: createWebxpayPaymentUrl(intent) };
+
+    const [inserted] = await db.insert(paymentIntents).values({
+      id: intent.id,
+      userId,
+      listingId,
+      subscriptionId: subscription.id,
+      purpose: intent.purpose,
+      status: intent.status,
+      planId,
+      quote,
+      amountLkr: intent.amountLkr,
+      currency: intent.currency,
+      gateway: intent.gateway,
+      paymentUrl: intent.paymentUrl,
+      policyVersion,
+      policyAcceptedAt: now,
+      createdAt: now,
+      updatedAt: now
+    }).returning();
+
+    await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscription.id));
+    await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
+    return toPaymentIntent(inserted);
+  }
+
+  const state = await getMemoryState();
+  const listing = state.database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
+  if (!listing) throw new Error("Listing not found.");
+  const subscription: ListingSubscription = {
+    id: `sub-${randomUUID()}`,
+    userId,
+    listingId,
+    planId,
+    status: "pending_payment",
+    autoRenew: true,
+    paymentIntentId: undefined,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+  let intent: PaymentIntent = {
+    id: `pay-${randomUUID()}`,
+    userId,
+    listingId,
+    subscriptionId: subscription.id,
+    purpose: "listing_subscription",
+    status: "pending",
+    planId,
+    quote,
+    amountLkr: quote.totalLkr,
+    currency: "LKR",
+    gateway: "webxpay",
+    policyVersion,
+    policyAcceptedAt: now.toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+  intent = { ...intent, paymentUrl: createWebxpayPaymentUrl(intent) };
+  subscription.paymentIntentId = intent.id;
+  state.listingSubscriptions.push(subscription);
+  state.paymentIntents.push(intent);
+  return intent;
+}
+
+export async function confirmPaymentIntent(intentId: string, status: PaymentStatus, gatewayReference?: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1);
+    if (!rows[0]) return undefined;
+    const existing = toPaymentIntent(rows[0]);
+    if (existing.status === "succeeded") return existing;
+    const nextStatus = status === "succeeded" ? "succeeded" : status === "cancelled" ? "cancelled" : "failed";
+    const [updated] = await db.update(paymentIntents).set({ status: nextStatus, gatewayReference, updatedAt: new Date() }).where(eq(paymentIntents.id, intentId)).returning();
+    if (nextStatus === "succeeded") await activateListingSubscription(updated.subscriptionId ?? undefined, intentId);
+    return toPaymentIntent(updated);
+  }
+
+  const state = await getMemoryState();
+  const intent = state.paymentIntents.find((item) => item.id === intentId);
+  if (!intent) return undefined;
+  if (intent.status === "succeeded") return intent;
+  intent.status = status === "succeeded" ? "succeeded" : status === "cancelled" ? "cancelled" : "failed";
+  intent.gatewayReference = gatewayReference;
+  intent.updatedAt = new Date().toISOString();
+  if (intent.status === "succeeded") await activateListingSubscription(intent.subscriptionId, intentId);
+  return intent;
+}
+
+export async function cancelListingSubscription(userId: string, subscriptionId: string) {
+  const now = new Date();
+  if (hasDatabase) {
+    const [updated] = await db.update(listingSubscriptions).set({ autoRenew: false, cancelledAt: now, updatedAt: now }).where(and(eq(listingSubscriptions.id, subscriptionId), eq(listingSubscriptions.userId, userId))).returning();
+    return updated ? toListingSubscription(updated) : undefined;
+  }
+
+  const subscription = (await getMemoryState()).listingSubscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
+  if (!subscription) return undefined;
+  subscription.autoRenew = false;
+  subscription.cancelledAt = now.toISOString();
+  subscription.updatedAt = now.toISOString();
+  return subscription;
 }
 
 export async function createStorageUpload(userId: string, request: StorageUploadRequest) {
@@ -773,9 +951,79 @@ async function getMemoryState() {
     settings: [],
     carts: [],
     orders: [],
-    wishlists: []
+    wishlists: [],
+    listingSubscriptions: [],
+    paymentIntents: []
   };
   return memoryState;
+}
+
+async function getListingSubscriptions(userId: string): Promise<ListingSubscription[]> {
+  if (hasDatabase) {
+    const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.userId, userId)).orderBy(desc(listingSubscriptions.createdAt));
+    return rows.map(toListingSubscription);
+  }
+  return (await getMemoryState()).listingSubscriptions.filter((item) => item.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function getPaymentIntents(userId: string): Promise<PaymentIntent[]> {
+  if (hasDatabase) {
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.userId, userId)).orderBy(desc(paymentIntents.createdAt));
+    return rows.map(toPaymentIntent);
+  }
+  return (await getMemoryState()).paymentIntents.filter((item) => item.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function activateListingSubscription(subscriptionId: string | undefined, paymentIntentId: string) {
+  if (!subscriptionId) return;
+  const now = new Date();
+
+  if (hasDatabase) {
+    const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
+    const subscription = rows[0];
+    if (!subscription) return;
+    const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+    if (!plan) return;
+    const expiresAt = addMonths(now, plan.validityMonths);
+    await db.update(listingSubscriptions).set({
+      status: "active",
+      startsAt: now,
+      expiresAt,
+      paymentIntentId,
+      updatedAt: now
+    }).where(eq(listingSubscriptions.id, subscriptionId));
+    await db.update(listings).set({
+      status: "pending_review",
+      moderationStatus: "queued",
+      expiresAt,
+      updatedAt: now
+    }).where(eq(listings.id, subscription.listingId));
+    return;
+  }
+
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
+  if (!subscription) return;
+  const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+  if (!plan) return;
+  const expiresAt = addMonths(now, plan.validityMonths);
+  subscription.status = "active";
+  subscription.startsAt = now.toISOString();
+  subscription.expiresAt = expiresAt.toISOString();
+  subscription.paymentIntentId = paymentIntentId;
+  subscription.updatedAt = now.toISOString();
+  const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+  if (listing) {
+    listing.status = "pending_review";
+    listing.moderationStatus = "queued";
+    listing.expiresAt = expiresAt.toISOString();
+  }
+}
+
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
 }
 
 function ensureMemoryCart(state: MemoryState, userId: string): Cart {
@@ -892,6 +1140,45 @@ function toListing(row: typeof listings.$inferSelect): Listing {
     promoted: Array.from(activePromotions),
     campaigns,
     stats: row.stats as any
+  };
+}
+
+function toListingSubscription(row: typeof listingSubscriptions.$inferSelect): ListingSubscription {
+  return {
+    id: row.id,
+    userId: row.userId,
+    listingId: row.listingId,
+    planId: row.planId,
+    status: row.status,
+    autoRenew: row.autoRenew,
+    startsAt: row.startsAt?.toISOString(),
+    expiresAt: row.expiresAt?.toISOString(),
+    cancelledAt: row.cancelledAt?.toISOString(),
+    paymentIntentId: row.paymentIntentId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+function toPaymentIntent(row: typeof paymentIntents.$inferSelect): PaymentIntent {
+  return {
+    id: row.id,
+    userId: row.userId,
+    listingId: row.listingId,
+    subscriptionId: row.subscriptionId ?? undefined,
+    purpose: row.purpose,
+    status: row.status,
+    planId: row.planId,
+    quote: row.quote,
+    amountLkr: row.amountLkr,
+    currency: "LKR",
+    gateway: "webxpay",
+    gatewayReference: row.gatewayReference ?? undefined,
+    paymentUrl: row.paymentUrl ?? undefined,
+    policyVersion: row.policyVersion,
+    policyAcceptedAt: row.policyAcceptedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
   };
 }
 

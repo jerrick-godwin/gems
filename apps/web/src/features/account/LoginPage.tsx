@@ -34,8 +34,8 @@ export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: (
           <img src="/assets/logo-mark.svg" alt="" />
         </div>
         <div>
-          <h1>{initialSignUp ? "Create your account" : "Sign in to Gems Marketplace"}</h1>
-          <p>Use your secure marketplace account to manage listings, saved gems, cart, checkout, settings, and order history.</p>
+          <h1>{initialSignUp ? "Create your account" : "Sign in to gemslanka.lk"}</h1>
+          <p>Use your secure account to manage listings, saved gems, subscriptions, renewal settings, and reports.</p>
         </div>
         <form
           className="login-form"
