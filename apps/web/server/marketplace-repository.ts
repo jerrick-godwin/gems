@@ -49,7 +49,7 @@ export async function getMarketplaceSnapshot() {
   if (hasDatabase) {
     const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows] = await Promise.all([
       db.select().from(gemTypeTable),
-      db.select().from(listingTable).where(eq(listingTable.moderationStatus, "approved")),
+      db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`)),
       db.select().from(sellerProfileTable),
       db.select().from(conversationTable),
       db.select().from(savedSearchTable),
@@ -70,7 +70,7 @@ export async function getMarketplaceSnapshot() {
   return {
     gemTypes: database.gemTypes,
     locations: database.locations,
-    listings: database.listings.filter((listing) => listing.moderationStatus === "approved"),
+    listings: database.listings.filter(isPublicListing),
     sellers: database.sellers,
     conversations: database.conversations,
     savedSearches: database.savedSearches,
@@ -93,13 +93,13 @@ export async function getLocations() {
 
 export async function getListings(filters: { gemType?: string; location?: string } = {}) {
   if (hasDatabase) {
-    const rows = await db.select().from(listingTable).where(eq(listingTable.moderationStatus, "approved"));
+    const rows = await db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`));
     return rows
       .filter((listing) => (!filters.gemType || listing.gemTypeId === filters.gemType) && (!filters.location || listing.location === filters.location))
       .map(toListing);
   }
 
-  const listings = (await getMutableMarketplaceDatabase()).listings.filter((listing) => listing.moderationStatus === "approved");
+  const listings = (await getMutableMarketplaceDatabase()).listings.filter(isPublicListing);
   return listings.filter((listing) => {
     return (!filters.gemType || listing.gemTypeId === filters.gemType) && (!filters.location || listing.location === filters.location);
   });
@@ -120,7 +120,7 @@ export async function searchListings(params: {
   const offset = (page - 1) * limit;
 
   if (hasDatabase) {
-    const conditions = [eq(listingTable.moderationStatus, "approved")];
+    const conditions = [eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`];
 
     if (params.query) {
       const q = `%${params.query}%`;
@@ -187,7 +187,7 @@ export async function searchListings(params: {
   // Fallback for local JSON database
   const dbData = await getMutableMarketplaceDatabase();
   let matches = dbData.listings.filter((listing) => {
-    if (listing.moderationStatus !== "approved") return false;
+    if (!isPublicListing(listing)) return false;
     
     if (params.query) {
       const q = params.query.toLowerCase();
@@ -338,7 +338,6 @@ export async function updateListingModeration(listingId: string, decision: "appr
         status: "live" as const,
         moderationStatus: "approved" as const,
         publishedAt: now,
-        expiresAt: new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000),
         updatedAt: now
       }
     : {
@@ -362,7 +361,6 @@ export async function updateListingModeration(listingId: string, decision: "appr
     listing.status = "live";
     listing.moderationStatus = "approved";
     listing.publishedAt = now.toISOString();
-    listing.expiresAt = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString();
   } else {
     listing.status = "rejected";
     listing.moderationStatus = "rejected";
@@ -371,6 +369,10 @@ export async function updateListingModeration(listingId: string, decision: "appr
     listing.expiresAt = undefined;
   }
   return listing;
+}
+
+function isPublicListing(listing: Listing) {
+  return listing.moderationStatus === "approved" && (!listing.expiresAt || listing.expiresAt > new Date().toISOString());
 }
 
 export async function getLiveListings() {

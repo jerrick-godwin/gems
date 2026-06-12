@@ -4,9 +4,12 @@ import type {
   Conversation,
   GemType,
   Listing,
+  ListingSubscription,
+  ListingSubscriptionPlanId,
   MarketplaceContent,
   Order,
   OrderStatus,
+  PaymentIntent,
   PromotionCampaign,
   Report,
   SavedSearch,
@@ -41,6 +44,7 @@ export interface AdminModerationSnapshot {
   listings: Listing[];
   liveListings: Listing[];
   orders: Order[];
+  payments: PaymentIntent[];
   reportedListings: Listing[];
   reports: Report[];
   users: User[];
@@ -123,6 +127,14 @@ export class GemsApiClient {
     return this.authJson(`/users/me/listings/${listingId}`, { method: "PATCH", body: JSON.stringify(updates) });
   }
 
+  async createListingPaymentIntent(listingId: string, request: { planId: ListingSubscriptionPlanId; photoCount: number; acceptedPolicies: boolean }): Promise<PaymentIntent> {
+    return this.authJson(`/listings/${listingId}/payment-intents`, { method: "POST", body: JSON.stringify(request) });
+  }
+
+  async cancelListingSubscription(subscriptionId: string): Promise<ListingSubscription> {
+    return this.authJson(`/listing-subscriptions/${subscriptionId}/cancel`, { method: "PATCH" });
+  }
+
   async cart(): Promise<Cart> {
     return this.authJson("/cart");
   }
@@ -193,16 +205,17 @@ export class GemsAdminApiClient {
   }
 
   async moderationSnapshot(token: string): Promise<AdminModerationSnapshot> {
-    const [listings, reports, liveListings, orders, reportedListings, users, sellers] = await Promise.all([
+    const [listings, reports, liveListings, orders, payments, reportedListings, users, sellers] = await Promise.all([
       this.moderationListings(token),
       this.reports(token),
       this.liveListings(token),
       this.orders(token),
+      this.payments(token),
       this.reportedListings(token),
       this.users(token),
       this.sellers(token)
     ]);
-    return { listings, reports, liveListings, orders, reportedListings, users, sellers };
+    return { listings, reports, liveListings, orders, payments, reportedListings, users, sellers };
   }
 
   async users(token: string): Promise<User[]> {
@@ -281,6 +294,14 @@ export class GemsAdminApiClient {
     });
     if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load orders");
     return response.json() as Promise<Order[]>;
+  }
+
+  async payments(token: string): Promise<PaymentIntent[]> {
+    const response = await fetch(`${this.baseUrl}/admin/payments`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load payments");
+    return response.json() as Promise<PaymentIntent[]>;
   }
 
   async updateOrderStatus(token: string, orderId: string, status: OrderStatus): Promise<Order> {

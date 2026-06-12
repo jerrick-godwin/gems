@@ -2,7 +2,7 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, type GemType, type Listing, type Treatment, type UserDashboard } from "@gems/schemas";
+import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type Treatment, type UserDashboard } from "@gems/schemas";
 
 export function MyListingsView({
   dashboard,
@@ -17,6 +17,7 @@ export function MyListingsView({
 }) {
   const listings = dashboard?.sellerListings ?? [];
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const getStatusLabel = (listing: Listing) => {
@@ -33,6 +34,18 @@ export function MyListingsView({
       return { label: "Closed", color: "var(--sage)", bg: "var(--line-subtle)" };
     }
     return { label: listing.status.replace("_", " "), color: "var(--ink)", bg: "var(--line-subtle)" };
+  };
+
+  const handleCancelRenewal = async (subscriptionId: string) => {
+    try {
+      setCancellingSubscriptionId(subscriptionId);
+      await api.cancelListingSubscription(subscriptionId);
+      onDashboardChange(await api.dashboard());
+    } catch (error) {
+      alert("Failed to cancel renewal: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setCancellingSubscriptionId(null);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -66,6 +79,8 @@ export function MyListingsView({
               const statusInfo = getStatusLabel(listing);
               const gemTypeName = gemTypes.find((gemType) => gemType.id === listing.gemTypeId)?.name;
               const attributes = getListingAttributes(listing, gemTypeName);
+              const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === listing.id);
+              const plan = subscription ? getListingSubscriptionPlan(subscription.planId) : undefined;
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -88,6 +103,13 @@ export function MyListingsView({
                       ))}
                     </dl>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
+                      {subscription && plan && (
+                        <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)" }}>
+                          <strong>{plan.name} subscription:</strong> {subscription.status.replace("_", " ")}
+                          {subscription.expiresAt ? ` · valid until ${new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(subscription.expiresAt))}` : ""}
+                          {subscription.autoRenew ? " · auto-renew on" : " · auto-renew cancelled"}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
                           {statusInfo.label}
@@ -101,6 +123,15 @@ export function MyListingsView({
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                    {subscription?.autoRenew && (
+                      <button
+                        onClick={() => void handleCancelRenewal(subscription.id)}
+                        disabled={cancellingSubscriptionId === subscription.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: "pointer", fontWeight: 600 }}
+                      >
+                        {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
+                      </button>
+                    )}
                     <button 
                       onClick={() => setConfirmDeleteId(listing.id)}
                       disabled={deletingId === listing.id}

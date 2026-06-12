@@ -1,8 +1,8 @@
-import { BadgeCheck, ClipboardCheck, Flag, PackageCheck } from "lucide-react";
+import { BadgeCheck, ClipboardCheck, CreditCard, Flag, PackageCheck } from "lucide-react";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
+import { formatLkr } from "@gems/schemas";
 import { Metric } from "../../shared/Metric";
 import { ActiveListingRow } from "./ActiveListingRow";
-import { AdminOrderRow } from "./AdminOrderRow";
 import { ReportRow } from "./ReportRow";
 import { ReviewRow } from "./ReviewRow";
 
@@ -22,8 +22,8 @@ export function AdminConsole({
   const pending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
-  const activeOrders = snapshot.orders.filter((order) => order.status !== "closed" && order.status !== "rejected");
-  const pastOrders = snapshot.orders.filter((order) => order.status === "closed" || order.status === "rejected");
+  const successfulPayments = snapshot.payments.filter((payment) => payment.status === "succeeded");
+  const pendingPayments = snapshot.payments.filter((payment) => payment.status === "pending");
   const moderateListing = async (listingId: string, decision: "approve" | "reject", reason?: string) => {
     try {
       const updated = await api.moderateListing(token, listingId, decision, reason);
@@ -49,52 +49,37 @@ export function AdminConsole({
         <Metric icon={ClipboardCheck} label="Queued listings" value={String(pending.length)} accent="var(--gold)" />
         <Metric icon={Flag} label="Open reports" value={String(openReports.length)} accent="var(--danger)" />
         <Metric icon={BadgeCheck} label="Checked certs" value={String(checkedCertificates)} accent="var(--emerald)" />
-        <Metric icon={PackageCheck} label="Active orders" value={String(activeOrders.length)} accent="var(--emerald)" />
+        <Metric icon={PackageCheck} label="Paid subscriptions" value={String(successfulPayments.length)} accent="var(--emerald)" />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 24, marginBottom: 16 }}>
         <section className="data-panel admin-orders-panel" style={{ background: "var(--panel-strong)" }}>
-          <h2>Active Orders</h2>
-          {activeOrders.length === 0 ? (
-            <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontWeight: 500 }}>No active orders.</div>
+          <h2>Listing Subscription Payments</h2>
+          {snapshot.payments.length === 0 ? (
+            <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontWeight: 500 }}>No listing subscription payments yet.</div>
           ) : (
             <div style={{ maxHeight: "750px", overflowY: "auto", paddingRight: "8px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              {activeOrders.map((order) => (
-                <AdminOrderRow
-                  key={order.id}
-                  order={order}
-                  api={api}
-                  token={token}
-                  onUpdate={(updated) => {
-                    setSnapshot({
-                      ...snapshot,
-                      orders: snapshot.orders.map((item) => item.id === updated.id ? updated : item)
-                    });
-                  }}
-                  setLoadError={setLoadError}
-                />
+              {snapshot.payments.map((payment) => (
+                <article className="cart-item-card" key={payment.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, padding: 16, border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--panel)" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <strong style={{ color: "var(--ink)" }}>{payment.quote.plan.name} listing subscription</strong>
+                    <span style={{ color: "var(--muted)", fontWeight: 600 }}>{payment.listingId}</span>
+                    <span style={{ color: "var(--muted)", fontWeight: 600 }}>Policy accepted: {formatDate(payment.policyAcceptedAt)}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                    <strong style={{ color: "var(--emerald)", fontSize: 18 }}>{formatLkr(payment.amountLkr)}</strong>
+                    <span style={{ fontSize: 12, fontWeight: 800, padding: "4px 8px", borderRadius: 999, background: payment.status === "succeeded" ? "var(--emerald-subtle)" : "var(--soft)", color: payment.status === "succeeded" ? "var(--emerald)" : "var(--muted)" }}>{payment.status.replace("_", " ")}</span>
+                  </div>
+                </article>
               ))}
             </div>
           )}
         </section>
-        {pastOrders.length > 0 && (
+        {pendingPayments.length > 0 && (
           <section className="data-panel admin-orders-panel" style={{ background: "var(--panel-strong)" }}>
-            <h2>Past Orders</h2>
-            <div style={{ maxHeight: "750px", overflowY: "auto", paddingRight: "8px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              {pastOrders.map((order) => (
-                <AdminOrderRow
-                  key={order.id}
-                  order={order}
-                  api={api}
-                  token={token}
-                  onUpdate={(updated) => {
-                    setSnapshot({
-                      ...snapshot,
-                      orders: snapshot.orders.map((item) => item.id === updated.id ? updated : item)
-                    });
-                  }}
-                  setLoadError={setLoadError}
-                />
-              ))}
+            <h2>Pending Payments</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontWeight: 700 }}>
+              <CreditCard size={18} />
+              {pendingPayments.length} payment{pendingPayments.length > 1 ? "s" : ""} waiting for Webxpay confirmation.
             </div>
           </section>
         )}
@@ -171,4 +156,8 @@ export function AdminConsole({
       </section>
     </section>
   );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(value));
 }

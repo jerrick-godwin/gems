@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { GemsApiClient, MarketplaceSnapshot } from "@gems/api-client";
-import type { Cart, CertificateStatus, CheckoutRequest, Listing, Order, Report, Treatment, WishlistItem } from "@gems/schemas";
+import type { CertificateStatus, Listing, Report, Treatment, WishlistItem } from "@gems/schemas";
 import type { SortKey, View } from "../../shared/types";
 
 export function useMarketplaceWorkflow({
@@ -9,8 +9,6 @@ export function useMarketplaceWorkflow({
   setView,
   wishlistItems,
   setWishlistItems,
-  setCart,
-  setOrders,
   myReports,
   setMyReports
 }: {
@@ -19,8 +17,6 @@ export function useMarketplaceWorkflow({
   setView: (view: View) => void;
   wishlistItems: WishlistItem[];
   setWishlistItems: (items: WishlistItem[]) => void;
-  setCart: (cart: Cart) => void;
-  setOrders: (updater: (orders: Order[]) => Order[]) => void;
   myReports: Report[];
   setMyReports: (reports: Report[]) => void;
 }) {
@@ -115,25 +111,6 @@ export function useMarketplaceWorkflow({
     setWishlistItems(nextWishlist);
   };
 
-  const addToCart = async (listingId: string, quantity = 1) => {
-    if (!isSignedIn) {
-      setView("login");
-      return;
-    }
-    setCart(await api.addCartItem(listingId, quantity));
-  };
-
-  const checkout = async (request: CheckoutRequest) => {
-    if (!isSignedIn) {
-      setView("login");
-      throw new Error("Please sign in before checkout.");
-    }
-    const order = await api.checkout(request);
-    setOrders((current) => [order, ...current]);
-    setCart(await api.cart());
-    return order;
-  };
-
   const handleReportListing = async (listingId: string, reason: string, notes: string) => {
     await api.reportListing(listingId, reason, notes);
     setMyReports(await api.myReports());
@@ -167,8 +144,6 @@ export function useMarketplaceWorkflow({
     reportedListingIds,
     handleRevealPhone,
     toggleSaved,
-    addToCart,
-    checkout,
     handleReportListing
   };
 }

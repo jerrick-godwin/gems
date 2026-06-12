@@ -83,13 +83,13 @@ export function AdminShell({ admin, handleLogout, theme, setTheme, children }: {
   return (
     <div className="app-shell admin-shell">
       <header className="topbar admin-topbar">
-        <div className="brand" aria-label="Gems Marketplace admin">
+        <div className="brand" aria-label="gemslanka.lk admin">
           <span className="brand-mark">
             <img src="/assets/logo-mark.svg" alt="" />
           </span>
-          <span>
-            Gems
-            <strong>Admin</strong>
+          <span className="brand-wordmark">
+            gemslanka
+            <strong>.lk Admin</strong>
           </span>
         </div>
         <div className="admin-session" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>

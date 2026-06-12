@@ -1,7 +1,7 @@
 import { Camera, Check, CheckCircle2, ChevronRight, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
-import type { ListingMedia, Treatment, UserDashboard } from "@gems/schemas";
+import { formatLkr, listingSubscriptionPlans, quoteListingSubscription, type ListingMedia, type ListingSubscriptionPlanId, type Treatment, type UserDashboard } from "@gems/schemas";
 
 export function PostGem({
   gemTypes,
@@ -17,8 +17,11 @@ export function PostGem({
   const [status, setStatus] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [certificate, setCertificateFile] = useState<File | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<ListingSubscriptionPlanId>("basic");
+  const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const photosInputRef = useRef<HTMLInputElement>(null);
   const certInputRef = useRef<HTMLInputElement>(null);
+  const quote = quoteListingSubscription(selectedPlan, photos.length);
 
   const addPhotos = (files: FileList | null) => {
     if (!files) return;
@@ -35,9 +38,9 @@ export function PostGem({
 
     setPhotos((prev) => {
       const combined = [...prev, ...newFiles];
-      if (combined.length > 5) {
-        setStatus("You can upload a maximum of 5 gem photos.");
-        return combined.slice(0, 5);
+      if (combined.length > 15) {
+        setStatus("You can upload a maximum of 15 gem photos.");
+        return combined.slice(0, 15);
       }
       setStatus(null);
       return combined;
@@ -71,8 +74,12 @@ export function PostGem({
       setStatus("Please add at least one gem photo.");
       return;
     }
+    if (!acceptedPolicies) {
+      setStatus("Please accept the Terms and Conditions and Privacy Policy before payment.");
+      return;
+    }
 
-    setStatus("Submitting listing for moderation...");
+    setStatus("Creating listing draft...");
     try {
       const listing = await api.createListing({
         title: value("post-title"),
@@ -160,11 +167,21 @@ export function PostGem({
         await api.updateMyListing(listing.id, { media: uploadedMedia });
       }
 
+      setStatus("Creating Webxpay payment...");
+      const paymentIntent = await api.createListingPaymentIntent(listing.id, {
+        planId: selectedPlan,
+        photoCount: photos.length,
+        acceptedPolicies
+      });
+
       onDashboardChange(await api.dashboard());
       form.reset();
       handleClear();
-      setStatus("Listing submitted for moderation.");
-      setTimeout(() => setStatus(null), 3000);
+      if (paymentIntent.paymentUrl) {
+        window.location.href = paymentIntent.paymentUrl;
+        return;
+      }
+      setStatus("Payment intent created. Please contact support if you are not redirected to Webxpay.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to submit listing.");
     }
@@ -207,67 +224,32 @@ export function PostGem({
               ))}
             </select>
           </label>
-          <div className="form-grid">
-            <label>
-              Price (LKR)
-              <input placeholder="3250000" id="post-price" inputMode="numeric" required />
-            </label>
-            <label>
-              Location
-              <select defaultValue="" id="post-location" required>
-                <option value="" disabled>
-                  Select location
-                </option>
-                {locations.map((loc) => (
-                  <option value={loc} key={loc}>
-                    {loc}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Carat
-              <input placeholder="3.42" id="post-carat" required />
-            </label>
-            <label>
-              Dimensions
-              <input placeholder="9.2 x 7.1 x 4.8 mm" id="post-dimensions" required />
-            </label>
-            <label>
-              Shape
-              <input placeholder="Oval" id="post-shape" required />
-            </label>
-            <label>
-              Cut
-              <input placeholder="Mixed brilliant" id="post-cut" required />
-            </label>
-            <label>
-              Color
-              <input placeholder="Royal blue" id="post-color" required />
-            </label>
-            <label>
-              Clarity
-              <input placeholder="Eye clean" id="post-clarity" required />
-            </label>
-            <label>
-              Origin
-              <input placeholder="Ratnapura" id="post-origin" required />
-            </label>
-            <label>
-              Treatment
-              <select defaultValue="" id="post-treatment" required>
-                <option value="" disabled>
-                  Select treatment
-                </option>
-                <option value="untreated">Untreated</option>
-                <option value="heated">Heated</option>
-              </select>
-            </label>
-          </div>
           <label>
             Description
             <textarea placeholder="Color, clarity, treatment, inspection notes." id="post-description" required />
           </label>
+
+          <section className="form-section" aria-labelledby="listing-plan-heading">
+            <div className="form-section-header">
+              <h2 id="listing-plan-heading">Listing subscription</h2>
+            </div>
+            <div className="plan-grid">
+              {listingSubscriptionPlans.map((plan) => (
+                <label className={`plan-option ${selectedPlan === plan.id ? "selected" : ""}`} key={plan.id}>
+                  <input type="radio" name="listing-plan" value={plan.id} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} />
+                  <strong>{plan.name}</strong>
+                  <span>{formatLkr(plan.priceLkr)}</span>
+                  <small>{plan.includedPhotos} photos included · {plan.validityMonths} month{plan.validityMonths > 1 ? "s" : ""} validity</small>
+                  <small>Extra photos: {formatLkr(plan.extraPhotoPriceLkr)} each</small>
+                </label>
+              ))}
+            </div>
+            <div className="quote-panel">
+              <span>Payment due</span>
+              <strong>{formatLkr(quote.totalLkr)}</strong>
+              <small>{quote.extraPhotoCount > 0 ? `${quote.extraPhotoCount} extra photo${quote.extraPhotoCount > 1 ? "s" : ""}: ${formatLkr(quote.extraPhotoTotalLkr)}` : "No extra-photo fees"}</small>
+            </div>
+          </section>
 
           {/* ── Media uploads ── */}
           <div className="upload-section">
@@ -382,8 +364,75 @@ export function PostGem({
             )}
           </div>
 
+          <section className="form-section" aria-labelledby="gem-details-heading">
+            <div className="form-section-header">
+              <h2 id="gem-details-heading">Gem details</h2>
+            </div>
+            <div className="form-grid">
+              <label>
+                Price (LKR)
+                <input placeholder="3250000" id="post-price" inputMode="numeric" required />
+              </label>
+              <label>
+                Location
+                <select defaultValue="" id="post-location" required>
+                  <option value="" disabled>
+                    Select location
+                  </option>
+                  {locations.map((loc) => (
+                    <option value={loc} key={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Carat
+                <input placeholder="3.42" id="post-carat" required />
+              </label>
+              <label>
+                Dimensions
+                <input placeholder="9.2 x 7.1 x 4.8 mm" id="post-dimensions" required />
+              </label>
+              <label>
+                Shape
+                <input placeholder="Oval" id="post-shape" required />
+              </label>
+              <label>
+                Cut
+                <input placeholder="Mixed brilliant" id="post-cut" required />
+              </label>
+              <label>
+                Color
+                <input placeholder="Royal blue" id="post-color" required />
+              </label>
+              <label>
+                Clarity
+                <input placeholder="Eye clean" id="post-clarity" required />
+              </label>
+              <label>
+                Origin
+                <input placeholder="Ratnapura" id="post-origin" required />
+              </label>
+              <label>
+                Treatment
+                <select defaultValue="" id="post-treatment" required>
+                  <option value="" disabled>
+                    Select treatment
+                  </option>
+                  <option value="untreated">Untreated</option>
+                  <option value="heated">Heated</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
           {/* ── Actions ── */}
-          {status && status !== "Listing submitted for moderation." && status !== "Submitting listing for moderation..." && status !== "Uploading media..." && (
+          <label className="policy-acceptance">
+            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} />
+            <span>I accept the Terms and Conditions and Privacy Policy, including no refunds and automatic renewal unless cancelled.</span>
+          </label>
+          {status && !["Listing submitted for moderation.", "Creating listing draft...", "Uploading media...", "Creating Webxpay payment..."].includes(status) && (
             <p style={{ color: "var(--danger)", fontWeight: 600, marginTop: 16, marginBottom: 16, textAlign: "center" }}>
               {status}
             </p>
@@ -393,15 +442,15 @@ export function PostGem({
               type="submit" 
               className="primary-action" 
               id="submit-listing"
-              disabled={status === "Submitting listing for moderation..." || status === "Uploading media..."}
+              disabled={status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating Webxpay payment..."}
             >
               {status === "Listing submitted for moderation." ? (
                 <Check size={18} strokeWidth={2.5} />
-              ) : status === "Submitting listing for moderation..." || status === "Uploading media..." ? (
+              ) : status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating Webxpay payment..." ? (
                 status
               ) : (
                 <>
-                  Submit for moderation
+                  Pay and submit for verification
                   <ChevronRight size={17} strokeWidth={2.2} />
                 </>
               )}

@@ -13,14 +13,21 @@
       "idx": 1,
       "version": "7",
       "when": 1780473769211,
-      "tag": "0001_create_locations",
+      "tag": "0001_azure_user_accounts",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
       "when": 1780473860776,
-      "tag": "0002_safe_owl",
+      "tag": "0002_checkout_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781187524436,
+      "tag": "0003_listing_subscriptions",
       "breakpoints": true
     }
   ]

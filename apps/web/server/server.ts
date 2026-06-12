@@ -2,7 +2,6 @@ import "./env.js";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { extname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ViteDevServer } from "vite";
@@ -30,22 +29,20 @@ import {
 } from "./marketplace-repository.js";
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
-  addCartItem,
   addWishlistItem,
-  createCheckoutReservation,
+  createListingPaymentIntent,
   createListing,
   createStorageUpload,
-  getCart,
+  cancelListingSubscription,
+  confirmPaymentIntent,
+  getAdminPaymentIntents,
   getAdminOrders,
   getDashboard,
-  getOrders,
   getOrCreateUserFromClaims,
   getSettings,
   getUserProfile,
   getWishlist,
-  removeCartItem,
   removeWishlistItem,
-  updateCartItem,
   updateOrderStatus,
   updateSettings,
   updateUserProfile,
@@ -54,6 +51,7 @@ import {
   updateUserListing
 } from "./user-repository.js";
 import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
+import { verifyPaymentSignature } from "./webxpay.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -200,6 +198,11 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    if (request.method === "GET" && path === "/api/v1/admin/payments") {
+      sendJson(response, 200, await getAdminPaymentIntents());
+      return true;
+    }
+
     const adminOrderStatusMatch = path.match(/^\/api\/v1\/admin\/orders\/([^/]+)\/status$/);
     if (request.method === "PATCH" && adminOrderStatusMatch) {
       const body = parseObject(await readJsonBody(request).catch(() => ({})));
@@ -274,7 +277,48 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
   }
 
-  if (path.startsWith("/api/v1/users") || path.startsWith("/api/v1/cart") || path.startsWith("/api/v1/checkout") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/wishlist") || path.startsWith("/api/v1/storage")) {
+  const paymentReturnMatch = path.match(/^\/api\/v1\/payments\/([^/]+)\/return$/);
+  if (request.method === "GET" && paymentReturnMatch) {
+    const status = url.searchParams.get("status") === "succeeded" ? "succeeded" : "failed";
+    const signature = url.searchParams.get("signature");
+    if (!verifyPaymentSignature(paymentReturnMatch[1], status, signature)) {
+      sendJson(response, 400, { error: "Invalid payment signature" });
+      return true;
+    }
+    await confirmPaymentIntent(paymentReturnMatch[1], status, url.searchParams.get("reference") ?? undefined);
+    response.writeHead(302, { location: "/?payment=success" });
+    response.end();
+    return true;
+  }
+
+  const paymentCancelMatch = path.match(/^\/api\/v1\/payments\/([^/]+)\/cancel$/);
+  if (request.method === "GET" && paymentCancelMatch) {
+    await confirmPaymentIntent(paymentCancelMatch[1], "cancelled");
+    response.writeHead(302, { location: "/?payment=cancelled" });
+    response.end();
+    return true;
+  }
+
+  if (request.method === "POST" && path === "/api/v1/payments/webxpay/callback") {
+    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const intentId = stringBody(body.order_id || body.intent_id || body.payment_id);
+    const status = stringBody(body.status).toLowerCase() === "succeeded" || stringBody(body.status).toLowerCase() === "success" ? "succeeded" : "failed";
+    const signature = stringBody(body.signature);
+    if (!intentId || !verifyPaymentSignature(intentId, status, signature)) {
+      sendJson(response, 400, { error: "Invalid payment callback" });
+      return true;
+    }
+    const intent = await confirmPaymentIntent(intentId, status, stringBody(body.reference || body.transaction_id) || undefined);
+    sendJson(response, intent ? 200 : 404, intent ?? { error: "Payment intent not found" });
+    return true;
+  }
+
+  if (path.startsWith("/api/v1/cart") || path.startsWith("/api/v1/checkout")) {
+    sendJson(response, 410, { error: "Gem purchasing is not available on gemslanka.lk. The platform supports listing subscriptions only." });
+    return true;
+  }
+
+  if (path.startsWith("/api/v1/users") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/wishlist") || path.startsWith("/api/v1/storage") || path.startsWith("/api/v1/listing-subscriptions")) {
     const user = await authenticateUser(request);
     if (!user) {
       sendJson(response, 401, { error: "User authorization required" });
@@ -313,6 +357,13 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    const cancelSubscriptionMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/cancel$/);
+    if (request.method === "PATCH" && cancelSubscriptionMatch) {
+      const subscription = await cancelListingSubscription(user.id, cancelSubscriptionMatch[1]);
+      sendJson(response, subscription ? 200 : 404, subscription ?? { error: "Subscription not found" });
+      return true;
+    }
+
     const myListingMatch = path.match(/^\/api\/v1\/users\/me\/listings\/([^/]+)$/);
     if (myListingMatch && request.method === "DELETE") {
       const listing = await removeUserListing(user.id, myListingMatch[1]);
@@ -346,61 +397,8 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
-    if (request.method === "GET" && path === "/api/v1/cart") {
-      sendJson(response, 200, await getCart(user.id));
-      return true;
-    }
-
-    if (request.method === "POST" && path === "/api/v1/cart/items") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
-      const listingId = stringBody(body.listingId);
-      if (!listingId) {
-        sendJson(response, 400, { error: "listingId is required" });
-        return true;
-      }
-      const listing = await getListing(listingId);
-      if (!listing || listing.moderationStatus !== "approved") {
-        sendJson(response, 404, { error: "Listing not found" });
-        return true;
-      }
-      sendJson(response, 201, await addCartItem(user.id, listingId, numberBody(body.quantity, 1)));
-      return true;
-    }
-
-    const cartItemMatch = path.match(/^\/api\/v1\/cart\/items\/([^/]+)$/);
-    if (cartItemMatch && request.method === "PATCH") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
-      sendJson(response, 200, await updateCartItem(user.id, cartItemMatch[1], numberBody(body.quantity, 1)));
-      return true;
-    }
-
-    if (cartItemMatch && request.method === "DELETE") {
-      sendJson(response, 200, await removeCartItem(user.id, cartItemMatch[1]));
-      return true;
-    }
-
     if (request.method === "GET" && path === "/api/v1/orders") {
-      sendJson(response, 200, await getOrders(user.id));
-      return true;
-    }
-
-    if (request.method === "POST" && path === "/api/v1/checkout") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
-      const cart = await getCart(user.id);
-      if (!cart.items.some((item) => item.listing?.moderationStatus === "approved")) {
-        sendJson(response, 400, { error: "Cart is empty" });
-        return true;
-      }
-      try {
-        sendJson(response, 201, await createCheckoutReservation(user.id, {
-          billingDetails: parseObject(body.billingDetails) as any,
-          deliveryDetails: parseObject(body.deliveryDetails) as any,
-          paymentMethod: body.paymentMethod,
-          customerNote: typeof body.customerNote === "string" ? body.customerNote : undefined
-        }));
-      } catch (error) {
-        sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to place order" });
-      }
+      sendJson(response, 200, []);
       return true;
     }
 
@@ -480,7 +478,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const listingMatch = path.match(/^\/api\/v1\/listings\/([^/]+)$/);
   if (request.method === "GET" && listingMatch) {
     const listing = await getListing(listingMatch[1]);
-    const publicListing = listing?.moderationStatus === "approved" ? listing : undefined;
+    const publicListing = listing?.moderationStatus === "approved" && (!listing.expiresAt || listing.expiresAt > new Date().toISOString()) ? listing : undefined;
     sendJson(response, publicListing ? 200 : 404, publicListing ?? { error: "Listing not found" });
     return true;
   }
@@ -488,7 +486,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const revealMatch = path.match(/^\/api\/v1\/listings\/([^/]+)\/reveal-phone$/);
   if (request.method === "POST" && revealMatch) {
     const listing = await getListing(revealMatch[1]);
-    if (!listing || listing.moderationStatus !== "approved") {
+    if (!listing || listing.moderationStatus !== "approved" || (listing.expiresAt && listing.expiresAt <= new Date().toISOString())) {
       sendJson(response, 404, { error: "Listing not found" });
       return true;
     }
@@ -523,6 +521,27 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
     const body = await readJsonBody(request).catch(() => ({}));
     sendJson(response, 201, await createListing(user.id, parseObject(body)));
+    return true;
+  }
+
+  const listingPaymentMatch = path.match(/^\/api\/v1\/listings\/([^/]+)\/payment-intents$/);
+  if (request.method === "POST" && listingPaymentMatch) {
+    const user = await authenticateUser(request);
+    if (!user) {
+      sendJson(response, 401, { error: "User authorization required" });
+      return true;
+    }
+    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    try {
+      const intent = await createListingPaymentIntent(user.id, listingPaymentMatch[1], {
+        planId: stringBody(body.planId),
+        photoCount: numberBody(body.photoCount, 0),
+        acceptedPolicies: body.acceptedPolicies === true
+      });
+      sendJson(response, 201, intent);
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to create payment intent" });
+    }
     return true;
   }
 

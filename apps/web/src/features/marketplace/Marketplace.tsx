@@ -1,4 +1,4 @@
-import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, EyeOff, Filter, Flag, Heart, MapPin, Minus, Phone, Plus, Search, ShoppingCart, SlidersHorizontal, Star, X } from "lucide-react";
+import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, EyeOff, Filter, Flag, Heart, MapPin, Phone, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
@@ -35,7 +35,6 @@ export interface MarketplaceProps {
   revealPhone: (listingId: string) => void;
   savedIds: string[];
   toggleSaved: (id: string) => void;
-  addToCart: (id: string, quantity: number) => void;
   isSignedIn: boolean;
   reportedListingIds: string[];
   onReport: (listingId: string, reason: string, notes: string) => Promise<void>;
@@ -150,7 +149,6 @@ export function Marketplace(props: MarketplaceProps) {
               sellers={props.sellers}
               revealedPhone={props.revealedPhone}
               onReveal={() => props.revealPhone(props.selectedListing!.id)}
-              onAddCart={(quantity) => props.addToCart(props.selectedListing!.id, quantity)}
               isSignedIn={props.isSignedIn}
               isReported={props.reportedListingIds.includes(props.selectedListing.id)}
               onReport={props.onReport}
@@ -196,11 +194,9 @@ function ListingCard({ listing, gemTypes, sellers, selected, saved, onSelect, on
   );
 }
 
-function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, onAddCart, isSignedIn, isReported, onReport }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; revealedPhone?: string; onReveal: () => void; onAddCart: (qty: number) => void; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
+function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, isSignedIn, isReported, onReport }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; revealedPhone?: string; onReveal: () => void; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
-  const [qty, setQty] = useState(1);
-  const [added, setAdded] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
   const [reported, setReported] = useState(false);
@@ -215,12 +211,6 @@ function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, on
     const interval = setInterval(() => setCurrentImageIndex((prev) => (prev + 1) % images.length), 5000);
     return () => clearInterval(interval);
   }, [images.length]);
-
-  const handleAddCart = () => {
-    onAddCart(qty);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 3000);
-  };
 
   const handleReportClick = () => {
     if (!isSignedIn) {
@@ -269,8 +259,6 @@ function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, on
         </div>
         <div className="seller-card"><div className="avatar">{seller?.displayName.slice(0, 1)}</div><div><strong style={{ fontWeight: 700 }}>{seller?.displayName}</strong><span style={{ display: "flex", alignItems: "center", gap: 4 }}>{sellerProfileLabel(seller?.verificationStatus)} · <MapPin size={12} /> {listing.location}</span></div></div>
         <div className="cart-action-row">
-          <div className="qty-stepper"><button type="button" onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease quantity"><Minus size={16} strokeWidth={2.5} /></button><span>{qty}</span><button type="button" onClick={() => setQty(qty + 1)} aria-label="Increase quantity"><Plus size={16} strokeWidth={2.5} /></button></div>
-          <button className="primary-action btn-add-cart" onClick={handleAddCart} style={{ flex: "1 1 180px" }}>{added ? <Check size={18} /> : <ShoppingCart size={18} />}{added ? "" : "Add to Cart"}</button>
           {revealedPhone && !phoneHidden ? <div className="phone-action-group"><button className="primary-action btn-blue phone-number-action" style={{ cursor: "default" }}><Phone size={18} />{revealedPhone}</button><button className="primary-action btn-blue phone-hide-action" onClick={() => setPhoneHidden(true)} aria-label="Hide phone number"><EyeOff size={18} /></button></div> : <button className="primary-action btn-blue" onClick={() => { if (revealedPhone) setPhoneHidden(false); else onReveal(); }} style={{ flex: "1 1 180px" }}><Phone size={18} />{isSignedIn ? "Show Phone Number" : "Sign in to view"}</button>}
           {isReported || reported ? <div className="primary-action" aria-label="Listing already reported" style={{ flex: "1 1 120px", background: "var(--line-subtle)", color: "var(--sage)", cursor: "default" }}><Check size={16} strokeWidth={2.5} />Reported</div> : <button className="primary-action btn-red" id="report-listing" onClick={handleReportClick} aria-label="Report listing" style={{ flex: "1 1 120px" }}><Flag size={16} strokeWidth={2} />Report</button>}
         </div>
