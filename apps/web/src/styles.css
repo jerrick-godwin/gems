@@ -215,15 +215,18 @@ select {
   border-top: 1px solid var(--line);
 }
 
-.site-footer button {
+.site-footer button,
+.site-footer a {
   border: 0;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   font-weight: 700;
+  text-decoration: none;
 }
 
-.site-footer button:hover {
+.site-footer button:hover,
+.site-footer a:hover {
   color: var(--emerald);
 }
 
@@ -343,6 +346,42 @@ select {
   font-size: 15px;
   font-weight: 550;
   line-height: 1.65;
+}
+
+.contact-disclosure {
+  gap: 24px;
+}
+
+.contact-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.contact-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(var(--bg-rgb), 0.42);
+}
+
+.contact-detail span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.contact-detail strong {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .admin-topbar {
@@ -3538,6 +3577,7 @@ main {
   }
 
   .contact-row,
+  .contact-detail-grid,
   .upload-strip,
   .checkout-grid,
   .invoice-meta {

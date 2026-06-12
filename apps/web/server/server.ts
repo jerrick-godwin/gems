@@ -74,7 +74,18 @@ const mimeTypes: Record<string, string> = {
   ".webp": "image/webp"
 };
 
-const policyPages: Record<string, { title: string; effective: string; body: string[] }> = {
+const policyPages: Record<string, { title: string; effective: string; lede?: string; body: string[] }> = {
+  "/contact-us": {
+    title: "Contact Us",
+    effective: "Merchant details updated June 11, 2026",
+    lede: "Merchant and licence details for gemslanka.lk.",
+    body: [
+      "Merchant name: KRISTIANA MAGRET GEM & JEWELLARY.",
+      "Email: info@gemslanka.lk.",
+      "Contact address: No 31/34 Grandpass Road, Colombo 14, Sri Lanka.",
+      "Licence number: 20266DL39394."
+    ]
+  },
   "/terms-and-conditions": {
     title: "Terms and Conditions",
     effective: "Effective June 11, 2026",
@@ -138,7 +149,7 @@ function sendPolicyPage(response: ServerResponse, page: typeof policyPages[strin
 <body>
   <main>
     <h1>${escapeHtml(page.title)}</h1>
-    <p class="effective">${escapeHtml(page.effective)}. These policies apply to gemslanka.lk listing services.</p>
+    <p class="effective">${escapeHtml(page.lede ?? `${page.effective}. These policies apply to gemslanka.lk listing services.`)}</p>
     <section>${page.body.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}</section>
   </main>
 </body>

@@ -1,3 +1,29 @@
+const merchantDisclosure = {
+  merchantName: "KRISTIANA MAGRET GEM & JEWELLARY",
+  email: "info@gemslanka.lk",
+  address: "No 31/34 Grandpass Road, Colombo 14, Sri Lanka",
+  licenceNumber: "20266DL39394"
+};
+
+export function ContactUs() {
+  return (
+    <section className="policy-page">
+      <div className="section-heading">
+        <h1>Contact Us</h1>
+        <p>Merchant and licence details for gemslanka.lk.</p>
+      </div>
+      <div className="data-panel policy-content contact-disclosure">
+        <div className="contact-detail-grid">
+          <ContactDetail label="Merchant name" value={merchantDisclosure.merchantName} />
+          <ContactDetail label="Email" value={merchantDisclosure.email} />
+          <ContactDetail label="Contact address" value={merchantDisclosure.address} />
+          <ContactDetail label="Licence number" value={merchantDisclosure.licenceNumber} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function TermsAndConditions() {
   return (
     <section className="policy-page">
@@ -60,6 +86,15 @@ export function PrivacyPolicy() {
         </PolicySection>
       </div>
     </section>
+  );
+}
+
+function ContactDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="contact-detail">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
