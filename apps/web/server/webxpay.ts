@@ -23,6 +23,9 @@ export function createWebxpayPaymentUrl(intent: PaymentIntent) {
   const returnUrl = `${publicSiteUrl}/api/v1/payments/${intent.id}/return`;
   const cancelUrl = `${publicSiteUrl}/api/v1/payments/${intent.id}/cancel`;
   const callbackUrl = `${publicSiteUrl}/api/v1/payments/webxpay/callback`;
+  const termsUrl = process.env.WEBXPAY_TERMS_URL || `${publicSiteUrl}/terms-and-conditions`;
+  const privacyUrl = process.env.WEBXPAY_PRIVACY_URL || `${publicSiteUrl}/privacy-policy`;
+  const refundUrl = process.env.WEBXPAY_REFUND_POLICY_URL || `${publicSiteUrl}/refund-policy`;
   const endpoint = process.env.WEBXPAY_ENDPOINT?.trim();
 
   if (!endpoint) {
@@ -38,7 +41,16 @@ export function createWebxpayPaymentUrl(intent: PaymentIntent) {
     description: `${intent.quote.plan.name} listing subscription for gemslanka.lk`,
     return_url: returnUrl,
     cancel_url: cancelUrl,
-    callback_url: callbackUrl
+    callback_url: callbackUrl,
+    terms_url: termsUrl,
+    terms_conditions_url: termsUrl,
+    terms_and_conditions_url: termsUrl,
+    privacy_url: privacyUrl,
+    privacy_policy_url: privacyUrl,
+    refund_url: refundUrl,
+    refund_policy_url: refundUrl,
+    cancellation_policy_url: refundUrl,
+    refund_policy: "No refunds. Listing subscriptions, renewals, and extra-photo fees are non-refundable."
   });
 
   return `${endpoint}${endpoint.includes("?") ? "&" : "?"}${params.toString()}`;

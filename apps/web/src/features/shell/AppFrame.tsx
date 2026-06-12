@@ -110,6 +110,13 @@ function ProfileMenu({
             <Settings size={16} /> Profile
           </button>
           <button
+            className={`menu-item ${view === "contact" ? "active" : ""}`}
+            onClick={() => { setView("contact"); setIsOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: view === "contact" ? "var(--emerald-subtle)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: view === "contact" ? "var(--emerald)" : "var(--ink)", width: "100%", justifyContent: "flex-start", fontSize: 14, textAlign: "left", fontWeight: view === "contact" ? 600 : 500 }}
+          >
+            Contact Us
+          </button>
+          <button
             className={`menu-item ${view === "terms" ? "active" : ""}`}
             onClick={() => { setView("terms"); setIsOpen(false); }}
             style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: view === "terms" ? "var(--emerald-subtle)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: view === "terms" ? "var(--emerald)" : "var(--ink)", width: "100%", justifyContent: "flex-start", fontSize: 14, textAlign: "left", fontWeight: view === "terms" ? 600 : 500 }}
@@ -230,8 +237,9 @@ export function AppFrame({
       </header>
       <main>{children}</main>
       <footer className="site-footer">
-        <button type="button" onClick={() => setView("terms")}>Terms and Conditions</button>
-        <button type="button" onClick={() => setView("privacy")}>Privacy Policy</button>
+        <a href="/contact-us" onClick={(event) => { event.preventDefault(); setView("contact"); }}>Contact Us</a>
+        <a href="/terms-and-conditions" onClick={(event) => { event.preventDefault(); setView("terms"); }}>Terms and Conditions</a>
+        <a href="/privacy-policy" onClick={(event) => { event.preventDefault(); setView("privacy"); }}>Privacy Policy</a>
       </footer>
     </div>
   );
