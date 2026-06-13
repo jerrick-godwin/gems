@@ -89,6 +89,28 @@ export function PrivacyPolicy() {
   );
 }
 
+export function RefundPolicy() {
+  return (
+    <section className="policy-page">
+      <div className="section-heading">
+        <h1>Refund Policy</h1>
+        <p>Effective June 11, 2026. This policy applies to gemslanka.lk listing subscriptions, renewals, and extra-photo fees.</p>
+      </div>
+      <div className="data-panel policy-content">
+        <PolicySection title="No refunds">
+          No refunds. gemslanka.lk listing subscriptions, renewals, and extra-photo fees are non-refundable.
+        </PolicySection>
+        <PolicySection title="Covered situations">
+          This no-refund policy applies to rejected listings, cancelled renewals, expired listings, duplicate submissions, seller withdrawal, and any buyer/seller transaction outcome outside the platform.
+        </PolicySection>
+        <PolicySection title="Auto-renewal cancellation">
+          Cancelling auto-renewal stops future renewal charges only. It does not refund the current listing validity period or any previously paid fees.
+        </PolicySection>
+      </div>
+    </section>
+  );
+}
+
 function ContactDetail({ label, value }: { label: string; value: string }) {
   return (
     <div className="contact-detail">

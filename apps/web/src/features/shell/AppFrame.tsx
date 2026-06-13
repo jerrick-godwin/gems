@@ -130,6 +130,13 @@ function ProfileMenu({
           >
             Privacy Policy
           </button>
+          <button
+            className={`menu-item ${view === "refund" ? "active" : ""}`}
+            onClick={() => { setView("refund"); setIsOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: view === "refund" ? "var(--emerald-subtle)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: view === "refund" ? "var(--emerald)" : "var(--ink)", width: "100%", justifyContent: "flex-start", fontSize: 14, textAlign: "left", fontWeight: view === "refund" ? 600 : 500 }}
+          >
+            Refund Policy
+          </button>
           <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", gap: 8 }}>
             <span style={{ fontSize: 13, color: "var(--sage)", fontWeight: 500 }}>Theme</span>
@@ -240,6 +247,7 @@ export function AppFrame({
         <a href="/contact-us" onClick={(event) => { event.preventDefault(); setView("contact"); }}>Contact Us</a>
         <a href="/terms-and-conditions" onClick={(event) => { event.preventDefault(); setView("terms"); }}>Terms and Conditions</a>
         <a href="/privacy-policy" onClick={(event) => { event.preventDefault(); setView("privacy"); }}>Privacy Policy</a>
+        <a href="/refund-policy" onClick={(event) => { event.preventDefault(); setView("refund"); }}>Refund Policy</a>
       </footer>
     </div>
   );

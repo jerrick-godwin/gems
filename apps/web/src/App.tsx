@@ -14,7 +14,7 @@ import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
 import { protectedViews, type View } from "./shared/types";
-import { ContactUs, PrivacyPolicy, TermsAndConditions } from "./features/account/PolicyPages";
+import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 
 function App() {
   const [user, setUser] = useState<MarketplaceAuthUser | null>(null);
@@ -60,8 +60,14 @@ function App() {
     user
   };
 
-  if (view === "terms" || view === "privacy" || view === "contact") {
-    const policyView = view === "terms" ? <TermsAndConditions /> : view === "privacy" ? <PrivacyPolicy /> : <ContactUs />;
+  if (view === "terms" || view === "privacy" || view === "refund" || view === "contact") {
+    const policyView = view === "terms"
+      ? <TermsAndConditions />
+      : view === "privacy"
+        ? <PrivacyPolicy />
+        : view === "refund"
+          ? <RefundPolicy />
+          : <ContactUs />;
 
     return (
       <AppFrame {...frameProps}>

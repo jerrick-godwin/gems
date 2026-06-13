@@ -119,6 +119,8 @@ const policyPages: Record<string, { title: string; effective: string; lede?: str
   }
 };
 
+const publicPagePaths = ["/", ...Object.keys(policyPages)];
+
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -144,6 +146,8 @@ function sendPolicyPage(response: ServerResponse, page: typeof policyPages[strin
     .effective { margin: 0 0 28px; color: #5f6f6d; font-size: 1.1rem; }
     section { display: grid; gap: 16px; padding: 28px; background: #fff; border: 1px solid #d9e1df; border-radius: 12px; }
     p { margin: 0; font-size: 1rem; }
+    nav { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 28px; }
+    a { color: #08715c; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -151,9 +155,53 @@ function sendPolicyPage(response: ServerResponse, page: typeof policyPages[strin
     <h1>${escapeHtml(page.title)}</h1>
     <p class="effective">${escapeHtml(page.lede ?? `${page.effective}. These policies apply to gemslanka.lk listing services.`)}</p>
     <section>${page.body.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}</section>
+    <nav aria-label="Legal pages">
+      <a href="/contact-us">Contact Us</a>
+      <a href="/terms-and-conditions">Terms and Conditions</a>
+      <a href="/privacy-policy">Privacy Policy</a>
+      <a href="/refund-policy">Refund Policy</a>
+    </nav>
   </main>
 </body>
 </html>`);
+}
+
+function getPublicSiteUrl(request: IncomingMessage) {
+  const configuredUrl = process.env.PUBLIC_SITE_URL?.replace(/\/+$/, "");
+  if (configuredUrl) return configuredUrl;
+
+  const hostHeader = request.headers["x-forwarded-host"] ?? request.headers.host ?? "localhost";
+  const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+  const forwardedProto = request.headers["x-forwarded-proto"];
+  const protocolHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  const protocol = protocolHeader ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+  return `${protocol}://${host}`;
+}
+
+function sendRobotsTxt(request: IncomingMessage, response: ServerResponse) {
+  const siteUrl = getPublicSiteUrl(request);
+  response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+  response.end(`User-agent: *
+Allow: /
+
+Sitemap: ${siteUrl}/sitemap.xml
+`);
+}
+
+function sendSitemapXml(request: IncomingMessage, response: ServerResponse) {
+  const siteUrl = getPublicSiteUrl(request);
+  const today = new Date().toISOString().slice(0, 10);
+  const urls = publicPagePaths.map((path) => `  <url>
+    <loc>${escapeHtml(`${siteUrl}${path}`)}</loc>
+    <lastmod>${today}</lastmod>
+  </url>`).join("\n");
+
+  response.writeHead(200, { "content-type": "application/xml; charset=utf-8" });
+  response.end(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`);
 }
 
 function escapeHtml(value: string) {
@@ -713,6 +761,16 @@ async function main() {
 async function handleRequest(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    if (request.method === "GET" && url.pathname === "/robots.txt") {
+      sendRobotsTxt(request, response);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/sitemap.xml") {
+      sendSitemapXml(request, response);
+      return;
+    }
+
     const policyPage = policyPages[url.pathname];
     if (request.method === "GET" && policyPage) {
       sendPolicyPage(response, policyPage);
