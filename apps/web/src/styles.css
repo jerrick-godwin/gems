@@ -1259,46 +1259,6 @@ main {
 }
 
 
-/* ── Save button ──────────────────────────────────────────── */
-
-.save-button {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-full);
-  background: rgba(var(--bg-rgb), 0.74);
-  backdrop-filter: blur(8px);
-  color: var(--muted);
-  transition:
-    color var(--duration-fast) ease,
-    background var(--duration-fast) ease,
-    border-color var(--duration-fast) ease,
-    transform var(--duration-fast) var(--ease-spring);
-}
-
-.save-button svg {
-  margin-top: 1px;
-}
-
-.save-button:hover {
-  transform: scale(1.1) translateY(0) !important;
-}
-
-.save-button.saved {
-  color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.1);
-  animation: scale-pop 300ms var(--ease-spring);
-}
-
-
 /* ── Detail rail ──────────────────────────────────────────── */
 
 .detail-rail {
@@ -3845,11 +3805,6 @@ main {
   .listing-media,
   .listing-card img {
     min-height: 154px;
-  }
-
-  .save-button {
-    top: 12px;
-    right: 12px;
   }
 
   .spec-grid,

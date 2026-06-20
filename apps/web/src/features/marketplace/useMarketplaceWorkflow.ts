@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { GemsApiClient, MarketplaceSnapshot } from "@gems/api-client";
-import type { CertificateStatus, Listing, Report, Treatment, WishlistItem } from "@gems/schemas";
+import type { CertificateStatus, Listing, Report, Treatment } from "@gems/schemas";
 import type { SortKey, View } from "../../shared/types";
 
 export function useMarketplaceWorkflow({
   api,
   isSignedIn,
   setView,
-  wishlistItems,
-  setWishlistItems,
   myReports,
   setMyReports
 }: {
   api: GemsApiClient;
   isSignedIn: boolean;
   setView: (view: View) => void;
-  wishlistItems: WishlistItem[];
-  setWishlistItems: (items: WishlistItem[]) => void;
   myReports: Report[];
   setMyReports: (reports: Report[]) => void;
 }) {
@@ -34,7 +30,6 @@ export function useMarketplaceWorkflow({
   const [revealedPhones, setRevealedPhones] = useState<Record<string, string>>({});
   const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
 
-  const savedIds = useMemo(() => wishlistItems.map((item) => item.listingId), [wishlistItems]);
   const reportedListingIds = useMemo(() => myReports.map((report) => report.listingId), [myReports]);
 
   useEffect(() => {
@@ -102,15 +97,6 @@ export function useMarketplaceWorkflow({
     setRevealedPhones((current) => ({ ...current, [listingId]: result.phone }));
   };
 
-  const toggleSaved = async (listingId: string) => {
-    if (!isSignedIn) {
-      setView("login");
-      return;
-    }
-    const nextWishlist = savedIds.includes(listingId) ? await api.removeWishlistItem(listingId) : await api.addWishlistItem(listingId);
-    setWishlistItems(nextWishlist);
-  };
-
   const handleReportListing = async (listingId: string, reason: string, notes: string) => {
     await api.reportListing(listingId, reason, notes);
     setMyReports(await api.myReports());
@@ -140,10 +126,8 @@ export function useMarketplaceWorkflow({
     filteredListings,
     approvedListings,
     selectedListing,
-    savedIds,
     reportedListingIds,
     handleRevealPhone,
-    toggleSaved,
     handleReportListing
   };
 }

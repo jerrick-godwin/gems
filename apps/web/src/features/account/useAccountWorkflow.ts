@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
 import type { GemsApiClient } from "@gems/api-client";
-import type { Report, UserDashboard, WishlistItem } from "@gems/schemas";
+import type { Report, UserDashboard } from "@gems/schemas";
 
 export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
   const [accountError, setAccountError] = useState<string | null>(null);
-  const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
   const [dashboard, setDashboard] = useState<UserDashboard | null>(null);
   const [myReports, setMyReports] = useState<Report[]>([]);
 
   useEffect(() => {
     if (!isSignedIn) {
-      setWishlistItems([]);
       setDashboard(null);
       setMyReports([]);
       setAccountError(null);
@@ -18,10 +16,9 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
     }
 
     let active = true;
-    Promise.all([api.wishlist(), api.dashboard(), api.myReports()])
-      .then(([nextWishlist, nextDashboard, nextReports]) => {
+    Promise.all([api.dashboard(), api.myReports()])
+      .then(([nextDashboard, nextReports]) => {
         if (!active) return;
-        setWishlistItems(nextWishlist);
         setDashboard(nextDashboard);
         setMyReports(nextReports);
         setAccountError(null);
@@ -36,5 +33,5 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
     };
   }, [api, isSignedIn]);
 
-  return { accountError, wishlistItems, setWishlistItems, dashboard, setDashboard, myReports, setMyReports };
+  return { accountError, dashboard, setDashboard, myReports, setMyReports };
 }

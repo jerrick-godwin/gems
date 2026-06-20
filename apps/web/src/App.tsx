@@ -40,8 +40,6 @@ function App() {
     api,
     isSignedIn,
     setView,
-    wishlistItems: account.wishlistItems,
-    setWishlistItems: account.setWishlistItems,
     myReports: account.myReports,
     setMyReports: account.setMyReports
   });
@@ -132,42 +130,6 @@ function App() {
           setSelectedId={(id) => marketplace.setSelectedId(id)}
           revealedPhone={marketplace.selectedListing ? marketplace.revealedPhones[marketplace.selectedListing.id] : undefined}
           revealPhone={marketplace.handleRevealPhone}
-          savedIds={marketplace.savedIds}
-          toggleSaved={marketplace.toggleSaved}
-          isSignedIn={isSignedIn}
-          reportedListingIds={marketplace.reportedListingIds}
-          onReport={marketplace.handleReportListing}
-        />
-      )}
-      {view === "wishlist" && (
-        <Marketplace
-          gemTypes={gemTypes}
-          sellers={sellers}
-          locations={locations}
-          selectedLocations={marketplace.selectedLocations}
-          setSelectedLocations={marketplace.setSelectedLocations}
-          sourceListingCount={marketplace.savedIds.length}
-          filteredListings={marketplace.approvedListings.filter((listing) => marketplace.savedIds.includes(listing.id))}
-          page={1}
-          setPage={() => {}}
-          totalPages={1}
-          selectedListing={marketplace.selectedListing}
-          setQuery={marketplace.setQuery}
-          query={marketplace.query}
-          gemType={marketplace.gemType}
-          setGemType={marketplace.setGemType}
-          treatment={marketplace.treatment}
-          setTreatment={marketplace.setTreatment}
-          certificate={marketplace.certificate}
-          setCertificate={marketplace.setCertificate}
-          sort={marketplace.sort}
-          setSort={marketplace.setSort}
-          selectedId={marketplace.selectedListing?.id ?? ""}
-          setSelectedId={(id) => marketplace.setSelectedId(id)}
-          revealedPhone={marketplace.selectedListing ? marketplace.revealedPhones[marketplace.selectedListing.id] : undefined}
-          revealPhone={marketplace.handleRevealPhone}
-          savedIds={marketplace.savedIds}
-          toggleSaved={marketplace.toggleSaved}
           isSignedIn={isSignedIn}
           reportedListingIds={marketplace.reportedListingIds}
           onReport={marketplace.handleReportListing}

@@ -35,7 +35,7 @@ export function LoginPage({ onSignedIn, initialSignUp = false }: { onSignedIn: (
         </div>
         <div>
           <h1>{initialSignUp ? "Create your account" : "Sign in to gemslanka.lk"}</h1>
-          <p>Use your secure account to manage listings, saved gems, subscriptions, renewal settings, and reports.</p>
+          <p>Use your secure account to manage listings, subscriptions, renewal settings, and reports.</p>
         </div>
         <form
           className="login-form"

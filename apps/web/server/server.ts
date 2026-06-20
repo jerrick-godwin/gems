@@ -29,7 +29,6 @@ import {
 } from "./marketplace-repository.js";
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
-  addWishlistItem,
   createListingPaymentIntent,
   createListing,
   createStorageUpload,
@@ -41,8 +40,6 @@ import {
   getOrCreateUserFromClaims,
   getSettings,
   getUserProfile,
-  getWishlist,
-  removeWishlistItem,
   updateOrderStatus,
   updateSettings,
   updateUserProfile,
@@ -448,7 +445,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     return true;
   }
 
-  if (path.startsWith("/api/v1/users") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/wishlist") || path.startsWith("/api/v1/storage") || path.startsWith("/api/v1/listing-subscriptions")) {
+  if (path.startsWith("/api/v1/users") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/storage") || path.startsWith("/api/v1/listing-subscriptions")) {
     const user = await authenticateUser(request);
     if (!user) {
       sendJson(response, 401, { error: "User authorization required" });
@@ -532,32 +529,6 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
-    if (request.method === "GET" && path === "/api/v1/wishlist") {
-      sendJson(response, 200, await getWishlist(user.id));
-      return true;
-    }
-
-    if (request.method === "POST" && path === "/api/v1/wishlist/items") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
-      const listingId = stringBody(body.listingId);
-      if (!listingId) {
-        sendJson(response, 400, { error: "listingId is required" });
-        return true;
-      }
-      const listing = await getListing(listingId);
-      if (!listing || listing.moderationStatus !== "approved") {
-        sendJson(response, 404, { error: "Listing not found" });
-        return true;
-      }
-      sendJson(response, 201, await addWishlistItem(user.id, listingId));
-      return true;
-    }
-
-    const wishlistMatch = path.match(/^\/api\/v1\/wishlist\/items\/([^/]+)$/);
-    if (wishlistMatch && request.method === "DELETE") {
-      sendJson(response, 200, await removeWishlistItem(user.id, wishlistMatch[1]));
-      return true;
-    }
   }
 
   if (request.method === "GET" && path === "/api/v1/snapshot") {

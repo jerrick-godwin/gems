@@ -19,7 +19,6 @@ import type {
   User,
   UserDashboard,
   UserSettings,
-  WishlistItem,
   PaginatedResponse
 } from "@gems/schemas";
 
@@ -157,18 +156,6 @@ export class GemsApiClient {
 
   async orders(): Promise<Order[]> {
     return this.authJson("/orders");
-  }
-
-  async wishlist(): Promise<WishlistItem[]> {
-    return this.authJson("/wishlist");
-  }
-
-  async addWishlistItem(listingId: string): Promise<WishlistItem[]> {
-    return this.authJson("/wishlist/items", { method: "POST", body: JSON.stringify({ listingId }) });
-  }
-
-  async removeWishlistItem(listingId: string): Promise<WishlistItem[]> {
-    return this.authJson(`/wishlist/items/${listingId}`, { method: "DELETE" });
   }
 
   async createStorageUpload(request: StorageUploadRequest): Promise<StorageUploadTarget> {

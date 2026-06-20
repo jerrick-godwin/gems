@@ -238,12 +238,3 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").notNull().default(1),
   unitPriceLkr: integer("unit_price_lkr").notNull()
 });
-
-export const wishlists = pgTable("wishlists", {
-  id: varchar("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  listingId: varchar("listing_id").references(() => listings.id).notNull(),
-  addedAt: timestamp("added_at").defaultNow().notNull()
-}, (table) => ({
-  userListingUnique: uniqueIndex("wishlists_user_listing_unique").on(table.userId, table.listingId)
-}));

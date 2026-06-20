@@ -17,7 +17,6 @@ export function SellerDashboard({
   const activeSubscriptions = dashboard?.listingSubscriptions.filter((subscription) => subscription.status === "active").length ?? 0;
   const metrics = dashboard
     ? [
-        { label: "Wishlist", value: String(dashboard.wishlistCount) },
         { label: "Listings", value: String(listings.length) },
         { label: "Active subscriptions", value: String(activeSubscriptions) }
       ]

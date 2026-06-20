@@ -1,4 +1,4 @@
-import { Heart, LogIn, LogOut, Plus, Settings, Store, User, Flag } from "lucide-react";
+import { LogIn, LogOut, Plus, Settings, Store, User, Flag } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import { authClient, type MarketplaceAuthUser } from "../../firebase";
@@ -74,13 +74,6 @@ function ProfileMenu({
             <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 14 }}>{user?.displayName || "User"}</div>
             <div style={{ color: "var(--sage)", fontSize: 12 }}>{user?.email || ""}</div>
           </div>
-          <button
-            className={`menu-item ${view === "wishlist" ? "active" : ""}`}
-            onClick={() => { setView("wishlist"); setIsOpen(false); }}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: view === "wishlist" ? "var(--emerald-subtle)" : "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: view === "wishlist" ? "var(--emerald)" : "var(--ink)", width: "100%", justifyContent: "flex-start", fontSize: 14, textAlign: "left", fontWeight: view === "wishlist" ? 600 : 500 }}
-          >
-            <Heart size={16} /> Wishlist
-          </button>
           <button
             className={`menu-item ${view === "dashboard" ? "active" : ""}`}
             onClick={() => { setView("dashboard"); setIsOpen(false); }}
@@ -227,13 +220,6 @@ export function AppFrame({
           </>
           ) : (
             <>
-              <button
-                className={view === "wishlist" ? "active" : ""}
-                onClick={() => setView("wishlist")}
-                id="nav-wishlist"
-              >
-                Wishlist
-              </button>
               <button className="login-button" onClick={() => setView("login")} id="nav-login" style={{ background: "transparent", color: "var(--ink)", padding: "0 16px", flexShrink: 0 }}>
                 <LogIn size={16} strokeWidth={2.5} />
                 Sign In

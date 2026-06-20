@@ -13,8 +13,7 @@ import {
   locations as locationsTable,
   reports as reportTable,
   savedSearches as savedSearchTable,
-  sellerProfiles as sellerProfileTable,
-  wishlists as wishlistTable
+  sellerProfiles as sellerProfileTable
 } from "./db/schema.js";
 import { createSignedReadUrl } from "./storage.js";
 
@@ -387,7 +386,6 @@ export async function removeListing(listingId: string) {
     if (!listing) return undefined;
 
     await db.delete(cartItemTable).where(eq(cartItemTable.listingId, listingId));
-    await db.delete(wishlistTable).where(eq(wishlistTable.listingId, listingId));
     await db.delete(conversationTable).where(eq(conversationTable.listingId, listingId));
     await db.delete(listingContactTable).where(eq(listingContactTable.listingId, listingId));
     await db.delete(listingMediaTable).where(eq(listingMediaTable.listingId, listingId));

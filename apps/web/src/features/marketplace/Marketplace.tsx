@@ -1,4 +1,4 @@
-import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, EyeOff, Filter, Flag, Heart, MapPin, Phone, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, EyeOff, Filter, Flag, MapPin, Phone, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
@@ -33,8 +33,6 @@ export interface MarketplaceProps {
   setSelectedId: (id: string) => void;
   revealedPhone?: string;
   revealPhone: (listingId: string) => void;
-  savedIds: string[];
-  toggleSaved: (id: string) => void;
   isSignedIn: boolean;
   reportedListingIds: string[];
   onReport: (listingId: string, reason: string, notes: string) => Promise<void>;
@@ -79,9 +77,7 @@ export function Marketplace(props: MarketplaceProps) {
                   gemTypes={props.gemTypes}
                   sellers={props.sellers}
                   selected={props.selectedId === listing.id}
-                  saved={props.savedIds.includes(listing.id)}
                   onSelect={() => props.setSelectedId(listing.id)}
-                  onSave={() => props.toggleSaved(listing.id)}
                 />
               ))}
             </div>
@@ -160,7 +156,7 @@ export function Marketplace(props: MarketplaceProps) {
   );
 }
 
-function ListingCard({ listing, gemTypes, sellers, selected, saved, onSelect, onSave }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; selected: boolean; saved: boolean; onSelect: () => void; onSave: () => void; }) {
+function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; selected: boolean; onSelect: () => void; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const sellerRating = seller?.rating ?? 0;
@@ -174,9 +170,6 @@ function ListingCard({ listing, gemTypes, sellers, selected, saved, onSelect, on
           {listing.promoted.includes("urgent") && <span className="listing-badge listing-badge-urgent">Urgent</span>}
         </div>
         {sellerRating > 0 && <div className="listing-rating">★ {sellerRating}</div>}
-        <button type="button" className={`save-button ${saved ? "saved" : ""}`} onClick={(event) => { event.stopPropagation(); onSave(); }} aria-label={saved ? "Remove saved listing" : "Save listing"} id={`save-${listing.id}`}>
-          <Heart size={17} fill={saved ? "currentColor" : "none"} strokeWidth={2} />
-        </button>
       </div>
       <div className="listing-content">
         <div className="listing-type">{gemType?.name ?? "Gemstone"}</div>

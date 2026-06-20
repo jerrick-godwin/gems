@@ -19,13 +19,12 @@ import type {
   User,
   UserDashboard,
   UserRole,
-  UserSettings,
-  WishlistItem
+  UserSettings
 } from "@gems/schemas";
 import { listingSubscriptionPlans, orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
-import { cartItems, carts, conversations, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, sellerProfiles, userSettings, users, wishlists } from "./db/schema.js";
+import { cartItems, carts, conversations, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, sellerProfiles, userSettings, users } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
 import { createWebxpayPaymentUrl } from "./webxpay.js";
@@ -50,7 +49,6 @@ interface MemoryState {
   settings: UserSettings[];
   carts: Cart[];
   orders: Order[];
-  wishlists: WishlistItem[];
   listingSubscriptions: ListingSubscription[];
   paymentIntents: PaymentIntent[];
 }
@@ -252,50 +250,6 @@ export async function removeCartItem(userId: string, itemId: string) {
   return cart;
 }
 
-export async function getWishlist(userId: string) {
-  if (hasDatabase) {
-    const rows = await db.select().from(wishlists).where(eq(wishlists.userId, userId));
-    const listingRows = await db.select().from(listings);
-    return rows.map((item) => ({
-      id: item.id,
-      userId: item.userId,
-      listingId: item.listingId,
-      addedAt: item.addedAt.toISOString(),
-      listing: listingRows.find((listing) => listing.id === item.listingId) ? toListing(listingRows.find((listing) => listing.id === item.listingId)!) : undefined
-    }));
-  }
-
-  const state = await getMemoryState();
-  return state.wishlists
-    .filter((item) => item.userId === userId)
-    .map((item) => ({ ...item, listing: state.database.listings.find((listing) => listing.id === item.listingId) }));
-}
-
-export async function addWishlistItem(userId: string, listingId: string) {
-  if (hasDatabase) {
-    const existing = await db.select().from(wishlists).where(and(eq(wishlists.userId, userId), eq(wishlists.listingId, listingId))).limit(1);
-    if (!existing[0]) await db.insert(wishlists).values({ id: randomUUID(), userId, listingId });
-    return getWishlist(userId);
-  }
-
-  const state = await getMemoryState();
-  if (!state.wishlists.some((item) => item.userId === userId && item.listingId === listingId)) {
-    state.wishlists.push({ id: `wishlist-${randomUUID()}`, userId, listingId, addedAt: new Date().toISOString() });
-  }
-  return getWishlist(userId);
-}
-
-export async function removeWishlistItem(userId: string, listingId: string) {
-  if (hasDatabase) {
-    await db.delete(wishlists).where(and(eq(wishlists.userId, userId), eq(wishlists.listingId, listingId)));
-    return getWishlist(userId);
-  }
-
-  const state = await getMemoryState();
-  state.wishlists = state.wishlists.filter((item) => item.userId !== userId || item.listingId !== listingId);
-  return getWishlist(userId);
-}
-
 export async function createCheckoutReservation(userId: string, request: CheckoutRequest): Promise<Order> {
   const errors = validateCheckoutRequest(request);
   if (errors.length > 0) {
@@ -439,9 +393,8 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
 }
 
 export async function getDashboard(userId: string): Promise<UserDashboard> {
-  const [{ user, settings }, wishlist, subscriptions, payments] = await Promise.all([
+  const [{ user, settings }, subscriptions, payments] = await Promise.all([
     getUserProfile(userId),
-    getWishlist(userId),
     getListingSubscriptions(userId),
     getPaymentIntents(userId)
   ]);
@@ -465,7 +418,6 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
           lastMessage: conversation.lastMessage,
           updatedAt: conversation.updatedAt.toISOString()
       })),
-      wishlistCount: wishlist.length,
       cartCount: 0,
       recentOrders: [],
       listingSubscriptions: subscriptions,
@@ -480,7 +432,6 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
     settings,
     sellerListings: state.database.listings.filter((listing) => sellerIds.has(listing.sellerId)),
     conversations: state.database.conversations.filter((conversation) => sellerIds.has(conversation.sellerId)),
-    wishlistCount: wishlist.length,
     cartCount: 0,
     recentOrders: [],
     listingSubscriptions: subscriptions,
@@ -951,7 +902,6 @@ async function getMemoryState() {
     settings: [],
     carts: [],
     orders: [],
-    wishlists: [],
     listingSubscriptions: [],
     paymentIntents: []
   };

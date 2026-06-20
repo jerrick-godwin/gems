@@ -4,7 +4,7 @@ Gems Marketplace is a Gem inquiry marketplace for Global buyers and sellers. The
 
 ## What Is Included
 
-- Buyer marketplace, account flows, wishlist, cart, checkout reservation, and listing creation in `apps/web`
+- Buyer marketplace, account flows, cart, checkout reservation, and listing creation in `apps/web`
 - Seller dashboard, post-gem flow, and monetization panels
 - Separate admin moderation panel with its own Firebase/admin session flow
 - Node API and production server bundle in `apps/web/server`

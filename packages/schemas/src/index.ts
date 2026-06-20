@@ -298,20 +298,11 @@ export interface Order {
   updatedAt: string;
 }
 
-export interface WishlistItem {
-  id: string;
-  userId: string;
-  listingId: string;
-  listing?: Listing;
-  addedAt: string;
-}
-
 export interface UserDashboard {
   user: User;
   settings: UserSettings;
   sellerListings: Listing[];
   conversations: Conversation[];
-  wishlistCount: number;
   cartCount: number;
   recentOrders: Order[];
   listingSubscriptions: ListingSubscription[];
