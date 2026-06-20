@@ -450,7 +450,7 @@ export function PostGem({
                 status
               ) : (
                 <>
-                  Pay and submit for verification
+                  Proceed to Payment
                   <ChevronRight size={17} strokeWidth={2.2} />
                 </>
               )}
