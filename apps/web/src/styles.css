@@ -2051,6 +2051,32 @@ main {
   display: flex;
   align-items: center;
   gap: 12px;
+  justify-content: space-between;
+}
+
+.post-form .policy-acceptance {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.post-form .policy-acceptance input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.post-form .policy-acceptance span {
+  min-width: 0;
 }
 
 .clear-action {
