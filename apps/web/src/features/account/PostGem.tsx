@@ -2,6 +2,7 @@ import { Camera, Check, ChevronRight, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, listingSubscriptionPlans, quoteListingSubscription, type ListingMedia, type ListingSubscriptionPlanId, type Treatment, type UserDashboard } from "@gems/schemas";
+import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 function formatPriceInput(value: string) {
   const digits = value.replace(/\D/g, "");
@@ -31,8 +32,9 @@ export function PostGem({
   const [priceInput, setPriceInput] = useState("");
   const photosInputRef = useRef<HTMLInputElement>(null);
   const certInputRef = useRef<HTMLInputElement>(null);
+  const submitAction = useSingleFlightAction();
   const quote = quoteListingSubscription(selectedPlan, photos.length);
-  const isSubmitting = status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating payment...";
+  const isSubmitting = submitAction.busy || status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating payment...";
 
   const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
     setPriceInput(formatPriceInput(event.target.value));
@@ -95,112 +97,117 @@ export function PostGem({
       return;
     }
 
-    setStatus("Creating listing draft...");
-    try {
-      const listing = await api.createListing({
-        title: value("post-title"),
-        gemTypeId: value("post-gem-type"),
-        description: value("post-description"),
-        priceLkr: parsePriceInput(value("post-price")),
-        location: value("post-location") || "Sri Lanka",
-        attributes: {
-          carat: Number(value("post-carat") || 0),
-          shape: value("post-shape"),
-          color: value("post-color"),
-          treatment: value("post-treatment") as Treatment,
-          dimensions: value("post-dimensions"),
-          cut: value("post-cut"),
-          clarity: value("post-clarity"),
-          origin: value("post-origin"),
-          certificateStatus: certificate ? "seller_provided" : "none"
-        }
-      });
+    await submitAction.run(async () => {
+      const submissionKey = createIdempotencyKey("post-gem");
+      try {
+        setStatus("Creating listing draft...");
+        const listing = await api.createListing({
+          title: value("post-title"),
+          gemTypeId: value("post-gem-type"),
+          description: value("post-description"),
+          priceLkr: parsePriceInput(value("post-price")),
+          location: value("post-location") || "Sri Lanka",
+          attributes: {
+            carat: Number(value("post-carat") || 0),
+            shape: value("post-shape"),
+            color: value("post-color"),
+            treatment: value("post-treatment") as Treatment,
+            dimensions: value("post-dimensions"),
+            cut: value("post-cut"),
+            clarity: value("post-clarity"),
+            origin: value("post-origin"),
+            certificateStatus: certificate ? "seller_provided" : "none"
+          }
+        }, { idempotencyKey: `${submissionKey}:listing` });
 
-      setStatus("Uploading media...");
-      const uploadedMedia: ListingMedia[] = [];
-      let order = 0;
-      for (const file of photos) {
-        const target = await api.createStorageUpload({
-          scope: "listing-media",
-          fileName: file.name,
-          contentType: file.type || "application/octet-stream",
-          listingId: listing.id
-        });
-        
-        if (isUploadableUrl(target.uploadUrl)) {
-          await fetch(target.uploadUrl, {
-            method: "PUT",
-            body: file,
-            headers: {
-              "Content-Type": file.type || "application/octet-stream",
-              "x-ms-blob-type": "BlockBlob"
-            }
+        setStatus("Uploading media...");
+        const uploadedMedia: ListingMedia[] = [];
+        let order = 0;
+        for (const file of photos) {
+          const target = await api.createStorageUpload({
+            scope: "listing-media",
+            fileName: file.name,
+            contentType: file.type || "application/octet-stream",
+            listingId: listing.id
+          });
+          
+          if (isUploadableUrl(target.uploadUrl)) {
+            await fetch(target.uploadUrl, {
+              method: "PUT",
+              body: file,
+              headers: {
+                "Content-Type": file.type || "application/octet-stream",
+                "x-ms-blob-type": "BlockBlob"
+              }
+            });
+          }
+          
+          uploadedMedia.push({
+            id: target.blobKey,
+            listingId: listing.id,
+            kind: "photo",
+            url: target.readUrl || target.uploadUrl,
+            alt: file.name,
+            order: order++,
+            moderationStatus: "not_submitted"
           });
         }
-        
-        uploadedMedia.push({
-          id: target.blobKey,
-          listingId: listing.id,
-          kind: "photo",
-          url: target.readUrl || target.uploadUrl,
-          alt: file.name,
-          order: order++,
-          moderationStatus: "not_submitted"
-        });
-      }
 
-      if (certificate) {
-        const target = await api.createStorageUpload({
-          scope: "listing-certificate",
-          fileName: certificate.name,
-          contentType: certificate.type || "application/pdf",
-          listingId: listing.id
-        });
-        
-        if (isUploadableUrl(target.uploadUrl)) {
-          await fetch(target.uploadUrl, {
-            method: "PUT",
-            body: certificate,
-            headers: {
-              "Content-Type": certificate.type || "application/pdf",
-              "x-ms-blob-type": "BlockBlob"
-            }
+        if (certificate) {
+          const target = await api.createStorageUpload({
+            scope: "listing-certificate",
+            fileName: certificate.name,
+            contentType: certificate.type || "application/pdf",
+            listingId: listing.id
+          });
+          
+          if (isUploadableUrl(target.uploadUrl)) {
+            await fetch(target.uploadUrl, {
+              method: "PUT",
+              body: certificate,
+              headers: {
+                "Content-Type": certificate.type || "application/pdf",
+                "x-ms-blob-type": "BlockBlob"
+              }
+            });
+          }
+          
+          uploadedMedia.push({
+            id: target.blobKey,
+            listingId: listing.id,
+            kind: "certificate",
+            url: target.readUrl || target.uploadUrl,
+            alt: certificate.name,
+            order: 0,
+            moderationStatus: "not_submitted"
           });
         }
-        
-        uploadedMedia.push({
-          id: target.blobKey,
-          listingId: listing.id,
-          kind: "certificate",
-          url: target.readUrl || target.uploadUrl,
-          alt: certificate.name,
-          order: 0,
-          moderationStatus: "not_submitted"
-        });
-      }
 
-      if (uploadedMedia.length > 0) {
-        await api.updateMyListing(listing.id, { media: uploadedMedia });
-      }
+        if (uploadedMedia.length > 0) {
+          await api.updateMyListing(listing.id, { media: uploadedMedia });
+        }
 
-      setStatus("Creating payment...");
-      const paymentIntent = await api.createListingPaymentIntent(listing.id, {
-        planId: selectedPlan,
-        photoCount: photos.length,
-        acceptedPolicies
-      });
+        setStatus("Creating payment...");
+        const paymentIntent = await api.createListingPaymentIntent(listing.id, {
+          planId: selectedPlan,
+          photoCount: photos.length,
+          acceptedPolicies
+        }, { idempotencyKey: `${submissionKey}:payment` });
 
-      onDashboardChange(await api.dashboard());
-      form.reset();
-      handleClear();
-      if (paymentIntent.paymentUrl) {
-        window.location.href = paymentIntent.paymentUrl;
-        return;
+        onDashboardChange(await api.dashboard());
+        form.reset();
+        handleClear();
+        if (paymentIntent.paymentUrl) {
+          window.location.href = paymentIntent.paymentUrl;
+          return;
+        }
+        setStatus("Payment intent created. Please contact support if you are not redirected to checkout.");
+        submitAction.release();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Unable to submit listing.");
+        submitAction.release();
       }
-      setStatus("Payment intent created. Please contact support if you are not redirected to checkout.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to submit listing.");
-    }
+    }, { keepLocked: true });
   };
 
   return (
@@ -213,11 +220,11 @@ export function PostGem({
         <form className="post-form" id="post-gem-form" onSubmit={handleSubmit} onReset={handleClear}>
           <label>
             Listing title
-            <input placeholder="Ceylon Blue Sapphire" id="post-title" required />
+            <input placeholder="Ceylon Blue Sapphire" id="post-title" required disabled={isSubmitting} />
           </label>
           <label>
             Gem type
-            <select defaultValue="" id="post-gem-type" required>
+            <select defaultValue="" id="post-gem-type" required disabled={isSubmitting}>
               <option value="" disabled>
                 Select Gem Type
               </option>
@@ -230,7 +237,7 @@ export function PostGem({
           </label>
           <label>
             Description
-            <textarea placeholder="Color, clarity, treatment, inspection notes." id="post-description" required />
+            <textarea placeholder="Color, clarity, treatment, inspection notes." id="post-description" required disabled={isSubmitting} />
           </label>
 
           <section className="form-section" aria-labelledby="listing-plan-heading">
@@ -240,7 +247,7 @@ export function PostGem({
             <div className="plan-grid">
               {listingSubscriptionPlans.map((plan) => (
                 <label className={`plan-option ${selectedPlan === plan.id ? "selected" : ""}`} key={plan.id}>
-                  <input type="radio" name="listing-plan" value={plan.id} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} />
+                  <input type="radio" name="listing-plan" value={plan.id} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} disabled={isSubmitting} />
                   <strong>{plan.name}</strong>
                   <span>{formatLkr(plan.priceLkr)}</span>
                   <small>{plan.includedPhotos} photos included · {plan.validityMonths} month{plan.validityMonths > 1 ? "s" : ""} validity</small>
@@ -262,6 +269,7 @@ export function PostGem({
               <button
                 type="button"
                 className="upload-trigger"
+                disabled={isSubmitting}
                 onClick={() => photosInputRef.current?.click()}
               >
                 <Camera size={16} strokeWidth={2} />
@@ -272,6 +280,7 @@ export function PostGem({
                 type="file"
                 accept="image/*"
                 multiple
+                disabled={isSubmitting}
                 onChange={(e) => addPhotos(e.target.files)}
                 style={{ display: 'none' }}
               />
@@ -284,6 +293,7 @@ export function PostGem({
                     <button
                       type="button"
                       className="upload-remove"
+                      disabled={isSubmitting}
                       onClick={() => removePhoto(index)}
                       aria-label={`Remove ${file.name}`}
                     >
@@ -296,7 +306,7 @@ export function PostGem({
             ) : (
               <div
                 className="upload-dropzone"
-                onClick={() => photosInputRef.current?.click()}
+                onClick={() => { if (!isSubmitting) photosInputRef.current?.click(); }}
               >
                 <Camera size={24} strokeWidth={1.5} style={{ color: 'var(--sage)' }} />
                 <span>Click to add gem photos</span>
@@ -312,6 +322,7 @@ export function PostGem({
                 <button
                   type="button"
                   className="upload-trigger"
+                  disabled={isSubmitting}
                   onClick={() => certInputRef.current?.click()}
                 >
                   <Upload size={16} strokeWidth={2} />
@@ -322,6 +333,7 @@ export function PostGem({
                 ref={certInputRef}
                 type="file"
                 accept=".pdf,image/*"
+                disabled={isSubmitting}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file && file.size > 2 * 1024 * 1024) {
@@ -348,6 +360,7 @@ export function PostGem({
                   <button
                     type="button"
                     className="upload-remove"
+                    disabled={isSubmitting}
                     onClick={removeCertificate}
                     aria-label="Remove certificate"
                   >
@@ -359,7 +372,7 @@ export function PostGem({
             ) : (
               <div
                 className="upload-dropzone"
-                onClick={() => certInputRef.current?.click()}
+                onClick={() => { if (!isSubmitting) certInputRef.current?.click(); }}
                 style={{ minHeight: 64 }}
               >
                 <Upload size={20} strokeWidth={1.5} style={{ color: 'var(--sage)' }} />
@@ -375,11 +388,11 @@ export function PostGem({
             <div className="form-grid">
               <label>
                 <span className="field-label">Price (LKR)<span className="required-marker" aria-hidden="true">*</span></span>
-                <input placeholder="3,250,000" id="post-price" inputMode="numeric" value={priceInput} onChange={handlePriceChange} required />
+                <input placeholder="3,250,000" id="post-price" inputMode="numeric" value={priceInput} onChange={handlePriceChange} required disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Location<span className="required-marker" aria-hidden="true">*</span></span>
-                <select defaultValue="" id="post-location" required>
+                <select defaultValue="" id="post-location" required disabled={isSubmitting}>
                   <option value="" disabled>
                     Select location
                   </option>
@@ -392,35 +405,35 @@ export function PostGem({
               </label>
               <label>
                 <span className="field-label">Carat<span className="required-marker" aria-hidden="true">*</span></span>
-                <input placeholder="3.42" id="post-carat" required />
+                <input placeholder="3.42" id="post-carat" required disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Dimensions</span>
-                <input placeholder="9.2 x 7.1 x 4.8 mm" id="post-dimensions" />
+                <input placeholder="9.2 x 7.1 x 4.8 mm" id="post-dimensions" disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Shape</span>
-                <input placeholder="Oval" id="post-shape" />
+                <input placeholder="Oval" id="post-shape" disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Cut</span>
-                <input placeholder="Mixed brilliant" id="post-cut" />
+                <input placeholder="Mixed brilliant" id="post-cut" disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Color<span className="required-marker" aria-hidden="true">*</span></span>
-                <input placeholder="Royal blue" id="post-color" required />
+                <input placeholder="Royal blue" id="post-color" required disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Clarity<span className="required-marker" aria-hidden="true">*</span></span>
-                <input placeholder="Eye clean" id="post-clarity" required />
+                <input placeholder="Eye clean" id="post-clarity" required disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Origin<span className="required-marker" aria-hidden="true">*</span></span>
-                <input placeholder="Ratnapura" id="post-origin" required />
+                <input placeholder="Ratnapura" id="post-origin" required disabled={isSubmitting} />
               </label>
               <label>
                 <span className="field-label">Treatment<span className="required-marker" aria-hidden="true">*</span></span>
-                <select defaultValue="" id="post-treatment" required>
+                <select defaultValue="" id="post-treatment" required disabled={isSubmitting}>
                   <option value="" disabled>
                     Select treatment
                   </option>
@@ -433,7 +446,7 @@ export function PostGem({
 
           {/* ── Actions ── */}
           <label className="policy-acceptance">
-            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} />
+            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} disabled={isSubmitting} />
             <span>
               I accept the{" "}
               <a href="/terms-and-conditions" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
@@ -471,7 +484,7 @@ export function PostGem({
                 </>
               )}
             </button>
-            <button type="reset" className="clear-action" id="clear-listing">
+            <button type="reset" className="clear-action" id="clear-listing" disabled={isSubmitting}>
               <Trash2 size={17} strokeWidth={2.2} />
               Clear
             </button>

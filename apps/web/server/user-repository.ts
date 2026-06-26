@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   Cart,
   CartItem,
@@ -60,6 +60,8 @@ interface MemoryState {
   orders: Order[];
   listingSubscriptions: ListingSubscription[];
   paymentIntents: PaymentIntent[];
+  listingIdempotencyKeys: Record<string, string>;
+  paymentIntentIdempotencyKeys: Record<string, string>;
 }
 
 let memoryState: MemoryState | undefined;
@@ -179,37 +181,43 @@ export async function getUserProfile(userId: string) {
 }
 
 export async function updateUserProfile(userId: string, patch: UserPatch) {
-  await assertUserPhoneAvailable(userId, patch.phone);
+  const currentUser = await getUser(userId);
+  const changedPatch = getChangedUserProfilePatch(currentUser, patch);
+
+  if (Object.keys(changedPatch).length === 0) return currentUser;
+
+  await assertUserPhoneAvailable(userId, changedPatch.phone, currentUser.phone);
 
   if (hasDatabase) {
     const now = new Date();
     const [updated] = await db
       .update(users)
       .set(withoutUndefined({
-        name: patch.name,
-        phone: patch.phone,
-        address: patch.address,
-        locale: patch.locale,
-        profileImageKey: patch.profileImageKey,
-        profileImageUrl: patch.profileImageUrl,
+        name: changedPatch.name,
+        phone: changedPatch.phone,
+        address: changedPatch.address,
+        locale: changedPatch.locale,
+        profileImageKey: changedPatch.profileImageKey,
+        profileImageUrl: changedPatch.profileImageUrl,
         updatedAt: now
       }))
       .where(eq(users.id, userId))
       .returning();
-    await syncSellerDetailsForUser(userId, patch);
+    await syncSellerDetailsForUser(userId, changedPatch);
     return toUser(updated);
   }
 
   const state = await getMemoryState();
   const user = findMemoryUser(state, userId);
-  Object.assign(user, withoutUndefined(patch), { updatedAt: new Date().toISOString() });
-  syncMemorySellerDetailsForUser(state, userId, patch);
+  Object.assign(user, withoutUndefined(changedPatch), { updatedAt: new Date().toISOString() });
+  syncMemorySellerDetailsForUser(state, userId, changedPatch);
   return user;
 }
 
-async function assertUserPhoneAvailable(userId: string, phone: string | undefined) {
+async function assertUserPhoneAvailable(userId: string, phone: string | undefined, currentPhone?: string) {
   const normalizedPhone = normalizeUserPhoneForConflict(phone);
   if (!normalizedPhone) return;
+  if (normalizedPhone === normalizeUserPhoneForConflict(currentPhone)) return;
 
   if (hasDatabase) {
     const existingUsers = await db.select({ id: users.id, phone: users.phone }).from(users);
@@ -228,6 +236,28 @@ function normalizeUserPhoneForConflict(phone: string | undefined) {
   if (!digits) return "";
   if (digits.length === 10 && digits.startsWith("0")) return `94${digits.slice(1)}`;
   return digits;
+}
+
+function normalizeIdempotencyKey(key: string | undefined) {
+  const normalized = key?.trim();
+  return normalized ? normalized.slice(0, 180) : undefined;
+}
+
+function stableIdFromKey(prefix: string, key: string) {
+  return `${prefix}-${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
+}
+
+function getChangedUserProfilePatch(currentUser: User, patch: UserPatch) {
+  const changedPatch: UserPatch = {};
+
+  if (patch.name !== undefined && patch.name !== currentUser.name) changedPatch.name = patch.name;
+  if (patch.phone !== undefined && patch.phone !== currentUser.phone) changedPatch.phone = patch.phone;
+  if (patch.address !== undefined && patch.address !== currentUser.address) changedPatch.address = patch.address;
+  if (patch.locale !== undefined && patch.locale !== currentUser.locale) changedPatch.locale = patch.locale;
+  if (patch.profileImageKey !== undefined && patch.profileImageKey !== currentUser.profileImageKey) changedPatch.profileImageKey = patch.profileImageKey;
+  if (patch.profileImageUrl !== undefined && patch.profileImageUrl !== currentUser.profileImageUrl) changedPatch.profileImageUrl = patch.profileImageUrl;
+
+  return changedPatch;
 }
 
 export async function getSettings(userId: string): Promise<UserSettings> {
@@ -664,12 +694,26 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
   };
 }
 
-export async function createListing(userId: string, input: ListingInput) {
+export async function createListing(userId: string, input: ListingInput, idempotencyKey?: string) {
   const seller = await ensureSellerProfile(userId);
   const sellerUser = await getUser(userId);
   const now = new Date();
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
+  if (hasDatabase && normalizedIdempotencyKey) {
+    const existing = await db.select().from(listings).where(and(eq(listings.sellerId, seller.id), eq(listings.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+    if (existing[0]) return toListing(existing[0]);
+  }
+
+  if (!hasDatabase && normalizedIdempotencyKey) {
+    const state = await getMemoryState();
+    const existingId = state.listingIdempotencyKeys[`${seller.id}:${normalizedIdempotencyKey}`];
+    const existing = existingId ? state.database.listings.find((item) => item.id === existingId) : undefined;
+    if (existing) return existing;
+  }
+
   const listing: Listing = {
-    id: `gem-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("gem", `${seller.id}:${normalizedIdempotencyKey}`) : `gem-${randomUUID()}`,
     sellerId: seller.id,
     gemTypeId: input.gemTypeId ?? "sapphire",
     title: input.title ?? "Untitled gem listing",
@@ -701,14 +745,22 @@ export async function createListing(userId: string, input: ListingInput) {
   };
 
   if (hasDatabase) {
-    await db.insert(listings).values({
-      ...listing,
-      id: listing.id,
-      publishedAt: null,
-      expiresAt: null,
-      createdAt: now,
-      updatedAt: now
-    });
+    try {
+      await db.insert(listings).values({
+        ...listing,
+        idempotencyKey: normalizedIdempotencyKey,
+        id: listing.id,
+        publishedAt: null,
+        expiresAt: null,
+        createdAt: now,
+        updatedAt: now
+      });
+    } catch (error) {
+      if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
+      const existing = await db.select().from(listings).where(and(eq(listings.sellerId, seller.id), eq(listings.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (existing[0]) return toListing(existing[0]);
+      throw error;
+    }
     await db
       .insert(listingContacts)
       .values({
@@ -723,6 +775,7 @@ export async function createListing(userId: string, input: ListingInput) {
   } else {
     const state = await getMemoryState();
     state.database.listings.push(listing);
+    if (normalizedIdempotencyKey) state.listingIdempotencyKeys[`${seller.id}:${normalizedIdempotencyKey}`] = listing.id;
     state.database.listingContacts[listing.id] = {
       phone: sellerUser.phone,
       remainingReveals: 0
@@ -852,7 +905,7 @@ export async function updateUserListing(userId: string, listingId: string, input
   return listing;
 }
 
-export async function createListingPaymentIntent(userId: string, listingId: string, input: { planId?: string; photoCount?: number; acceptedPolicies?: boolean }): Promise<PaymentIntent> {
+export async function createListingPaymentIntent(userId: string, listingId: string, input: { planId?: string; photoCount?: number; acceptedPolicies?: boolean }, idempotencyKey?: string): Promise<PaymentIntent> {
   const seller = await ensureSellerProfile(userId);
   const planId = input.planId as ListingSubscriptionPlanId;
   if (!listingSubscriptionPlans.some((plan) => plan.id === planId)) {
@@ -866,28 +919,24 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
   const now = new Date();
   const policyVersion = "2026-06-11";
   const gateway = listingPaymentGateway();
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
 
   if (hasDatabase) {
     const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
     if (!rows[0]) throw new Error("Listing not found.");
 
-    const [subscription] = await db.insert(listingSubscriptions).values({
-      id: `sub-${randomUUID()}`,
-      userId,
-      listingId,
-      planId,
-      status: "pending_payment",
-      autoRenew: true,
-      createdAt: now,
-      updatedAt: now
-    }).returning();
+    if (normalizedIdempotencyKey) {
+      const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+    }
 
-    const intentId = `pay-${randomUUID()}`;
+    const subscriptionId = normalizedIdempotencyKey ? stableIdFromKey("sub", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `sub-${randomUUID()}`;
+    const intentId = normalizedIdempotencyKey ? stableIdFromKey("pay", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `pay-${randomUUID()}`;
     let intent: PaymentIntent = {
       id: intentId,
       userId,
       listingId,
-      subscriptionId: subscription.id,
+      subscriptionId,
       purpose: "listing_subscription",
       status: "pending",
       planId,
@@ -900,42 +949,62 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
-    intent = await prepareGatewayPayment(userId, intent);
 
-    const [inserted] = await db.insert(paymentIntents).values({
-      id: intent.id,
-      userId,
-      listingId,
-      subscriptionId: subscription.id,
-      purpose: intent.purpose,
-      status: intent.status,
-      planId,
-      quote,
-      amountLkr: intent.amountLkr,
-      currency: intent.currency,
-      gateway: intent.gateway,
-      gatewayReference: intent.gatewayReference,
-      stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
-      stripeSubscriptionId: intent.stripeSubscriptionId,
-      stripeCustomerId: intent.stripeCustomerId,
-      stripeInvoiceId: intent.stripeInvoiceId,
-      paymentUrl: intent.paymentUrl,
-      policyVersion,
-      policyAcceptedAt: now,
-      createdAt: now,
-      updatedAt: now
-    }).returning();
+    let inserted: typeof paymentIntents.$inferSelect;
+    try {
+      const subscription = {
+        id: subscriptionId,
+        userId,
+        listingId,
+        planId,
+        status: "pending_payment" as ListingSubscriptionStatus,
+        autoRenew: true,
+        createdAt: now,
+        updatedAt: now
+      };
+      await db.insert(listingSubscriptions).values(subscription).onConflictDoNothing({ target: listingSubscriptions.id });
 
-    await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscription.id));
-    await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
-    return toPaymentIntent(inserted);
+      [inserted] = await db.insert(paymentIntents).values({
+        id: intent.id,
+        userId,
+        listingId,
+        idempotencyKey: normalizedIdempotencyKey,
+        subscriptionId,
+        purpose: intent.purpose,
+        status: intent.status,
+        planId,
+        quote,
+        amountLkr: intent.amountLkr,
+        currency: intent.currency,
+        gateway: intent.gateway,
+        policyVersion,
+        policyAcceptedAt: now,
+        createdAt: now,
+        updatedAt: now
+      }).returning();
+
+      await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscriptionId));
+      await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
+    } catch (error) {
+      if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
+      const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+      throw error;
+    }
+
+    return ensurePaymentIntentCheckoutUrl(toPaymentIntent(inserted));
   }
 
   const state = await getMemoryState();
   const listing = state.database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
   if (!listing) throw new Error("Listing not found.");
+  const memoryKey = normalizedIdempotencyKey ? `${userId}:${listingId}:${normalizedIdempotencyKey}` : "";
+  const existingIntentId = memoryKey ? state.paymentIntentIdempotencyKeys[memoryKey] : undefined;
+  const existingIntent = existingIntentId ? state.paymentIntents.find((item) => item.id === existingIntentId) : undefined;
+  if (existingIntent) return existingIntent.paymentUrl ? existingIntent : prepareAndUpdateMemoryPaymentIntent(existingIntent);
+
   const subscription: ListingSubscription = {
-    id: `sub-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("sub", memoryKey) : `sub-${randomUUID()}`,
     userId,
     listingId,
     planId,
@@ -946,7 +1015,7 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
     updatedAt: now.toISOString()
   };
   let intent: PaymentIntent = {
-    id: `pay-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("pay", memoryKey) : `pay-${randomUUID()}`,
     userId,
     listingId,
     subscriptionId: subscription.id,
@@ -962,10 +1031,35 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()
   };
-  intent = await prepareGatewayPayment(userId, intent);
   subscription.paymentIntentId = intent.id;
   state.listingSubscriptions.push(subscription);
   state.paymentIntents.push(intent);
+  if (memoryKey) state.paymentIntentIdempotencyKeys[memoryKey] = intent.id;
+  return prepareAndUpdateMemoryPaymentIntent(intent);
+}
+
+async function ensurePaymentIntentCheckoutUrl(intent: PaymentIntent) {
+  if (intent.paymentUrl) return intent;
+  const prepared = await prepareGatewayPayment(intent.userId, intent);
+  if (hasDatabase) {
+    const [updated] = await db.update(paymentIntents).set({
+      gatewayReference: prepared.gatewayReference,
+      stripeCheckoutSessionId: prepared.stripeCheckoutSessionId,
+      stripeSubscriptionId: prepared.stripeSubscriptionId,
+      stripeCustomerId: prepared.stripeCustomerId,
+      stripeInvoiceId: prepared.stripeInvoiceId,
+      paymentUrl: prepared.paymentUrl,
+      updatedAt: new Date()
+    }).where(eq(paymentIntents.id, intent.id)).returning();
+    return toPaymentIntent(updated);
+  }
+  Object.assign(intent, prepared, { updatedAt: new Date().toISOString() });
+  return intent;
+}
+
+async function prepareAndUpdateMemoryPaymentIntent(intent: PaymentIntent) {
+  const prepared = await prepareGatewayPayment(intent.userId, intent);
+  Object.assign(intent, prepared, { updatedAt: new Date().toISOString() });
   return intent;
 }
 
@@ -1395,7 +1489,9 @@ async function getMemoryState() {
     carts: [],
     orders: [],
     listingSubscriptions: [],
-    paymentIntents: []
+    paymentIntents: [],
+    listingIdempotencyKeys: {},
+    paymentIntentIdempotencyKeys: {}
   };
   return memoryState;
 }

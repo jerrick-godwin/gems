@@ -3,6 +3,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminModerationSnapshot } from "@gems/api-client";
 import type { Listing } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing; snapshot: AdminModerationSnapshot; onModerate: (listingId: string, decision: "approve" | "reject", reason?: string) => Promise<void> }) {
   const isQueued = listing.moderationStatus === "queued";
@@ -10,6 +11,7 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
   const [expanded, setExpanded] = useState(false);
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const moderationAction = useSingleFlightAction();
 
   const runModeration = async (decision: "approve" | "reject") => {
     let reason: string | undefined;
@@ -20,13 +22,15 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
       }
       reason = rejectReason.trim();
     }
-    setBusy(decision);
-    try {
-      await onModerate(listing.id, decision, reason);
-      if (decision === "reject") setShowRejectPrompt(false);
-    } finally {
-      setBusy(null);
-    }
+    await moderationAction.run(async () => {
+      setBusy(decision);
+      try {
+        await onModerate(listing.id, decision, reason);
+        if (decision === "reject") setShowRejectPrompt(false);
+      } finally {
+        setBusy(null);
+      }
+    });
   };
 
   const seller = snapshot.sellers.find(s => s.id === listing.sellerId);
@@ -57,10 +61,10 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
         <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600 }} onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide Details" : "View Details"}
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--emerald-soft)", color: "var(--emerald)" }} disabled={busy !== null || !isQueued} onClick={() => void runModeration("approve")}>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--emerald-soft)", color: "var(--emerald)" }} disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => void runModeration("approve")}>
           {busy === "approve" ? "Approving..." : "Approve"}
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-sm)", border: "none", cursor: busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }} disabled={busy !== null} onClick={() => setShowRejectPrompt(true)}>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-sm)", border: "none", cursor: moderationAction.busy || busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }} disabled={moderationAction.busy || busy !== null} onClick={() => setShowRejectPrompt(true)}>
           {busy === "reject" ? "Rejecting..." : "Reject"}
         </button>
       </div>
@@ -93,7 +97,7 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
               </button>
               <button
                 onClick={() => void runModeration("reject")}
-                disabled={busy !== null || !rejectReason.trim()}
+                disabled={moderationAction.busy || busy !== null || !rejectReason.trim()}
                 style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null || !rejectReason.trim() ? "not-allowed" : "pointer", fontWeight: 600, opacity: !rejectReason.trim() ? 0.5 : 1 }}
               >
                 {busy === "reject" ? "Rejecting..." : "Confirm Rejection"}

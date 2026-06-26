@@ -1,6 +1,7 @@
 import { ArrowLeft, Mail, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validatePasswordResetFields, type AuthFieldErrors } from "./authValidation";
 
@@ -9,7 +10,8 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const submitAction = useSingleFlightAction();
+  const loading = submitAction.busy;
 
   const sendResetLink = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,17 +25,16 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
       return;
     }
 
-    setLoading(true);
-    setSent(false);
-    setFormError(null);
-    try {
-      await authClient.sendPasswordReset({ email: normalizedEmail });
-      setSent(true);
-    } catch (error) {
-      setFormError(authErrorMessage(error, "Unable to send a reset link."));
-    } finally {
-      setLoading(false);
-    }
+    await submitAction.run(async () => {
+      setSent(false);
+      setFormError(null);
+      try {
+        await authClient.sendPasswordReset({ email: normalizedEmail });
+        setSent(true);
+      } catch (error) {
+        setFormError(authErrorMessage(error, "Unable to send a reset link."));
+      }
+    });
   };
 
   const handleAuthLinkClick = (event: MouseEvent<HTMLAnchorElement>, nextView: View) => {

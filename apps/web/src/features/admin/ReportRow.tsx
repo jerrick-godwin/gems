@@ -2,6 +2,7 @@ import { Eye, Flag, Trash, XCircle } from "lucide-react";
 import { useState } from "react";
 import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
 import type { Report } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function ReportRow({
   report,
@@ -22,6 +23,7 @@ export function ReportRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<"remove" | "reject" | null>(null);
+  const rowAction = useSingleFlightAction();
   const reporter = snapshot.users.find(u => u.id === report.reporterId);
   const listing = snapshot.reportedListings.find(l => l.id === report.listingId) || snapshot.liveListings.find(l => l.id === report.listingId) || snapshot.listings.find(l => l.id === report.listingId);
   const sellerProfile = listing ? snapshot.sellers.find(s => s.id === listing.sellerId) : undefined;
@@ -31,29 +33,33 @@ export function ReportRow({
   const removeListing = async () => {
     if (!listing) return;
     if (!window.confirm(`Remove "${listing.title}" permanently? This deletes it from the database.`)) return;
-    setBusy("remove");
-    try {
-      await api.removeListing(token, listing.id);
-      onRemoveListing(listing.id);
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Unable to remove listing");
-    } finally {
-      setBusy(null);
-    }
+    await rowAction.run(async () => {
+      setBusy("remove");
+      try {
+        await api.removeListing(token, listing.id);
+        onRemoveListing(listing.id);
+        setLoadError(null);
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "Unable to remove listing");
+      } finally {
+        setBusy(null);
+      }
+    });
   };
 
   const rejectClaim = async () => {
-    setBusy("reject");
-    try {
-      await api.resolveReport(token, report.id);
-      onResolveReport(report.id);
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Unable to reject report");
-    } finally {
-      setBusy(null);
-    }
+    await rowAction.run(async () => {
+      setBusy("reject");
+      try {
+        await api.resolveReport(token, report.id);
+        onResolveReport(report.id);
+        setLoadError(null);
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "Unable to reject report");
+      } finally {
+        setBusy(null);
+      }
+    });
   };
 
   return (
@@ -156,10 +162,10 @@ export function ReportRow({
                 </div>
                 <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>{listing.description}</div>
                 <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", marginTop: "auto" }}>
-                  <button style={{ minHeight: 38, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)" }} disabled={busy !== null} onClick={() => void removeListing()}>
+                  <button style={{ minHeight: 38, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)" }} disabled={rowAction.busy || busy !== null} onClick={() => void removeListing()}>
                     <Trash size={16} style={{ marginRight: 6 }} /> {busy === "remove" ? "Removing..." : "Remove Listing"}
                   </button>
-                  <button style={{ minHeight: 38, padding: "0 16px", background: "var(--soft)", color: "var(--ink)" }} disabled={busy !== null} onClick={() => void rejectClaim()}>
+                  <button style={{ minHeight: 38, padding: "0 16px", background: "var(--soft)", color: "var(--ink)" }} disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
                     <XCircle size={16} style={{ marginRight: 6 }} /> {busy === "reject" ? "Rejecting..." : "Reject"}
                   </button>
                 </div>
@@ -169,7 +175,7 @@ export function ReportRow({
             <div style={{ padding: 12, background: "var(--panel)", borderRadius: 6, fontSize: 13, color: "var(--muted)" }}>
               Listing details no longer available.
               <div style={{ marginTop: 12 }}>
-                <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)" }} disabled={busy !== null} onClick={() => void rejectClaim()}>
+                <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)" }} disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
                   <XCircle size={16} style={{ marginRight: 6 }} /> {busy === "reject" ? "Rejecting..." : "Reject"}
                 </button>
               </div>

@@ -28,6 +28,8 @@ export async function ensureDatabaseCompatibility() {
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_subscription_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_customer_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_invoice_id varchar`);
+    await db.execute(sql`ALTER TABLE listings ADD COLUMN IF NOT EXISTS idempotency_key varchar`);
+    await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS idempotency_key varchar`);
     await db.execute(sql`
       UPDATE payment_intents
       SET stripe_checkout_session_id = gateway_reference
@@ -44,6 +46,8 @@ export async function ensureDatabaseCompatibility() {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "payment_intents_stripe_checkout_session_id_idx" ON "payment_intents" ("stripe_checkout_session_id")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "payment_intents_stripe_subscription_id_idx" ON "payment_intents" ("stripe_subscription_id")`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "listings_seller_idempotency_unique" ON "listings" ("seller_id", "idempotency_key")`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "payment_intents_user_listing_idempotency_unique" ON "payment_intents" ("user_id", "listing_id", "idempotency_key")`);
     await db.insert(schema.gemTypes)
       .values(worldwideGemTypes)
       .onConflictDoUpdate({
