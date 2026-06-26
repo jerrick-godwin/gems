@@ -1,8 +1,8 @@
-import { Trash2 } from "lucide-react";
+import { CreditCard, RefreshCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type Treatment, type UserDashboard } from "@gems/schemas";
+import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type ListingSubscriptionSummary, type Treatment, type UserDashboard } from "@gems/schemas";
 
 export function MyListingsView({
   dashboard,
@@ -18,7 +18,9 @@ export function MyListingsView({
   const listings = dashboard?.sellerListings ?? [];
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
+  const [payingSubscriptionId, setPayingSubscriptionId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmCancelSubscriptionId, setConfirmCancelSubscriptionId] = useState<string | null>(null);
 
   const getStatusLabel = (listing: Listing) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
@@ -45,15 +47,37 @@ export function MyListingsView({
       alert("Failed to cancel renewal: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
       setCancellingSubscriptionId(null);
+      setConfirmCancelSubscriptionId(null);
+    }
+  };
+
+  const handlePayNow = async (subscriptionId: string) => {
+    try {
+      setPayingSubscriptionId(subscriptionId);
+      const paymentIntent = await api.getListingSubscriptionPaymentIntent(subscriptionId);
+      if (!paymentIntent.paymentUrl) {
+        alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
+        return;
+      }
+      window.location.href = paymentIntent.paymentUrl;
+    } catch (error) {
+      alert("Failed to open checkout: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setPayingSubscriptionId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
+    const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === id);
+    const willRemoveAtExpiry = isSubscriptionInPaidAccess(subscription);
     try {
       setDeletingId(id);
       await api.removeMyListing(id);
       const newDashboard = await api.dashboard();
       onDashboardChange(newDashboard);
+      if (willRemoveAtExpiry && subscription?.expiresAt) {
+        alert(`Renewal has been cancelled. This listing will be removed on ${formatDate(subscription.expiresAt)}.`);
+      }
     } catch (error) {
       alert("Failed to delete listing: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
@@ -61,6 +85,10 @@ export function MyListingsView({
       setConfirmDeleteId(null);
     }
   };
+
+  const confirmDeleteListing = confirmDeleteId ? listings.find((listing) => listing.id === confirmDeleteId) : undefined;
+  const confirmDeleteSubscription = confirmDeleteListing ? dashboard?.listingSubscriptions.find((item) => item.listingId === confirmDeleteListing.id) : undefined;
+  const confirmDeleteRemovesAtExpiry = isSubscriptionInPaidAccess(confirmDeleteSubscription);
 
 
 
@@ -106,8 +134,12 @@ export function MyListingsView({
                       {subscription && plan && (
                         <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)" }}>
                           <strong>{plan.name} subscription:</strong> {subscription.status.replace("_", " ")}
-                          {subscription.expiresAt ? ` · valid until ${new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(subscription.expiresAt))}` : ""}
-                          {subscription.autoRenew ? " · auto-renew on" : " · auto-renew cancelled"}
+                          {subscription.expiresAt ? ` · valid until ${formatDate(subscription.expiresAt)}` : ""}
+                          {subscription.autoRenew
+                            ? " · auto-renew on"
+                            : subscription.expiresAt && isSubscriptionInPaidAccess(subscription)
+                              ? ` · will be removed on ${formatDate(subscription.expiresAt)}`
+                              : " · auto-renew cancelled"}
                         </div>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -123,12 +155,23 @@ export function MyListingsView({
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                    {subscription && isAwaitingInitialPayment(subscription) && (
+                      <button
+                        onClick={() => void handlePayNow(subscription.id)}
+                        disabled={payingSubscriptionId === subscription.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "#fff", border: "none", cursor: payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                      >
+                        <CreditCard size={16} strokeWidth={2.5} />
+                        {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
+                      </button>
+                    )}
                     {subscription?.autoRenew && (
                       <button
-                        onClick={() => void handleCancelRenewal(subscription.id)}
+                        onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
                         disabled={cancellingSubscriptionId === subscription.id}
                         style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: "pointer", fontWeight: 600 }}
                       >
+                        <RefreshCcw size={16} strokeWidth={2.5} />
                         {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
                       </button>
                     )}
@@ -155,7 +198,15 @@ export function MyListingsView({
               <Trash2 size={20} className="text-danger" style={{ color: "var(--danger)" }} /> Delete Listing
             </h3>
             <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
-              Are you sure you want to delete this listing? This action <strong>cannot be undone</strong> and the data cannot be recovered.
+              {confirmDeleteRemovesAtExpiry && confirmDeleteSubscription?.expiresAt ? (
+                <>
+                  This listing has an active subscription. Deleting it will cancel renewal now, keep the current paid access, and remove the listing on <strong>{formatDate(confirmDeleteSubscription.expiresAt)}</strong>.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete this listing? This action <strong>cannot be undone</strong> and the data cannot be recovered.
+                </>
+              )}
             </p>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button
@@ -169,7 +220,36 @@ export function MyListingsView({
                 disabled={deletingId !== null}
                 style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
               >
-                {deletingId === confirmDeleteId ? "Deleting..." : "Proceed to Delete"}
+                {deletingId === confirmDeleteId ? "Processing..." : confirmDeleteRemovesAtExpiry ? "Cancel Renewal" : "Proceed to Delete"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {confirmCancelSubscriptionId && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <RefreshCcw size={20} style={{ color: "var(--gold)" }} /> Cancel Renewal
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+              Are you sure you want to cancel auto-renewal for this listing subscription? The listing keeps its current paid access, but it will not renew automatically.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => setConfirmCancelSubscriptionId(null)}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Keep Renewal
+              </button>
+              <button
+                onClick={() => void handleCancelRenewal(confirmCancelSubscriptionId)}
+                disabled={cancellingSubscriptionId !== null}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: cancellingSubscriptionId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+              >
+                {cancellingSubscriptionId === confirmCancelSubscriptionId ? "Cancelling..." : "Proceed to Cancel"}
               </button>
             </div>
           </div>
@@ -202,4 +282,24 @@ function getListingAttributes(listing: Listing, gemTypeName?: string) {
 
 function formatTreatment(treatment: Treatment) {
   return treatment.charAt(0).toUpperCase() + treatment.slice(1);
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function isSubscriptionInPaidAccess(subscription: ListingSubscriptionSummary | undefined) {
+  return Boolean(
+    subscription &&
+    (subscription.status === "active" || subscription.status === "past_due") &&
+    subscription.expiresAt &&
+    new Date(subscription.expiresAt) > new Date()
+  );
+}
+
+function isAwaitingInitialPayment(subscription: ListingSubscriptionSummary | undefined) {
+  return Boolean(
+    subscription &&
+    (subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt))
+  );
 }

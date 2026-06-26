@@ -84,7 +84,7 @@ export function MultiSelectDropdown({
             position: "absolute",
             top: "100%",
             left: 0,
-            width: "240px",
+            right: 0,
             background: "var(--bg)",
             border: "1px solid var(--line)",
             borderRadius: "var(--radius)",
@@ -98,7 +98,7 @@ export function MultiSelectDropdown({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search countries..."
-            style={{ width: "100%", marginBottom: 8, padding: 8, background: "var(--panel-strong)", border: "1px solid var(--line)", borderRadius: "var(--radius)", color: "var(--ink)" }}
+            style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, padding: 8, background: "var(--panel-strong)", border: "1px solid var(--line)", borderRadius: "var(--radius)", color: "var(--ink)" }}
             onClick={(event) => event.stopPropagation()}
           />
           <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>

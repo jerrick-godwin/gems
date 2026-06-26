@@ -1,5 +1,5 @@
-import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, EyeOff, Filter, Flag, MapPin, Phone, Search, SlidersHorizontal, Star, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type CertificateStatus, type Listing, type SellerProfile, type Treatment } from "@gems/schemas";
@@ -31,16 +31,19 @@ export interface MarketplaceProps {
   setSort: (value: SortKey) => void;
   selectedId: string;
   setSelectedId: (id: string) => void;
+  previewPhone?: string;
   revealedPhone?: string;
-  revealPhone: (listingId: string) => void;
+  previewPhoneNumber: (listingId: string) => void | Promise<void>;
+  revealPhone: (listingId: string) => void | Promise<void>;
   isSignedIn: boolean;
   reportedListingIds: string[];
+  onRefresh: () => void | Promise<void>;
   onReport: (listingId: string, reason: string, notes: string) => Promise<void>;
 }
 
 export function Marketplace(props: MarketplaceProps) {
   if (!props.selectedListing && props.sourceListingCount === 0) {
-    return <StatusState title="No listings available" message="Try refreshing once marketplace data has been published." />;
+    return <StatusState title="No listings available" message="Try refreshing once marketplace data has been published." onRetry={props.onRefresh} />;
   }
 
   return (
@@ -82,10 +85,22 @@ export function Marketplace(props: MarketplaceProps) {
               ))}
             </div>
             {props.totalPages > 1 && (
-              <div className="pagination" style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 32 }}>
-                <button disabled={props.page <= 1} onClick={() => props.setPage(props.page - 1)} style={{ padding: "8px 16px", borderRadius: "var(--radius)", background: props.page <= 1 ? "var(--line-subtle)" : "var(--ink)", color: props.page <= 1 ? "var(--sage)" : "#fff", border: "none", cursor: props.page <= 1 ? "not-allowed" : "pointer" }}>Previous</button>
-                <div style={{ display: "flex", alignItems: "center", fontWeight: 600 }}>Page {props.page} of {props.totalPages}</div>
-                <button disabled={props.page >= props.totalPages} onClick={() => props.setPage(props.page + 1)} style={{ padding: "8px 16px", borderRadius: "var(--radius)", background: props.page >= props.totalPages ? "var(--line-subtle)" : "var(--ink)", color: props.page >= props.totalPages ? "var(--sage)" : "#fff", border: "none", cursor: props.page >= props.totalPages ? "not-allowed" : "pointer" }}>Next</button>
+              <div className="pagination">
+                <button
+                  className="pagination-btn"
+                  disabled={props.page <= 1}
+                  onClick={() => props.setPage(props.page - 1)}
+                >
+                  Previous
+                </button>
+                <span className="pagination-info">Page {props.page} of {props.totalPages}</span>
+                <button
+                  className="pagination-btn"
+                  disabled={props.page >= props.totalPages}
+                  onClick={() => props.setPage(props.page + 1)}
+                >
+                  Next
+                </button>
               </div>
             )}
           </>
@@ -143,7 +158,9 @@ export function Marketplace(props: MarketplaceProps) {
               listing={props.selectedListing}
               gemTypes={props.gemTypes}
               sellers={props.sellers}
+              previewPhone={props.previewPhone}
               revealedPhone={props.revealedPhone}
+              onPreviewPhone={() => props.previewPhoneNumber(props.selectedListing!.id)}
               onReveal={() => props.revealPhone(props.selectedListing!.id)}
               isSignedIn={props.isSignedIn}
               isReported={props.reportedListingIds.includes(props.selectedListing.id)}
@@ -187,16 +204,28 @@ function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listi
   );
 }
 
-function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, isSignedIn, isReported, onReport }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; revealedPhone?: string; onReveal: () => void; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
+function maskPhoneNumber(phone?: string) {
+  if (!phone) return phone;
+  let visibleDigits = 0;
+  return phone.replace(/\d/g, (digit) => {
+    visibleDigits += 1;
+    return visibleDigits <= 3 ? digit : "•";
+  });
+}
+
+function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone, onPreviewPhone, onReveal, isSignedIn, isReported, onReport }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; previewPhone?: string; revealedPhone?: string; onPreviewPhone: () => void | Promise<void>; onReveal: () => void | Promise<void>; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
   const [reported, setReported] = useState(false);
-  const [phoneHidden, setPhoneHidden] = useState(false);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isFullRevealLoading, setIsFullRevealLoading] = useState(false);
+  const [fullPhoneVisible, setFullPhoneVisible] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const images = useMemo(() => listing.media.filter((media) => media.kind !== "certificate"), [listing.media]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const requestedPhoneListingId = useRef<string>();
   const attributes = getListingAttributes(listing, gemType?.name);
 
   useEffect(() => {
@@ -204,6 +233,57 @@ function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, is
     const interval = setInterval(() => setCurrentImageIndex((prev) => (prev + 1) % images.length), 5000);
     return () => clearInterval(interval);
   }, [images.length]);
+
+  const previewPhoneText = isSignedIn ? previewPhone : maskPhoneNumber(previewPhone);
+  const phoneText = isSignedIn && fullPhoneVisible && revealedPhone ? revealedPhone : previewPhoneText ?? "";
+
+  useEffect(() => {
+    requestedPhoneListingId.current = undefined;
+    setFullPhoneVisible(false);
+  }, [listing.id]);
+
+  useEffect(() => {
+    if (isSignedIn && revealedPhone) {
+      setFullPhoneVisible(true);
+      return;
+    }
+    if (!isSignedIn) setFullPhoneVisible(false);
+  }, [isSignedIn, revealedPhone]);
+
+  useEffect(() => {
+    if (previewPhone || requestedPhoneListingId.current === listing.id) return;
+    let active = true;
+    requestedPhoneListingId.current = listing.id;
+    setIsPreviewLoading(true);
+    Promise.resolve(onPreviewPhone())
+      .catch((error) => {
+        if (!active) return;
+        requestedPhoneListingId.current = undefined;
+        console.error("Unable to load phone number", error);
+      })
+      .finally(() => {
+        if (active) setIsPreviewLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [listing.id, onPreviewPhone, previewPhone]);
+
+  const handlePhoneToggle = async () => {
+    if (isSignedIn && revealedPhone) {
+      setFullPhoneVisible((current) => !current);
+      return;
+    }
+    if (isFullRevealLoading) return;
+    try {
+      setIsFullRevealLoading(true);
+      await onReveal();
+    } catch (error) {
+      alert("Unable to load phone number: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setIsFullRevealLoading(false);
+    }
+  };
 
   const handleReportClick = () => {
     if (!isSignedIn) {
@@ -231,8 +311,20 @@ function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, is
       <div className="detail-image-container" style={{ position: "relative", width: "100%", overflow: "hidden", borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }}>
         <img className="detail-image" src={images[currentImageIndex]?.url} alt={images[currentImageIndex]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} />
         {images.length > 1 && <>
-          <button onClick={(event) => { event.stopPropagation(); setCurrentImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1)); }} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", color: "white", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, zIndex: 10 }}><ChevronLeft size={20} /></button>
-          <button onClick={(event) => { event.stopPropagation(); setCurrentImageIndex((prev) => (prev + 1) % images.length); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", color: "white", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, zIndex: 10 }}><ChevronRight size={20} /></button>
+          <button
+            className="carousel-nav prev"
+            onClick={(event) => { event.stopPropagation(); setCurrentImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1)); }}
+            aria-label="Previous image"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <button
+            className="carousel-nav next"
+            onClick={(event) => { event.stopPropagation(); setCurrentImageIndex((prev) => (prev + 1) % images.length); }}
+            aria-label="Next image"
+          >
+            <ChevronRight size={20} />
+          </button>
         </>}
       </div>
       <div className="detail-body">
@@ -252,7 +344,25 @@ function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, is
         </div>
         <div className="seller-card"><div className="avatar">{seller?.displayName.slice(0, 1)}</div><div><strong style={{ fontWeight: 700 }}>{seller?.displayName}</strong><span style={{ display: "flex", alignItems: "center", gap: 4 }}>{sellerProfileLabel(seller?.verificationStatus)} · <MapPin size={12} /> {listing.location}</span></div></div>
         <div className="cart-action-row">
-          {revealedPhone && !phoneHidden ? <div className="phone-action-group"><button className="primary-action btn-blue phone-number-action" style={{ cursor: "default" }}><Phone size={18} />{revealedPhone}</button><button className="primary-action btn-blue phone-hide-action" onClick={() => setPhoneHidden(true)} aria-label="Hide phone number"><EyeOff size={18} /></button></div> : <button className="primary-action btn-blue" onClick={() => { if (revealedPhone) setPhoneHidden(false); else onReveal(); }} style={{ flex: "1 1 180px" }}><Phone size={18} />{isSignedIn ? "Show Phone Number" : "Sign in to view"}</button>}
+          <div className={`phone-reveal${phoneText ? " has-number" : ""}`}>
+            <Phone size={18} />
+            <span className="phone-reveal-text">
+              {phoneText ? (
+                <span>{phoneText}</span>
+              ) : (
+                <span>{isPreviewLoading ? "Loading..." : "Phone number"}</span>
+              )}
+            </span>
+            <button
+              type="button"
+              className="phone-eye-action"
+              onClick={handlePhoneToggle}
+              disabled={isFullRevealLoading || (!phoneText && isPreviewLoading)}
+              aria-label={fullPhoneVisible && revealedPhone ? "Hide phone number" : "Show full phone number"}
+            >
+              {fullPhoneVisible && revealedPhone ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
           {isReported || reported ? <div className="primary-action" aria-label="Listing already reported" style={{ flex: "1 1 120px", background: "var(--line-subtle)", color: "var(--sage)", cursor: "default" }}><Check size={16} strokeWidth={2.5} />Reported</div> : <button className="primary-action btn-red" id="report-listing" onClick={handleReportClick} aria-label="Report listing" style={{ flex: "1 1 120px" }}><Flag size={16} strokeWidth={2} />Report</button>}
         </div>
       </div>

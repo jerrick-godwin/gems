@@ -51,6 +51,12 @@ az deployment group create \
     adminSessionSecret="${ADMIN_SESSION_SECRET}" \
     firebaseServiceAccount="${FIREBASE_JSON_CONTENT}" \
     adminFirebaseServiceAccount="${ADMIN_FIREBASE_JSON_CONTENT}" \
+    stripePublishableKey="${STRIPE_PUBLISHABLE_KEY:-}" \
+    stripeSecretKey="${STRIPE_SECRET_KEY:-}" \
+    stripeCurrency="${STRIPE_CURRENCY:-LKR}" \
+    stripeLkrPerUnit="${STRIPE_LKR_PER_UNIT:-${STRIPE_LKR_PER_USD:-}}" \
+    stripeWebhookSecret="${STRIPE_WEBHOOK_SECRET:-}" \
+    publicSiteUrl="${PUBLIC_SITE_URL:-}" \
   --output json > "${DEPLOYMENT_JSON}"
 
 WEB_APP_NAME="$(node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); console.log(d.properties.outputs.webAppName.value)" "${DEPLOYMENT_JSON}")"

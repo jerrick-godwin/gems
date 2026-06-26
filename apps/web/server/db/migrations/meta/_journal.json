@@ -36,6 +36,34 @@
       "when": 1781951400000,
       "tag": "0004_drop_wishlists",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782345600000,
+      "tag": "0006_stripe_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782349200000,
+      "tag": "0007_complete_stripe_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782352800000,
+      "tag": "0008_user_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782356400000,
+      "tag": "0009_worldwide_gem_types",
+      "breakpoints": true
     }
   ]
 }

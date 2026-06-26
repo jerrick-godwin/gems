@@ -7,6 +7,30 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/login",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/signup",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/post",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/listings",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/reports",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/profile",
+      "destination": "/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/$1"
     }

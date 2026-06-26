@@ -35,6 +35,26 @@ param firebaseServiceAccount string
 @description('Admin Firebase Service Account JSON string.')
 param adminFirebaseServiceAccount string
 
+@description('Stripe publishable key. Leave blank to keep Stripe disabled.')
+param stripePublishableKey string = ''
+
+@secure()
+@description('Stripe secret key. Leave blank to keep Stripe disabled.')
+param stripeSecretKey string = ''
+
+@description('Stripe charge currency. LKR keeps listing prices in native currency.')
+param stripeCurrency string = 'LKR'
+
+@description('Number of LKR represented by one Stripe charge-currency unit when STRIPE_CURRENCY is not LKR.')
+param stripeLkrPerUnit string = ''
+
+@secure()
+@description('Stripe webhook signing secret for /api/v1/payments/stripe/webhook.')
+param stripeWebhookSecret string = ''
+
+@description('Public origin used for Stripe Checkout success and cancel URLs. Defaults to the Azure Web App URL.')
+param publicSiteUrl string = ''
+
 @description('PostgreSQL SKU. Standard_B1ms is low-cost for dev.')
 param postgresSkuName string = 'Standard_B1ms'
 
@@ -54,6 +74,7 @@ var workspaceName = '${normalizedApp}-logs'
 var appInsightsName = '${normalizedApp}-appi'
 var postgresHost = '${postgresServerName}.postgres.database.azure.com'
 var databaseUrl = 'postgres://${postgresAdminLogin}:${postgresAdminPassword}@${postgresHost}:5432/${postgresDatabaseName}?sslmode=require'
+var effectivePublicSiteUrl = empty(publicSiteUrl) ? 'https://${webAppName}.azurewebsites.net' : publicSiteUrl
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: workspaceName
@@ -217,6 +238,30 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           value: '@Microsoft.KeyVault(SecretUri=${adminFirebaseServiceAccountSecret.properties.secretUri})'
         }
         {
+          name: 'STRIPE_PUBLISHABLE_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${stripePublishableKeySecret.properties.secretUri})'
+        }
+        {
+          name: 'STRIPE_SECRET_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${stripeSecretKeySecret.properties.secretUri})'
+        }
+        {
+          name: 'STRIPE_CURRENCY'
+          value: stripeCurrency
+        }
+        {
+          name: 'STRIPE_LKR_PER_UNIT'
+          value: stripeLkrPerUnit
+        }
+        {
+          name: 'STRIPE_WEBHOOK_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${stripeWebhookSecretSecret.properties.secretUri})'
+        }
+        {
+          name: 'PUBLIC_SITE_URL'
+          value: effectivePublicSiteUrl
+        }
+        {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
         }
@@ -305,6 +350,30 @@ resource adminFirebaseServiceAccountSecret 'Microsoft.KeyVault/vaults/secrets@20
   name: 'ADMIN-FIREBASE-SERVICE-ACCOUNT'
   properties: {
     value: adminFirebaseServiceAccount
+  }
+}
+
+resource stripePublishableKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'STRIPE-PUBLISHABLE-KEY'
+  properties: {
+    value: stripePublishableKey
+  }
+}
+
+resource stripeSecretKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'STRIPE-SECRET-KEY'
+  properties: {
+    value: stripeSecretKey
+  }
+}
+
+resource stripeWebhookSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'STRIPE-WEBHOOK-SECRET'
+  properties: {
+    value: stripeWebhookSecret
   }
 }
 

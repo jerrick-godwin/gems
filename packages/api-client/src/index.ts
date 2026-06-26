@@ -10,6 +10,7 @@ import type {
   Order,
   OrderStatus,
   PaymentIntent,
+  PaymentReceipt,
   PromotionCampaign,
   Report,
   SavedSearch,
@@ -77,10 +78,14 @@ export class GemsApiClient {
     return response.json() as Promise<PaginatedResponse<Listing>>;
   }
 
-  async revealPhone(listingId: string) {
+  async previewPhone(listingId: string) {
     const response = await fetch(`${this.baseUrl}/listings/${listingId}/reveal-phone`, { method: "POST" });
     if (!response.ok) throw new Error("Unable to reveal phone");
     return response.json() as Promise<{ phone: string; remainingReveals: number }>;
+  }
+
+  async revealPhone(listingId: string) {
+    return this.authJson<{ phone: string; remainingReveals: number }>(`/listings/${listingId}/reveal-phone?full=1`, { method: "POST" });
   }
 
   async reportListing(listingId: string, reason: string, notes?: string): Promise<void> {
@@ -128,6 +133,14 @@ export class GemsApiClient {
 
   async createListingPaymentIntent(listingId: string, request: { planId: ListingSubscriptionPlanId; photoCount: number; acceptedPolicies: boolean }): Promise<PaymentIntent> {
     return this.authJson(`/listings/${listingId}/payment-intents`, { method: "POST", body: JSON.stringify(request) });
+  }
+
+  async getListingSubscriptionPaymentIntent(subscriptionId: string): Promise<PaymentIntent> {
+    return this.authJson(`/listing-subscriptions/${subscriptionId}/payment-intent`);
+  }
+
+  async getPaymentReceipt(paymentIntentId: string): Promise<PaymentReceipt> {
+    return this.authJson(`/users/me/payment-intents/${paymentIntentId}/receipt`);
   }
 
   async cancelListingSubscription(subscriptionId: string): Promise<ListingSubscription> {

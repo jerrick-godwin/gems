@@ -79,7 +79,7 @@ export function AdminConsole({
             <h2>Pending Payments</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontWeight: 700 }}>
               <CreditCard size={18} />
-              {pendingPayments.length} payment{pendingPayments.length > 1 ? "s" : ""} waiting for Webxpay confirmation.
+              {pendingPayments.length} payment{pendingPayments.length > 1 ? "s" : ""} waiting for gateway confirmation.
             </div>
           </section>
         )}

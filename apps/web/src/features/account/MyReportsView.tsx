@@ -32,7 +32,7 @@ export function MyReportsView({
   const listingForReport = (report: Report) => report.listing ?? listings.find((listing) => listing.id === report.listingId);
 
   if (reports.length === 0) {
-    return <StatusState title="No reports found" message="You haven't reported any listings yet." />;
+    return <StatusState title="No reports found" message="You haven't reported any listings yet." showAction={false} />;
   }
 
   return (
@@ -162,4 +162,3 @@ export function MyReportsView({
     </section>
   );
 }
-

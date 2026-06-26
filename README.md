@@ -5,7 +5,7 @@ Gems Marketplace is a Gem inquiry marketplace for Global buyers and sellers. The
 ## What Is Included
 
 - Buyer marketplace, account flows, cart, checkout reservation, and listing creation in `apps/web`
-- Seller dashboard, post-gem flow, and monetization panels
+- Post-gem flow, seller listings, and monetization panels
 - Separate admin moderation panel with its own Firebase/admin session flow
 - Node API and production server bundle in `apps/web/server`
 - Shared domain schemas in `packages/schemas`
@@ -35,6 +35,17 @@ cp apps/web/.env.example apps/web/.env
 ```
 
 The app can run without `DATABASE_URL` for local development. In that mode, marketplace records fall back to `apps/web/server/db/database.json` and user records use an in-memory store.
+
+Password reset emails are sent by Firebase Authentication, so local reset links only work after the public buyer/seller Firebase web config values are set in `apps/web/.env`:
+
+```bash
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+After changing these values, restart `npm run dev`. In the Firebase console, make sure Email/Password sign-in is enabled and your local or production domain is listed under Authentication authorized domains.
 
 ## Run
 
@@ -85,6 +96,44 @@ ADMIN_SESSION_SECRET=replace-with-a-long-random-secret
 ```
 
 The admin panel stores the returned bearer token in local storage and sends it to protected admin endpoints. Public marketplace snapshots only include approved listings and do not include reports.
+
+## Listing Payments
+
+The listing-subscription payment flow uses Stripe Billing through hosted Checkout. Basic renews monthly, Pro renews every 2 months, and Plus renews every 3 months.
+
+Configure Stripe on the backend process:
+
+```bash
+STRIPE_PUBLISHABLE_KEY=replace-with-stripe-publishable-key
+STRIPE_SECRET_KEY=replace-with-stripe-secret-key
+STRIPE_WEBHOOK_SECRET=replace-with-stripe-webhook-signing-secret
+STRIPE_CURRENCY=LKR
+PUBLIC_SITE_URL=https://gemslanka.lk
+```
+
+To charge in a different Stripe currency while keeping listing prices in LKR internally, set `STRIPE_CURRENCY` and `STRIPE_LKR_PER_UNIT`.
+
+Create a Stripe webhook endpoint at:
+
+```text
+https://your-domain.example/api/v1/payments/stripe/webhook
+```
+
+Subscribe it to:
+
+```text
+checkout.session.completed
+checkout.session.async_payment_succeeded
+checkout.session.async_payment_failed
+checkout.session.expired
+invoice.paid
+invoice.payment_succeeded
+invoice.payment_failed
+invoice.payment_action_required
+invoice.finalization_failed
+customer.subscription.updated
+customer.subscription.deleted
+```
 
 ## Data
 

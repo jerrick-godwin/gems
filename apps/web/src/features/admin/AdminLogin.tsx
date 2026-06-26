@@ -7,8 +7,8 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
   return (
     <main className="admin-login-screen">
       <section className="admin-login-card">
-        <div className="brand-mark" style={{ width: 56, height: 56, margin: "0 auto", borderRadius: "16px", background: "var(--emerald)", boxShadow: "0 12px 24px rgba(8, 113, 92, 0.3)" }}>
-          <img src="/assets/logo-mark.svg" alt="" />
+        <div className="brand-mark login-logo admin-login-logo">
+          <img src="/assets/gemslanka-logo.png" alt="gemslanka.lk" />
         </div>
         <div style={{ textAlign: "center" }}>
           <h1 style={{ marginBottom: 6 }}>Admin Sign In</h1>
@@ -51,5 +51,4 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
     </main>
   );
 }
-
 

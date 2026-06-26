@@ -772,7 +772,7 @@
           "type": "varchar",
           "primaryKey": false,
           "notNull": true,
-          "default": "'direct_bank_transfer'"
+          "default": "'stripe'"
         },
         "billing_details": {
           "name": "billing_details",

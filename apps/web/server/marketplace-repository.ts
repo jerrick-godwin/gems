@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import type { Conversation, GemType, Listing, MarketplaceContent, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
+import type { Conversation, Listing, MarketplaceContent, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
 import { eq, ne, and, or, ilike, desc, asc, sql, inArray } from "drizzle-orm";
 import { db, hasDatabase } from "./db/index.js";
 import {
@@ -24,7 +24,6 @@ export interface ListingContact {
 
 
 export interface MarketplaceDatabase {
-  gemTypes: GemType[];
   locations: string[];
   listings: Listing[];
   sellers: SellerProfile[];
@@ -47,7 +46,7 @@ export async function getMutableMarketplaceDatabase() {
 export async function getMarketplaceSnapshot() {
   if (hasDatabase) {
     const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows] = await Promise.all([
-      db.select().from(gemTypeTable),
+      db.select().from(gemTypeTable).orderBy(asc(gemTypeTable.name)),
       db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`)),
       db.select().from(sellerProfileTable),
       db.select().from(conversationTable),
@@ -65,21 +64,12 @@ export async function getMarketplaceSnapshot() {
     };
   }
 
-  const database = await getMutableMarketplaceDatabase();
-  return {
-    gemTypes: database.gemTypes,
-    locations: database.locations,
-    listings: database.listings.filter(isPublicListing),
-    sellers: database.sellers,
-    conversations: database.conversations,
-    savedSearches: database.savedSearches,
-    content: database.content
-  };
+  throw new Error("DATABASE_URL is required to load marketplace gem types.");
 }
 
 export async function getGemTypes() {
-  if (hasDatabase) return db.select().from(gemTypeTable);
-  return (await getMutableMarketplaceDatabase()).gemTypes;
+  if (!hasDatabase) throw new Error("DATABASE_URL is required to load gem types.");
+  return db.select().from(gemTypeTable).orderBy(asc(gemTypeTable.name));
 }
 
 export async function getLocations() {
@@ -87,7 +77,8 @@ export async function getLocations() {
     const rows = await db.select().from(locationsTable);
     return rows.map((row) => row.name);
   }
-  return (await getMutableMarketplaceDatabase()).locations;
+  const database = await getMutableMarketplaceDatabase();
+  return database.locations;
 }
 
 export async function getListings(filters: { gemType?: string; location?: string } = {}) {
@@ -127,7 +118,13 @@ export async function searchListings(params: {
         or(
           ilike(listingTable.title, q),
           ilike(listingTable.location, q),
-          sql`attributes->>'origin' ILIKE ${q}`
+          sql`attributes->>'origin' ILIKE ${q}`,
+          sql`${listingTable.gemTypeId} in (
+            select ${gemTypeTable.id}
+            from ${gemTypeTable}
+            where ${gemTypeTable.name} ilike ${q}
+              or ${gemTypeTable.slug} ilike ${q}
+          )`
         )!
       );
     }
@@ -190,10 +187,8 @@ export async function searchListings(params: {
     
     if (params.query) {
       const q = params.query.toLowerCase();
-      const gemTypeObj = dbData.gemTypes.find((t) => t.id === listing.gemTypeId);
       const matchesSearch =
         listing.title.toLowerCase().includes(q) ||
-        (gemTypeObj && gemTypeObj.name.toLowerCase().includes(q)) ||
         listing.location.toLowerCase().includes(q) ||
         (listing.attributes.origin && listing.attributes.origin.toLowerCase().includes(q));
       if (!matchesSearch) return false;
@@ -234,13 +229,22 @@ export async function getListing(listingId: string) {
   return (await getMutableMarketplaceDatabase()).listings.find((listing) => listing.id === listingId);
 }
 
-export async function revealListingPhone(listingId: string) {
+export async function revealListingPhone(listingId: string, options: { full?: boolean } = {}) {
   if (hasDatabase) {
     const rows = await db.select().from(listingContactTable).where(eq(listingContactTable.listingId, listingId)).limit(1);
-    return rows[0] ? { phone: rows[0].phone, remainingReveals: rows[0].remainingReveals } : { phone: "", remainingReveals: 0 };
+    return rows[0] ? { phone: options.full ? rows[0].phone : maskPhoneNumber(rows[0].phone), remainingReveals: rows[0].remainingReveals } : { phone: "", remainingReveals: 0 };
   }
   const database = await getMutableMarketplaceDatabase();
-  return database.listingContacts[listingId] ?? { phone: "", remainingReveals: 0 };
+  const contact = database.listingContacts[listingId];
+  return contact ? { ...contact, phone: options.full ? contact.phone : maskPhoneNumber(contact.phone) } : { phone: "", remainingReveals: 0 };
+}
+
+function maskPhoneNumber(phone: string) {
+  let visibleDigits = 0;
+  return phone.replace(/\d/g, (digit) => {
+    visibleDigits += 1;
+    return visibleDigits <= 3 ? digit : "•";
+  });
 }
 
 export async function getConversations() {
