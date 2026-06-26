@@ -31,6 +31,9 @@
   --surface-muted: #1e293b;
   --field-bg: #101827;
   --field-bg-hover: #162032;
+  --field-readonly-bg: #182232;
+  --field-readonly-border: rgba(148, 163, 184, 0.22);
+  --field-readonly-text: #9aa7b5;
   --control-bg: #172033;
   --control-hover: #213047;
   --selected-bg: rgba(16, 185, 129, 0.14);
@@ -103,6 +106,9 @@
   --surface-muted: #f1f5f9;
   --field-bg: #ffffff;
   --field-bg-hover: #fbfdff;
+  --field-readonly-bg: #eef1f3;
+  --field-readonly-border: #d6dce1;
+  --field-readonly-text: #7b858c;
   --control-bg: #f1f5f9;
   --control-hover: #e7edf4;
   --selected-bg: #e9f8f2;
@@ -1548,9 +1554,9 @@ main {
 .settings-form input:disabled,
 .settings-form select:disabled,
 .settings-form textarea:disabled {
-  background: #eef1f3;
-  border-color: #d6dce1;
-  color: #7b858c;
+  background: var(--field-readonly-bg);
+  border-color: var(--field-readonly-border);
+  color: var(--field-readonly-text);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -1560,7 +1566,7 @@ main {
 .settings-form input:disabled:focus,
 .settings-form select:disabled:focus,
 .settings-form textarea:disabled:focus {
-  border-color: #d6dce1;
+  border-color: var(--field-readonly-border);
   box-shadow: none;
 }
 

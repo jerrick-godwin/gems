@@ -38,6 +38,10 @@ export interface AdminSession {
   role: "admin";
 }
 
+export interface IdempotentRequestOptions {
+  idempotencyKey?: string;
+}
+
 
 
 export interface AdminModerationSnapshot {
@@ -119,8 +123,8 @@ export class GemsApiClient {
     return this.authJson("/users/me/dashboard");
   }
 
-  async createListing(input: Partial<Listing>): Promise<Listing> {
-    return this.authJson("/listings", { method: "POST", body: JSON.stringify(input) });
+  async createListing(input: Partial<Listing>, options: IdempotentRequestOptions = {}): Promise<Listing> {
+    return this.authJson("/listings", { method: "POST", body: JSON.stringify(input) }, options);
   }
 
   async removeMyListing(listingId: string): Promise<Listing> {
@@ -131,8 +135,8 @@ export class GemsApiClient {
     return this.authJson(`/users/me/listings/${listingId}`, { method: "PATCH", body: JSON.stringify(updates) });
   }
 
-  async createListingPaymentIntent(listingId: string, request: { planId: ListingSubscriptionPlanId; photoCount: number; acceptedPolicies: boolean }): Promise<PaymentIntent> {
-    return this.authJson(`/listings/${listingId}/payment-intents`, { method: "POST", body: JSON.stringify(request) });
+  async createListingPaymentIntent(listingId: string, request: { planId: ListingSubscriptionPlanId; photoCount: number; acceptedPolicies: boolean }, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
+    return this.authJson(`/listings/${listingId}/payment-intents`, { method: "POST", body: JSON.stringify(request) }, options);
   }
 
   async getListingSubscriptionPaymentIntent(subscriptionId: string): Promise<PaymentIntent> {
@@ -175,11 +179,12 @@ export class GemsApiClient {
     return this.authJson("/storage/uploads", { method: "POST", body: JSON.stringify(request) });
   }
 
-  private async authJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async authJson<T>(path: string, init: RequestInit = {}, options: IdempotentRequestOptions = {}): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
     const token = await this.getAccessToken?.();
     if (token) headers.set("authorization", `Bearer ${token}`);
+    if (options.idempotencyKey) headers.set("idempotency-key", options.idempotencyKey);
 
     const response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
     if (!response.ok) throw new Error(await readApiError(response));

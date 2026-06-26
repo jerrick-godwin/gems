@@ -64,6 +64,13 @@
       "when": 1782356400000,
       "tag": "0009_worldwide_gem_types",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782529200000,
+      "tag": "0010_idempotency_keys",
+      "breakpoints": true
     }
   ]
 }

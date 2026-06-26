@@ -69,6 +69,7 @@ export const locations = pgTable("locations", {
 export const listings = pgTable("listings", {
   id: varchar("id").primaryKey(),
   sellerId: varchar("seller_id").references(() => sellerProfiles.id).notNull(),
+  idempotencyKey: varchar("idempotency_key"),
   gemTypeId: varchar("gem_type_id").references(() => gemTypes.id).notNull(),
   title: varchar("title").notNull(),
   description: text("description").notNull(),
@@ -93,7 +94,9 @@ export const listings = pgTable("listings", {
   }>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  listingsSellerIdempotencyUnique: uniqueIndex("listings_seller_idempotency_unique").on(table.sellerId, table.idempotencyKey)
+}));
 
 export const listingSubscriptions = pgTable("listing_subscriptions", {
   id: varchar("id").primaryKey(),
@@ -114,6 +117,7 @@ export const paymentIntents = pgTable("payment_intents", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  idempotencyKey: varchar("idempotency_key"),
   subscriptionId: varchar("subscription_id"),
   purpose: varchar("purpose").$type<PaymentPurpose>().notNull(),
   status: varchar("status").$type<PaymentStatus>().notNull().default("pending"),
@@ -132,7 +136,9 @@ export const paymentIntents = pgTable("payment_intents", {
   policyAcceptedAt: timestamp("policy_accepted_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  paymentIntentsUserListingIdempotencyUnique: uniqueIndex("payment_intents_user_listing_idempotency_unique").on(table.userId, table.listingId, table.idempotencyKey)
+}));
 
 export const renewalEvents = pgTable("renewal_events", {
   id: varchar("id").primaryKey(),

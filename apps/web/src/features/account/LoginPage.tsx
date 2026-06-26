@@ -1,6 +1,7 @@
 import { LogIn, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateLoginFields, type AuthFieldErrors } from "./authValidation";
 
@@ -9,7 +10,8 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const submitAction = useSingleFlightAction();
+  const loading = submitAction.busy;
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -22,16 +24,15 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
       return;
     }
 
-    setLoading(true);
-    setFormError(null);
-    try {
-      await authClient.signIn({ email: normalizedEmail, password });
-      onSignedIn();
-    } catch (error) {
-      setFormError(authErrorMessage(error, "Unable to sign in."));
-    } finally {
-      setLoading(false);
-    }
+    await submitAction.run(async () => {
+      setFormError(null);
+      try {
+        await authClient.signIn({ email: normalizedEmail, password });
+        onSignedIn();
+      } catch (error) {
+        setFormError(authErrorMessage(error, "Unable to sign in."));
+      }
+    });
   };
 
   const handleAuthLinkClick = (event: MouseEvent<HTMLAnchorElement>, nextView: View) => {

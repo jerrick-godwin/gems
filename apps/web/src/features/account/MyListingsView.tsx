@@ -3,6 +3,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type ListingSubscriptionSummary, type Treatment, type UserDashboard } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function MyListingsView({
   dashboard,
@@ -21,6 +22,9 @@ export function MyListingsView({
   const [payingSubscriptionId, setPayingSubscriptionId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCancelSubscriptionId, setConfirmCancelSubscriptionId] = useState<string | null>(null);
+  const cancelAction = useSingleFlightAction();
+  const payAction = useSingleFlightAction();
+  const deleteAction = useSingleFlightAction();
 
   const getStatusLabel = (listing: Listing) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
@@ -39,51 +43,59 @@ export function MyListingsView({
   };
 
   const handleCancelRenewal = async (subscriptionId: string) => {
-    try {
-      setCancellingSubscriptionId(subscriptionId);
-      await api.cancelListingSubscription(subscriptionId);
-      onDashboardChange(await api.dashboard());
-    } catch (error) {
-      alert("Failed to cancel renewal: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setCancellingSubscriptionId(null);
-      setConfirmCancelSubscriptionId(null);
-    }
+    await cancelAction.run(async () => {
+      try {
+        setCancellingSubscriptionId(subscriptionId);
+        await api.cancelListingSubscription(subscriptionId);
+        onDashboardChange(await api.dashboard());
+      } catch (error) {
+        alert("Failed to cancel renewal: " + (error instanceof Error ? error.message : "Unknown error"));
+      } finally {
+        setCancellingSubscriptionId(null);
+        setConfirmCancelSubscriptionId(null);
+      }
+    });
   };
 
   const handlePayNow = async (subscriptionId: string) => {
-    try {
-      setPayingSubscriptionId(subscriptionId);
-      const paymentIntent = await api.getListingSubscriptionPaymentIntent(subscriptionId);
-      if (!paymentIntent.paymentUrl) {
-        alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
-        return;
+    await payAction.run(async () => {
+      try {
+        setPayingSubscriptionId(subscriptionId);
+        const paymentIntent = await api.getListingSubscriptionPaymentIntent(subscriptionId);
+        if (!paymentIntent.paymentUrl) {
+          alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
+          setPayingSubscriptionId(null);
+          payAction.release();
+          return;
+        }
+        window.location.href = paymentIntent.paymentUrl;
+      } catch (error) {
+        alert("Failed to open checkout: " + (error instanceof Error ? error.message : "Unknown error"));
+        setPayingSubscriptionId(null);
+        payAction.release();
       }
-      window.location.href = paymentIntent.paymentUrl;
-    } catch (error) {
-      alert("Failed to open checkout: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setPayingSubscriptionId(null);
-    }
+    }, { keepLocked: true });
   };
 
   const handleDelete = async (id: string) => {
     const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === id);
     const willRemoveAtExpiry = isSubscriptionInPaidAccess(subscription);
-    try {
-      setDeletingId(id);
-      await api.removeMyListing(id);
-      const newDashboard = await api.dashboard();
-      onDashboardChange(newDashboard);
-      if (willRemoveAtExpiry && subscription?.expiresAt) {
-        alert(`Renewal has been cancelled. This listing will be removed on ${formatDate(subscription.expiresAt)}.`);
+    await deleteAction.run(async () => {
+      try {
+        setDeletingId(id);
+        await api.removeMyListing(id);
+        const newDashboard = await api.dashboard();
+        onDashboardChange(newDashboard);
+        if (willRemoveAtExpiry && subscription?.expiresAt) {
+          alert(`Renewal has been cancelled. This listing will be removed on ${formatDate(subscription.expiresAt)}.`);
+        }
+      } catch (error) {
+        alert("Failed to delete listing: " + (error instanceof Error ? error.message : "Unknown error"));
+      } finally {
+        setDeletingId(null);
+        setConfirmDeleteId(null);
       }
-    } catch (error) {
-      alert("Failed to delete listing: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setDeletingId(null);
-      setConfirmDeleteId(null);
-    }
+    });
   };
 
   const confirmDeleteListing = confirmDeleteId ? listings.find((listing) => listing.id === confirmDeleteId) : undefined;
@@ -158,8 +170,8 @@ export function MyListingsView({
                     {subscription && isAwaitingInitialPayment(subscription) && (
                       <button
                         onClick={() => void handlePayNow(subscription.id)}
-                        disabled={payingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "#fff", border: "none", cursor: payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        disabled={payAction.busy || payingSubscriptionId === subscription.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "#fff", border: "none", cursor: payAction.busy || payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                       >
                         <CreditCard size={16} strokeWidth={2.5} />
                         {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
@@ -168,8 +180,8 @@ export function MyListingsView({
                     {subscription?.autoRenew && (
                       <button
                         onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
-                        disabled={cancellingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: "pointer", fontWeight: 600 }}
+                        disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: cancelAction.busy || cancellingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                       >
                         <RefreshCcw size={16} strokeWidth={2.5} />
                         {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
@@ -177,8 +189,8 @@ export function MyListingsView({
                     )}
                     <button 
                       onClick={() => setConfirmDeleteId(listing.id)}
-                      disabled={deletingId === listing.id}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--danger)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}
+                      disabled={deleteAction.busy || deletingId === listing.id}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--danger)", color: "#fff", border: "none", cursor: deleteAction.busy || deletingId === listing.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                     >
                       <Trash2 size={16} strokeWidth={2.5} />
                       {deletingId === listing.id ? "Deleting..." : "Delete"}
@@ -217,8 +229,8 @@ export function MyListingsView({
               </button>
               <button
                 onClick={() => void handleDelete(confirmDeleteId)}
-                disabled={deletingId !== null}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                disabled={deleteAction.busy || deletingId !== null}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deleteAction.busy || deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
               >
                 {deletingId === confirmDeleteId ? "Processing..." : confirmDeleteRemovesAtExpiry ? "Cancel Renewal" : "Proceed to Delete"}
               </button>
@@ -246,8 +258,8 @@ export function MyListingsView({
               </button>
               <button
                 onClick={() => void handleCancelRenewal(confirmCancelSubscriptionId)}
-                disabled={cancellingSubscriptionId !== null}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: cancellingSubscriptionId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                disabled={cancelAction.busy || cancellingSubscriptionId !== null}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: cancelAction.busy || cancellingSubscriptionId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
               >
                 {cancellingSubscriptionId === confirmCancelSubscriptionId ? "Cancelling..." : "Proceed to Cancel"}
               </button>

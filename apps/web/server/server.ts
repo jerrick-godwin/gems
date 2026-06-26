@@ -193,6 +193,12 @@ function stringBody(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function idempotencyKey(request: IncomingMessage) {
+  const value = request.headers["idempotency-key"];
+  const key = Array.isArray(value) ? value[0] : value;
+  return typeof key === "string" && key.trim() ? key.trim().slice(0, 180) : undefined;
+}
+
 function numberBody(value: unknown, fallback: number) {
   const next = typeof value === "number" ? value : Number(value);
   return Number.isFinite(next) ? next : fallback;
@@ -613,7 +619,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
     const body = await readJsonBody(request).catch(() => ({}));
-    sendJson(response, 201, await createListing(user.id, parseObject(body)));
+    sendJson(response, 201, await createListing(user.id, parseObject(body), idempotencyKey(request)));
     return true;
   }
 
@@ -630,7 +636,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         planId: stringBody(body.planId),
         photoCount: numberBody(body.photoCount, 0),
         acceptedPolicies: body.acceptedPolicies === true
-      });
+      }, idempotencyKey(request));
       sendJson(response, 201, intent);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";

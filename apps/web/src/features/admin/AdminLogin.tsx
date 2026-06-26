@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
-export function AdminLogin({ error, loading, onLogin }: { error: string | null; loading: boolean; onLogin: (email: string, password: string) => void }) {
+export function AdminLogin({ error, loading, onLogin }: { error: string | null; loading: boolean; onLogin: (email: string, password: string) => void | Promise<void> }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const loginAction = useSingleFlightAction();
 
   return (
     <main className="admin-login-screen">
@@ -17,7 +19,9 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
           className="admin-login-form"
           onSubmit={(event) => {
             event.preventDefault();
-            onLogin(email, password);
+            void loginAction.run(async () => {
+              await onLogin(email, password);
+            });
           }}
         >
           <label>
@@ -43,7 +47,7 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
             />
           </label>
           {error && <p className="admin-error">{error}</p>}
-          <button type="submit" disabled={loading}>
+          <button type="submit" disabled={loginAction.busy || loading}>
             {loading ? "Signing in..." : "Sign in to console"}
           </button>
         </form>
@@ -51,4 +55,3 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
     </main>
   );
 }
-

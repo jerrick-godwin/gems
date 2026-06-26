@@ -2,6 +2,7 @@ import { Star, Trash } from "lucide-react";
 import { useState } from "react";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import type { Listing } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { CampaignDialog } from "./CampaignDialog";
 
 export function ActiveListingRow({ 
@@ -19,17 +20,20 @@ export function ActiveListingRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [showCampaigns, setShowCampaigns] = useState(false);
+  const removeAction = useSingleFlightAction();
 
   const handleRemove = async () => {
     if (!window.confirm(`Are you sure you want to remove "${listing.title}"?`)) return;
-    setBusy(true);
-    try {
-      await api.removeListing(token, listing.id);
-      onRemove(listing.id);
-    } catch (error) {
-      alert("Failed to remove listing");
-      setBusy(false);
-    }
+    await removeAction.run(async () => {
+      setBusy(true);
+      try {
+        await api.removeListing(token, listing.id);
+        onRemove(listing.id);
+      } catch (error) {
+        alert("Failed to remove listing");
+        setBusy(false);
+      }
+    });
   };
 
   const hasActiveCampaign = (listing.campaigns || []).some(c => c.status === "active" && new Date(c.endsAt) > new Date());
@@ -49,10 +53,10 @@ export function ActiveListingRow({
             )}
           </span>
         </div>
-        <button style={{ minHeight: 36, padding: "0 16px" }} disabled={busy} onClick={() => setShowCampaigns(true)}>
+        <button style={{ minHeight: 36, padding: "0 16px" }} disabled={removeAction.busy || busy} onClick={() => setShowCampaigns(true)}>
           <Star size={16} style={{ marginRight: 6 }} /> Promotions
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)" }} disabled={busy} onClick={() => void handleRemove()}>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)" }} disabled={removeAction.busy || busy} onClick={() => void handleRemove()}>
           <Trash size={16} />
         </button>
       </div>
