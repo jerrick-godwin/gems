@@ -87,9 +87,8 @@ const policyPages: Record<string, { title: string; effective: string; lede?: str
     effective: "Merchant details updated June 11, 2026",
     lede: "Merchant and licence details for gemslanka.lk.",
     body: [
-      "Merchant name: KRISTIANA MAGRET GEM & JEWELLARY.",
+      "Merchant name: KRISTIANA MAGRET GEM & JEWELLERY.",
       "Email: info@gemslanka.lk.",
-      "Contact address: No 31/34 Grandpass Road, Colombo 14, Sri Lanka.",
       "Licence number: 20266DL39394."
     ]
   },
