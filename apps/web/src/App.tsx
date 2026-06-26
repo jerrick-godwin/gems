@@ -197,7 +197,15 @@ function App() {
     return (
       <AppFrame {...frameProps}>
         {view === "login" && <LoginPage onSignedIn={() => navigateToView("market", { replace: true })} onNavigate={navigateToView} />}
-        {view === "signup" && <SignupPage onSignedIn={() => navigateToView("my_listings", { replace: true })} onNavigate={navigateToView} />}
+        {view === "signup" && (
+          <SignupPage
+            onSignedIn={(dashboard) => {
+              account.setDashboard(dashboard);
+              navigateToView("my_listings", { replace: true });
+            }}
+            onNavigate={navigateToView}
+          />
+        )}
         {view === "forgot_password" && <ForgotPasswordPage onNavigate={navigateToView} />}
       </AppFrame>
     );
