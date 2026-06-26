@@ -1,7 +1,8 @@
 alter table order_items drop constraint if exists order_items_listing_id_listings_id_fk;
 
 alter table orders add column if not exists invoice_number varchar;
-alter table orders add column if not exists payment_method varchar not null default 'direct_bank_transfer';
+alter table orders add column if not exists payment_method varchar not null default 'stripe';
+update orders set payment_method = 'stripe' where payment_method <> 'stripe';
 alter table orders add column if not exists billing_details jsonb not null default '{}'::jsonb;
 alter table orders add column if not exists delivery_details jsonb not null default '{}'::jsonb;
 alter table orders add column if not exists customer_note text;

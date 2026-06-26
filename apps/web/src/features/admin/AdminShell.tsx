@@ -85,12 +85,10 @@ export function AdminShell({ admin, handleLogout, theme, setTheme, children }: {
       <header className="topbar admin-topbar">
         <div className="brand" aria-label="gemslanka.lk admin">
           <span className="brand-mark">
-            <img src="/assets/logo-mark.svg" alt="" />
+            <img src="/assets/gemslanka-logo.png" alt="" />
           </span>
-          <span className="brand-wordmark">
-            gemslanka
-            <strong>.lk Admin</strong>
-          </span>
+          <span className="brand-site-name">gemslanka.lk</span>
+          <span className="admin-brand-label">Admin</span>
         </div>
         <div className="admin-session" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
           <span>{admin.email}</span>

@@ -34,7 +34,14 @@ import {
   createStorageUpload,
   cancelListingSubscription,
   confirmPaymentIntent,
+  isStripeCheckoutSessionForPaymentIntent,
+  markStripeSubscriptionPastDue,
+  recordStripeSubscriptionInvoicePayment,
+  syncStripeSubscriptionStatus,
   getAdminPaymentIntents,
+  getPaymentIntent,
+  getPaymentReceipt,
+  getListingSubscriptionPaymentIntent,
   getAdminOrders,
   getDashboard,
   getOrCreateUserFromClaims,
@@ -43,12 +50,14 @@ import {
   updateOrderStatus,
   updateSettings,
   updateUserProfile,
+  DuplicatePhoneNumberError,
   getAllUsers,
   removeUserListing,
   updateUserListing
 } from "./user-repository.js";
 import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
-import { verifyPaymentSignature } from "./webxpay.js";
+import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./stripe.js";
+import { ensureDatabaseCompatibility } from "./db/index.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -61,6 +70,7 @@ const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".gif": "image/gif",
+  ".ico": "image/x-icon",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
@@ -79,7 +89,7 @@ const policyPages: Record<string, { title: string; effective: string; lede?: str
     body: [
       "Merchant name: KRISTIANA MAGRET GEM & JEWELLARY.",
       "Email: info@gemslanka.lk.",
-      "Contact address: No 31/24 Grandpass Road, Colombo 14, Sri Lanka.",
+      "Contact address: No 31/34 Grandpass Road, Colombo 14, Sri Lanka.",
       "Licence number: 20266DL39394."
     ]
   },
@@ -99,7 +109,7 @@ const policyPages: Record<string, { title: string; effective: string; lede?: str
     effective: "Effective June 11, 2026",
     body: [
       "gemslanka.lk collects account details, seller profile data, listing details, uploaded media, verification context, reports, support messages, device data, and activity needed to operate the listing service.",
-      "Webxpay processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.",
+      "Our payment provider processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.",
       "We use cookies or local storage for authentication, saved preferences, theme settings, and essential app behavior.",
       "We keep records while an account, listing, payment, moderation, legal, or security need remains. We use reasonable safeguards, but no internet service can guarantee absolute security.",
       "Users can update account information, cancel listing auto-renewal, request support, and ask about personal data associated with their account."
@@ -117,6 +127,12 @@ const policyPages: Record<string, { title: string; effective: string; lede?: str
 };
 
 const publicPagePaths = ["/", ...Object.keys(policyPages)];
+const paymentIntentValidationErrors = new Set([
+  "Select a valid listing subscription plan.",
+  "Terms and Privacy Policy acceptance is required before payment.",
+  "Listing not found.",
+  "Stripe payment collection is not configured."
+]);
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -222,6 +238,14 @@ async function readJsonBody(request: IncomingMessage) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
 
+async function readRawBody(request: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function authenticateUser(request: IncomingMessage) {
   const token = readBearerToken(request);
   if (!token) return undefined;
@@ -263,6 +287,19 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const path = url.pathname;
 
   if (!path.startsWith("/api/v1")) return false;
+  await ensureDatabaseCompatibility();
+
+  if (request.method === "POST" && path === "/api/v1/payments/stripe/webhook") {
+    try {
+      const event = constructStripeWebhookEvent(await readRawBody(request), request.headers["stripe-signature"]);
+      await handleStripeWebhookEvent(event);
+      sendJson(response, 200, { received: true });
+    } catch (error) {
+      console.warn("Stripe webhook handling failed:", error);
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid Stripe webhook" });
+    }
+    return true;
+  }
 
   if (request.method === "PUT" && path === "/api/v1/storage/local-upload") {
     const blobKey = url.searchParams.get("key") ?? "";
@@ -404,39 +441,38 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
   }
 
-  const paymentReturnMatch = path.match(/^\/api\/v1\/payments\/([^/]+)\/return$/);
-  if (request.method === "GET" && paymentReturnMatch) {
-    const status = url.searchParams.get("status") === "succeeded" ? "succeeded" : "failed";
-    const signature = url.searchParams.get("signature");
-    if (!verifyPaymentSignature(paymentReturnMatch[1], status, signature)) {
-      sendJson(response, 400, { error: "Invalid payment signature" });
+  const stripePaymentReturnMatch = path.match(/^\/api\/v1\/payments\/stripe\/([^/]+)\/return$/);
+  if (request.method === "GET" && stripePaymentReturnMatch) {
+    const intent = await getPaymentIntent(stripePaymentReturnMatch[1]);
+    const sessionId = url.searchParams.get("session_id") ?? "";
+    if (!intent || intent.gateway !== "stripe" || !sessionId || !(await isStripeCheckoutSessionForPaymentIntent(intent, sessionId))) {
+      sendJson(response, 400, { error: "Invalid Stripe payment return" });
       return true;
     }
-    await confirmPaymentIntent(paymentReturnMatch[1], status, url.searchParams.get("reference") ?? undefined);
-    response.writeHead(302, { location: "/?payment=success" });
-    response.end();
+
+    try {
+      const checkoutSession = await retrieveStripeCheckoutSession(sessionId);
+      await confirmPaymentIntent(intent.id, checkoutSession.status, checkoutSession.reference, checkoutSession);
+      const paymentResult = checkoutSession.status === "pending" ? "pending" : checkoutSession.status;
+      const location = checkoutSession.status === "succeeded"
+        ? `/receipt?paymentIntentId=${encodeURIComponent(intent.id)}`
+        : `/?payment=${paymentResult}`;
+      response.writeHead(302, { location });
+      response.end();
+    } catch (error) {
+      console.warn("Stripe checkout verification failed:", error);
+      await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
+      response.writeHead(302, { location: "/?payment=failed" });
+      response.end();
+    }
     return true;
   }
 
-  const paymentCancelMatch = path.match(/^\/api\/v1\/payments\/([^/]+)\/cancel$/);
-  if (request.method === "GET" && paymentCancelMatch) {
-    await confirmPaymentIntent(paymentCancelMatch[1], "cancelled");
+  const stripePaymentCancelMatch = path.match(/^\/api\/v1\/payments\/stripe\/([^/]+)\/cancel$/);
+  if (request.method === "GET" && stripePaymentCancelMatch) {
+    await confirmPaymentIntent(stripePaymentCancelMatch[1], "cancelled", undefined);
     response.writeHead(302, { location: "/?payment=cancelled" });
     response.end();
-    return true;
-  }
-
-  if (request.method === "POST" && path === "/api/v1/payments/webxpay/callback") {
-    const body = parseObject(await readJsonBody(request).catch(() => ({})));
-    const intentId = stringBody(body.order_id || body.intent_id || body.payment_id);
-    const status = stringBody(body.status).toLowerCase() === "succeeded" || stringBody(body.status).toLowerCase() === "success" ? "succeeded" : "failed";
-    const signature = stringBody(body.signature);
-    if (!intentId || !verifyPaymentSignature(intentId, status, signature)) {
-      sendJson(response, 400, { error: "Invalid payment callback" });
-      return true;
-    }
-    const intent = await confirmPaymentIntent(intentId, status, stringBody(body.reference || body.transaction_id) || undefined);
-    sendJson(response, intent ? 200 : 404, intent ?? { error: "Payment intent not found" });
     return true;
   }
 
@@ -459,7 +495,15 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     if (request.method === "PATCH" && path === "/api/v1/users/me") {
       const body = await readJsonBody(request).catch(() => ({}));
-      sendJson(response, 200, await updateUserProfile(user.id, parseObject(body)));
+      try {
+        sendJson(response, 200, await updateUserProfile(user.id, parseObject(body)));
+      } catch (error) {
+        if (error instanceof DuplicatePhoneNumberError) {
+          sendJson(response, 409, { error: error.message });
+        } else {
+          throw error;
+        }
+      }
       return true;
     }
 
@@ -479,8 +523,22 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    const paymentReceiptMatch = path.match(/^\/api\/v1\/users\/me\/payment-intents\/([^/]+)\/receipt$/);
+    if (request.method === "GET" && paymentReceiptMatch) {
+      const receipt = await getPaymentReceipt(user.id, paymentReceiptMatch[1]);
+      sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Payment receipt not found" });
+      return true;
+    }
+
     if (request.method === "GET" && path === "/api/v1/users/me/reports") {
       sendJson(response, 200, await getUserReports(user.id));
+      return true;
+    }
+
+    const subscriptionPaymentMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/payment-intent$/);
+    if (request.method === "GET" && subscriptionPaymentMatch) {
+      const intent = await getListingSubscriptionPaymentIntent(user.id, subscriptionPaymentMatch[1]);
+      sendJson(response, intent ? 200 : 404, intent ?? { error: "Payment intent not found" });
       return true;
     }
 
@@ -591,7 +649,15 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, 404, { error: "Listing not found" });
       return true;
     }
-    sendJson(response, 200, await revealListingPhone(revealMatch[1]));
+    const fullReveal = url.searchParams.get("full") === "1";
+    if (fullReveal) {
+      const user = await authenticateUser(request);
+      if (!user) {
+        sendJson(response, 401, { error: "User authorization required" });
+        return true;
+      }
+    }
+    sendJson(response, 200, await revealListingPhone(revealMatch[1], { full: fullReveal }));
     return true;
   }
 
@@ -641,7 +707,13 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       });
       sendJson(response, 201, intent);
     } catch (error) {
-      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to create payment intent" });
+      const message = error instanceof Error ? error.message : "";
+      if (paymentIntentValidationErrors.has(message)) {
+        sendJson(response, 400, { error: message });
+      } else {
+        console.error("Unable to create listing payment intent", error);
+        sendJson(response, 500, { error: "Unable to start checkout right now. Please try again in a moment." });
+      }
     }
     return true;
   }
@@ -653,6 +725,131 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   sendJson(response, 404, { error: "Not found" });
   return true;
+}
+
+async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripeWebhookEvent>) {
+  if (
+    event.type === "checkout.session.completed" ||
+    event.type === "checkout.session.async_payment_succeeded" ||
+    event.type === "checkout.session.async_payment_failed" ||
+    event.type === "checkout.session.expired"
+  ) {
+    const session = event.data.object as any;
+    const paymentIntentId = stripeCheckoutPaymentIntentId(session);
+    const stripeSubscriptionId = stripeId(session.subscription);
+    const status =
+      event.type === "checkout.session.expired" ? "expired" :
+      event.type === "checkout.session.async_payment_failed" ? "failed" :
+      event.type === "checkout.session.async_payment_succeeded" || session.payment_status === "paid" ? "succeeded" :
+      "pending";
+    if (paymentIntentId) {
+      await confirmPaymentIntent(paymentIntentId, status, stripeSubscriptionId ?? session.id, {
+        stripeCheckoutSessionId: session.id,
+        stripeSubscriptionId,
+        stripeCustomerId: stripeId(session.customer),
+        stripeInvoiceId: stripeId(session.invoice)
+      });
+    }
+    return;
+  }
+
+  if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
+    const invoice = event.data.object as any;
+    const stripeSubscriptionId = stripeInvoiceSubscriptionId(invoice);
+    const paymentIntentId = stripeId(invoice.payment_intent);
+    const internalPaymentIntentId = stripeInvoicePaymentIntentId(invoice);
+    if (internalPaymentIntentId && stripeSubscriptionId && invoice.billing_reason === "subscription_create") {
+      await confirmPaymentIntent(internalPaymentIntentId, "succeeded", stripeSubscriptionId, {
+        stripeSubscriptionId,
+        stripeCustomerId: stripeId(invoice.customer),
+        stripeInvoiceId: invoice.id
+      });
+    }
+    if (stripeSubscriptionId && invoice.id) {
+      await recordStripeSubscriptionInvoicePayment({
+        stripeSubscriptionId,
+        stripeInvoiceId: invoice.id,
+        stripePaymentIntentId: paymentIntentId,
+        billingReason: typeof invoice.billing_reason === "string" ? invoice.billing_reason : undefined
+      });
+    }
+    return;
+  }
+
+  if (
+    event.type === "invoice.payment_failed" ||
+    event.type === "invoice.payment_action_required" ||
+    event.type === "invoice.finalization_failed"
+  ) {
+    const invoice = event.data.object as any;
+    const stripeSubscriptionId = stripeInvoiceSubscriptionId(invoice);
+    const internalPaymentIntentId = stripeInvoicePaymentIntentId(invoice);
+    if (internalPaymentIntentId && stripeSubscriptionId && invoice.billing_reason === "subscription_create") {
+      await confirmPaymentIntent(
+        internalPaymentIntentId,
+        event.type === "invoice.payment_action_required" ? "pending" : "failed",
+        stripeSubscriptionId,
+        {
+          stripeSubscriptionId,
+          stripeCustomerId: stripeId(invoice.customer),
+          stripeInvoiceId: invoice.id
+        }
+      );
+    }
+    if (stripeSubscriptionId && invoice.id) {
+      await markStripeSubscriptionPastDue(
+        stripeSubscriptionId,
+        invoice.id,
+        event.type,
+        event.type === "invoice.payment_action_required"
+          ? "Stripe subscription invoice requires customer action."
+          : event.type === "invoice.finalization_failed"
+            ? "Stripe subscription invoice finalization failed."
+            : "Stripe subscription invoice payment failed."
+      );
+    }
+    return;
+  }
+
+  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    const subscription = event.data.object as any;
+    if (subscription.id) {
+      await syncStripeSubscriptionStatus({
+        stripeSubscriptionId: subscription.id,
+        status: typeof subscription.status === "string" ? subscription.status : event.type === "customer.subscription.deleted" ? "canceled" : "",
+        cancelAtPeriodEnd: typeof subscription.cancel_at_period_end === "boolean" ? subscription.cancel_at_period_end : undefined,
+        currentPeriodEnd: stripeDate(subscription.current_period_end)
+      });
+    }
+  }
+}
+
+function stripeCheckoutPaymentIntentId(session: any) {
+  return typeof session.metadata?.paymentIntentId === "string" ? session.metadata.paymentIntentId : typeof session.client_reference_id === "string" ? session.client_reference_id : "";
+}
+
+function stripeInvoicePaymentIntentId(invoice: any) {
+  return typeof invoice.subscription_details?.metadata?.paymentIntentId === "string"
+    ? invoice.subscription_details.metadata.paymentIntentId
+    : typeof invoice.metadata?.paymentIntentId === "string"
+      ? invoice.metadata.paymentIntentId
+      : "";
+}
+
+function stripeInvoiceSubscriptionId(invoice: any) {
+  return stripeId(invoice.subscription) ?? stripeId(invoice.parent?.subscription_details?.subscription);
+}
+
+function stripeDate(value: unknown) {
+  return typeof value === "number" ? new Date(value * 1000) : undefined;
+}
+
+function stripeId(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "id" in value && typeof (value as { id?: unknown }).id === "string") {
+    return (value as { id: string }).id;
+  }
+  return undefined;
 }
 
 function sendStaticFile(response: ServerResponse, filePath: string) {
@@ -703,6 +900,7 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
 }
 
 async function main() {
+  await ensureDatabaseCompatibility();
   let vite: ViteDevServer | undefined;
   const server = createServer((request, response) => {
     void handleRequest(request, response, vite);

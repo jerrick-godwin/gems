@@ -1,6 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { FirebaseError } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, signInWithEmailAndPassword, updateProfile, type Auth, type User } from "firebase/auth";
+import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile, type Auth, type User } from "firebase/auth";
 
 export interface MarketplaceAuthUser {
   uid: string;
@@ -32,7 +31,11 @@ const requiredFirebaseConfig = [
   firebaseConfig.projectId,
   firebaseConfig.appId
 ];
-const hasPublicFirebaseConfig = requiredFirebaseConfig.every((value) => typeof value === "string" && value.trim().length > 0);
+function hasConfiguredFirebaseValue(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 && !value.trim().startsWith("replace-with-");
+}
+
+const hasPublicFirebaseConfig = requiredFirebaseConfig.every(hasConfiguredFirebaseValue);
 const canUseLocalAuth = import.meta.env.DEV && !hasPublicFirebaseConfig;
 const localUsersKey = "gems-local-auth-users";
 const localSessionKey = "gems-local-auth-session";
@@ -99,6 +102,18 @@ function createMissingConfigError() {
   return new Error("Local Firebase config is missing. Run in development to use local auth, or set VITE_FIREBASE_* values.");
 }
 
+function createInvalidCredentialError() {
+  const error = new Error("Invalid email or password. Please check your credentials and try again.") as Error & { code: string };
+  error.code = "auth/invalid-credential";
+  return error;
+}
+
+function createLocalPasswordResetUnavailableError() {
+  const error = new Error("Password reset emails require Firebase Authentication. Add the VITE_FIREBASE_* values in apps/web/.env and restart the dev server.") as Error & { code: string };
+  error.code = "auth/local-password-reset-unavailable";
+  return error;
+}
+
 class MarketplaceAuthClient {
   constructor(private readonly auth: Auth | undefined) {}
 
@@ -124,38 +139,64 @@ class MarketplaceAuthClient {
     };
   }
 
-  async signInOrSignUp({ email, password }: { email: string; password: string }) {
+  async signIn({ email, password }: { email: string; password: string }) {
     if (this.auth) {
-      try {
-        return toAuthUser((await signInWithEmailAndPassword(this.auth, email, password)).user);
-      } catch (error) {
-        const canCreateAccount = error instanceof FirebaseError && ["auth/user-not-found", "auth/invalid-credential"].includes(error.code);
-        if (!canCreateAccount) throw error;
-
-        const credential = await createUserWithEmailAndPassword(this.auth, email, password);
-        await updateProfile(credential.user, { displayName: displayNameFromEmail(email) });
-        await credential.user.getIdToken(true);
-        return toAuthUser(credential.user);
-      }
+      return toAuthUser((await signInWithEmailAndPassword(this.auth, email, password)).user);
     }
 
     if (!canUseLocalAuth) throw createMissingConfigError();
 
     const users = readLocalUsers();
     const existing = users.find((user) => user.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      if (existing.password !== password) throw new Error("Password does not match this email.");
-      window.localStorage.setItem(localSessionKey, existing.email);
-      notifyLocalAuthListeners();
-      return toLocalAuthUser(existing);
+    if (!existing) throw createInvalidCredentialError();
+    if (existing.password !== password) {
+      throw createInvalidCredentialError();
+    }
+    window.localStorage.setItem(localSessionKey, existing.email);
+    notifyLocalAuthListeners();
+    return toLocalAuthUser(existing);
+  }
+
+  async signUp({ email, password, fullName }: { email: string; password: string; fullName: string }) {
+    const name = fullName.trim() || displayNameFromEmail(email);
+
+    if (this.auth) {
+      const credential = await createUserWithEmailAndPassword(this.auth, email, password);
+      await updateProfile(credential.user, { displayName: name });
+      await credential.user.getIdToken(true);
+      return toAuthUser(credential.user);
     }
 
-    const created = { uid: uidFromEmail(email), email, name: displayNameFromEmail(email), password };
+    if (!canUseLocalAuth) throw createMissingConfigError();
+
+    const users = readLocalUsers();
+    const existing = users.find((user) => user.email.toLowerCase() === email.toLowerCase());
+    if (existing) throw new Error("An account already exists for this email.");
+
+    const created = { uid: uidFromEmail(email), email, name, password };
     users.push(created);
     writeLocalUsers(users);
     window.localStorage.setItem(localSessionKey, created.email);
     notifyLocalAuthListeners();
     return toLocalAuthUser(created);
+  }
+
+  async sendPasswordReset({ email }: { email: string }) {
+    if (this.auth) {
+      try {
+        await sendPasswordResetEmail(this.auth, email);
+      } catch (error) {
+        const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "";
+        if (code === "auth/user-not-found") return;
+        throw error;
+      }
+      return;
+    }
+
+    if (!canUseLocalAuth) throw createMissingConfigError();
+
+    void email;
+    throw createLocalPasswordResetUnavailableError();
   }
 
   async signOut() {
