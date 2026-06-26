@@ -7,7 +7,7 @@ export type PromotionType = "bump" | "top" | "urgent" | "featured" | "scheduled"
 export type ListingSubscriptionPlanId = "basic" | "pro" | "plus";
 export type ListingSubscriptionStatus = "pending_payment" | "active" | "past_due" | "cancelled" | "expired";
 export type PaymentPurpose = "listing_subscription" | "listing_subscription_renewal";
-export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled";
+export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled" | "expired";
 
 export interface ListingSubscriptionPlan {
   id: ListingSubscriptionPlanId;
@@ -57,6 +57,7 @@ export interface User {
   firebaseUid?: string;
   name: string;
   phone: string;
+  address: string;
   email: string;
   role: UserRole;
   locale: "en" | "si" | "ta";
@@ -156,11 +157,53 @@ export interface PaymentIntent {
   quote: ListingPaymentQuote;
   amountLkr: number;
   currency: "LKR";
-  gateway: "webxpay";
+  gateway: "stripe";
   gatewayReference?: string;
+  stripeCheckoutSessionId?: string;
+  stripeSubscriptionId?: string;
+  stripeCustomerId?: string;
+  stripeInvoiceId?: string;
   paymentUrl?: string;
   policyVersion: string;
   policyAcceptedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentReceiptLineItem {
+  label: string;
+  quantity: number;
+  amountLkr: number;
+}
+
+export interface PaymentReceipt {
+  paymentIntentId: string;
+  receiptNumber: string;
+  status: PaymentStatus;
+  paidAt: string;
+  customer: {
+    name: string;
+    email: string;
+  };
+  listing: {
+    id: string;
+    title: string;
+  };
+  subscription: {
+    id?: string;
+    planName: string;
+    startsAt?: string;
+    expiresAt?: string;
+  };
+  currency: "LKR";
+  lineItems: PaymentReceiptLineItem[];
+  totalLkr: number;
+  stripe: {
+    checkoutSessionId?: string;
+    subscriptionId?: string;
+    customerId?: string;
+    invoiceId?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -261,7 +304,7 @@ export const orderStatuses = [
 ] as const;
 
 export type OrderStatus = typeof orderStatuses[number];
-export type PaymentMethod = "direct_bank_transfer";
+export type PaymentMethod = "stripe";
 
 export interface CheckoutDetails {
   fullName: string;
@@ -378,8 +421,8 @@ export function validateCheckoutRequest(input: Partial<CheckoutRequest>) {
     ...validateCheckoutDetails(input.billingDetails ?? {}, "Billing"),
     ...validateCheckoutDetails(input.deliveryDetails ?? {}, "Delivery")
   ];
-  if (input.paymentMethod !== "direct_bank_transfer") {
-    errors.push("Payment method must be direct bank transfer.");
+  if (input.paymentMethod !== "stripe") {
+    errors.push("Payment method must be Stripe.");
   }
   return errors;
 }
@@ -389,7 +432,6 @@ export function validateGemListing(listing: Pick<Listing, "title" | "priceLkr" |
   if (listing.title.trim().length < 8) errors.push("Title must be at least 8 characters.");
   if (listing.priceLkr <= 0) errors.push("Price must be greater than zero.");
   if (listing.attributes.carat <= 0) errors.push("Carat weight is required.");
-  if (!listing.attributes.shape) errors.push("Shape is required.");
   if (!listing.attributes.color) errors.push("Color is required.");
   if (!listing.attributes.origin) errors.push("Origin is required.");
   if (!listing.media.some((item) => item.kind === "photo")) errors.push("At least one gem photo is required.");

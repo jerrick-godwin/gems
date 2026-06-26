@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS "payment_intents" (
   "quote" jsonb NOT NULL,
   "amount_lkr" integer NOT NULL,
   "currency" varchar NOT NULL DEFAULT 'LKR',
-  "gateway" varchar NOT NULL DEFAULT 'webxpay',
+  "gateway" varchar NOT NULL DEFAULT 'stripe',
   "gateway_reference" varchar,
   "payment_url" text,
   "policy_version" varchar NOT NULL,

@@ -1,7 +1,16 @@
-import { Camera, Check, CheckCircle2, ChevronRight, Trash2, Upload, X } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { Camera, Check, ChevronRight, Trash2, Upload, X } from "lucide-react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, listingSubscriptionPlans, quoteListingSubscription, type ListingMedia, type ListingSubscriptionPlanId, type Treatment, type UserDashboard } from "@gems/schemas";
+
+function formatPriceInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits ? Number(digits).toLocaleString("en-US") : "";
+}
+
+function parsePriceInput(value: string) {
+  return Number(value.replace(/\D/g, "") || 0);
+}
 
 export function PostGem({
   gemTypes,
@@ -19,9 +28,15 @@ export function PostGem({
   const [certificate, setCertificateFile] = useState<File | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<ListingSubscriptionPlanId>("basic");
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
+  const [priceInput, setPriceInput] = useState("");
   const photosInputRef = useRef<HTMLInputElement>(null);
   const certInputRef = useRef<HTMLInputElement>(null);
   const quote = quoteListingSubscription(selectedPlan, photos.length);
+  const isSubmitting = status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating payment...";
+
+  const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setPriceInput(formatPriceInput(event.target.value));
+  };
 
   const addPhotos = (files: FileList | null) => {
     if (!files) return;
@@ -60,6 +75,7 @@ export function PostGem({
   const handleClear = () => {
     setPhotos([]);
     setCertificateFile(null);
+    setPriceInput("");
     setStatus(null);
     if (photosInputRef.current) photosInputRef.current.value = "";
     if (certInputRef.current) certInputRef.current.value = "";
@@ -85,7 +101,7 @@ export function PostGem({
         title: value("post-title"),
         gemTypeId: value("post-gem-type"),
         description: value("post-description"),
-        priceLkr: Number(value("post-price") || 0),
+        priceLkr: parsePriceInput(value("post-price")),
         location: value("post-location") || "Sri Lanka",
         attributes: {
           carat: Number(value("post-carat") || 0),
@@ -167,7 +183,7 @@ export function PostGem({
         await api.updateMyListing(listing.id, { media: uploadedMedia });
       }
 
-      setStatus("Creating Webxpay payment...");
+      setStatus("Creating payment...");
       const paymentIntent = await api.createListingPaymentIntent(listing.id, {
         planId: selectedPlan,
         photoCount: photos.length,
@@ -181,7 +197,7 @@ export function PostGem({
         window.location.href = paymentIntent.paymentUrl;
         return;
       }
-      setStatus("Payment intent created. Please contact support if you are not redirected to Webxpay.");
+      setStatus("Payment intent created. Please contact support if you are not redirected to checkout.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to submit listing.");
     }
@@ -189,18 +205,6 @@ export function PostGem({
 
   return (
     <section className="workspace-grid">
-      <aside className="workspace-side">
-        <h2>Checklist</h2>
-        <p style={{ color: "var(--muted)", fontSize: 13, margin: "-4px 0 12px", fontWeight: 500 }}>
-          Complete all items for faster moderation approval.
-        </p>
-        {["Clear face-up photo", "Accurate carat and dimensions", "Treatment stated", "Certificate readable", "No prohibited payment claims"].map((item) => (
-          <div className="check-row" key={item}>
-            <CheckCircle2 size={15} strokeWidth={2} />
-            {item}
-          </div>
-        ))}
-      </aside>
       <div className="workspace-main">
         <div className="section-heading">
           <h1>Post a Gem Listing</h1>
@@ -215,7 +219,7 @@ export function PostGem({
             Gem type
             <select defaultValue="" id="post-gem-type" required>
               <option value="" disabled>
-                Select gem type
+                Select Gem Type
               </option>
               {gemTypes.map((item) => (
                 <option value={item.id} key={item.id}>
@@ -231,7 +235,7 @@ export function PostGem({
 
           <section className="form-section" aria-labelledby="listing-plan-heading">
             <div className="form-section-header">
-              <h2 id="listing-plan-heading">Listing subscription</h2>
+              <h2 id="listing-plan-heading">Listing Subscription</h2>
             </div>
             <div className="plan-grid">
               {listingSubscriptionPlans.map((plan) => (
@@ -245,7 +249,7 @@ export function PostGem({
               ))}
             </div>
             <div className="quote-panel">
-              <span>Payment due</span>
+              <span>Payment Due</span>
               <strong>{formatLkr(quote.totalLkr)}</strong>
               <small>{quote.extraPhotoCount > 0 ? `${quote.extraPhotoCount} extra photo${quote.extraPhotoCount > 1 ? "s" : ""}: ${formatLkr(quote.extraPhotoTotalLkr)}` : "No extra-photo fees"}</small>
             </div>
@@ -366,15 +370,15 @@ export function PostGem({
 
           <section className="form-section" aria-labelledby="gem-details-heading">
             <div className="form-section-header">
-              <h2 id="gem-details-heading">Gem details</h2>
+              <h2 id="gem-details-heading">Gem Details</h2>
             </div>
             <div className="form-grid">
               <label>
-                Price (LKR)
-                <input placeholder="3250000" id="post-price" inputMode="numeric" required />
+                <span className="field-label">Price (LKR)<span className="required-marker" aria-hidden="true">*</span></span>
+                <input placeholder="3,250,000" id="post-price" inputMode="numeric" value={priceInput} onChange={handlePriceChange} required />
               </label>
               <label>
-                Location
+                <span className="field-label">Location<span className="required-marker" aria-hidden="true">*</span></span>
                 <select defaultValue="" id="post-location" required>
                   <option value="" disabled>
                     Select location
@@ -387,35 +391,35 @@ export function PostGem({
                 </select>
               </label>
               <label>
-                Carat
+                <span className="field-label">Carat<span className="required-marker" aria-hidden="true">*</span></span>
                 <input placeholder="3.42" id="post-carat" required />
               </label>
               <label>
-                Dimensions
-                <input placeholder="9.2 x 7.1 x 4.8 mm" id="post-dimensions" required />
+                <span className="field-label">Dimensions</span>
+                <input placeholder="9.2 x 7.1 x 4.8 mm" id="post-dimensions" />
               </label>
               <label>
-                Shape
-                <input placeholder="Oval" id="post-shape" required />
+                <span className="field-label">Shape</span>
+                <input placeholder="Oval" id="post-shape" />
               </label>
               <label>
-                Cut
-                <input placeholder="Mixed brilliant" id="post-cut" required />
+                <span className="field-label">Cut</span>
+                <input placeholder="Mixed brilliant" id="post-cut" />
               </label>
               <label>
-                Color
+                <span className="field-label">Color<span className="required-marker" aria-hidden="true">*</span></span>
                 <input placeholder="Royal blue" id="post-color" required />
               </label>
               <label>
-                Clarity
+                <span className="field-label">Clarity<span className="required-marker" aria-hidden="true">*</span></span>
                 <input placeholder="Eye clean" id="post-clarity" required />
               </label>
               <label>
-                Origin
+                <span className="field-label">Origin<span className="required-marker" aria-hidden="true">*</span></span>
                 <input placeholder="Ratnapura" id="post-origin" required />
               </label>
               <label>
-                Treatment
+                <span className="field-label">Treatment<span className="required-marker" aria-hidden="true">*</span></span>
                 <select defaultValue="" id="post-treatment" required>
                   <option value="" disabled>
                     Select treatment
@@ -430,9 +434,18 @@ export function PostGem({
           {/* ── Actions ── */}
           <label className="policy-acceptance">
             <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} />
-            <span>I accept the Terms and Conditions and Privacy Policy, including no refunds and automatic renewal unless cancelled.</span>
+            <span>
+              I accept the{" "}
+              <a href="/terms-and-conditions" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                Terms and Conditions
+              </a>
+              {" "}and{" "}
+              <a href="/privacy-policy" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                Privacy Policy
+              </a>
+            </span>
           </label>
-          {status && !["Listing submitted for moderation.", "Creating listing draft...", "Uploading media...", "Creating Webxpay payment..."].includes(status) && (
+          {status && !["Listing submitted for moderation.", "Creating listing draft...", "Uploading media...", "Creating payment..."].includes(status) && (
             <p style={{ color: "var(--danger)", fontWeight: 600, marginTop: 16, marginBottom: 16, textAlign: "center" }}>
               {status}
             </p>
@@ -442,15 +455,18 @@ export function PostGem({
               type="submit" 
               className="primary-action" 
               id="submit-listing"
-              disabled={status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating Webxpay payment..."}
+              disabled={isSubmitting}
             >
               {status === "Listing submitted for moderation." ? (
                 <Check size={18} strokeWidth={2.5} />
-              ) : status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating Webxpay payment..." ? (
-                status
+              ) : isSubmitting ? (
+                <>
+                  <span className="button-spinner" aria-hidden="true" />
+                  <span>{status}</span>
+                </>
               ) : (
                 <>
-                  Pay and submit for verification
+                  Proceed to Payment
                   <ChevronRight size={17} strokeWidth={2.2} />
                 </>
               )}

@@ -1,7 +1,7 @@
 const merchantDisclosure = {
   merchantName: "KRISTIANA MAGRET GEM & JEWELLARY",
   email: "info@gemslanka.lk",
-  address: "No 31/24 Grandpass Road, Colombo 14, Sri Lanka",
+  address: "No 31/34 Grandpass Road, Colombo 14, Sri Lanka",
   licenceNumber: "20266DL39394"
 };
 
@@ -70,7 +70,7 @@ export function PrivacyPolicy() {
           We collect account details, contact details, profile settings, listing descriptions, uploaded media, certificates, reports, moderation records, subscription selections, and payment metadata.
         </PolicySection>
         <PolicySection title="Payments">
-          Webxpay processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.
+          Our payment provider processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.
         </PolicySection>
         <PolicySection title="How data is used">
           We use data to operate accounts, publish listings, moderate content, process listing subscriptions, prevent abuse, respond to reports, provide support, and maintain legal or audit records.

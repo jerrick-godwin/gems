@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type {
   Cart,
@@ -10,10 +10,12 @@ import type {
   ListingMedia,
   ListingSubscription,
   ListingSubscriptionPlanId,
+  ListingSubscriptionStatus,
   Order,
   OrderItem,
   OrderStatus,
   PaymentIntent,
+  PaymentReceipt,
   PaymentStatus,
   StorageUploadRequest,
   User,
@@ -24,13 +26,20 @@ import type {
 import { listingSubscriptionPlans, orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
-import { cartItems, carts, conversations, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, sellerProfiles, userSettings, users } from "./db/schema.js";
+import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
-import { createWebxpayPaymentUrl } from "./webxpay.js";
+import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd } from "./stripe.js";
 
-type UserPatch = Partial<Pick<User, "name" | "phone" | "locale" | "profileImageKey" | "profileImageUrl">>;
+type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
 type SettingsPatch = Partial<Pick<UserSettings, "theme" | "notificationsEnabled" | "language" | "dashboardDefaultView" | "savedMarketplaceFilters">>;
+
+export class DuplicatePhoneNumberError extends Error {
+  constructor() {
+    super("Phone number is already in use.");
+    this.name = "DuplicatePhoneNumberError";
+  }
+}
 
 interface ListingInput {
   title?: string;
@@ -55,6 +64,34 @@ interface MemoryState {
 
 let memoryState: MemoryState | undefined;
 let checkoutOrderSchemaPromise: Promise<void> | undefined;
+const processedMemoryRenewalEventIds = new Set<string>();
+
+interface StripePaymentState {
+  stripeCheckoutSessionId?: string;
+  stripeSubscriptionId?: string;
+  stripeCustomerId?: string;
+  stripeInvoiceId?: string;
+}
+
+function listingPaymentGateway(): PaymentIntent["gateway"] {
+  if (!isStripeConfigured()) throw new Error("Stripe payment collection is not configured.");
+  return "stripe";
+}
+
+async function prepareGatewayPayment(userId: string, intent: PaymentIntent): Promise<PaymentIntent> {
+  const user = await getUser(userId);
+  const stripePayment = await createStripeCheckoutSession(intent, user.email);
+  return { ...intent, ...stripePayment };
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "cause" in error &&
+      (error as { cause?: { code?: unknown } }).cause?.code === "23505"
+  );
+}
 
 export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
   if (hasDatabase) {
@@ -76,19 +113,37 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
       return toUser(updated);
     }
 
-    const created = await db
-      .insert(users)
-      .values({
-        id: randomUUID(),
-        firebaseUid: claims.uid,
-        name: claims.name,
-        email: claims.email,
-        phone: "",
-        role: "buyer"
-      })
-      .returning();
-    await ensureSettings(created[0].id);
-    return toUser(created[0]);
+    try {
+      const created = await db
+        .insert(users)
+        .values({
+          id: randomUUID(),
+          firebaseUid: claims.uid,
+          name: claims.name,
+          email: claims.email,
+          phone: "",
+          role: "buyer"
+        })
+        .returning();
+      await ensureSettings(created[0].id);
+      return toUser(created[0]);
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+
+      const [createdByUid] = await db.select().from(users).where(eq(users.firebaseUid, claims.uid)).limit(1);
+      if (createdByUid) {
+        await ensureSettings(createdByUid.id);
+        return toUser(createdByUid);
+      }
+
+      const [createdByEmail] = await db.select().from(users).where(eq(users.email, claims.email)).limit(1);
+      if (createdByEmail) {
+        await ensureSettings(createdByEmail.id);
+        return toUser(createdByEmail);
+      }
+
+      throw error;
+    }
   }
 
   const state = await getMemoryState();
@@ -100,6 +155,7 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
     firebaseUid: claims.uid,
     name: claims.name,
     phone: "",
+    address: "",
     email: claims.email,
     role: "buyer",
     locale: "en",
@@ -123,26 +179,55 @@ export async function getUserProfile(userId: string) {
 }
 
 export async function updateUserProfile(userId: string, patch: UserPatch) {
+  await assertUserPhoneAvailable(userId, patch.phone);
+
   if (hasDatabase) {
+    const now = new Date();
     const [updated] = await db
       .update(users)
-      .set({
+      .set(withoutUndefined({
         name: patch.name,
         phone: patch.phone,
+        address: patch.address,
         locale: patch.locale,
         profileImageKey: patch.profileImageKey,
         profileImageUrl: patch.profileImageUrl,
-        updatedAt: new Date()
-      })
+        updatedAt: now
+      }))
       .where(eq(users.id, userId))
       .returning();
+    await syncSellerDetailsForUser(userId, patch);
     return toUser(updated);
   }
 
   const state = await getMemoryState();
   const user = findMemoryUser(state, userId);
   Object.assign(user, withoutUndefined(patch), { updatedAt: new Date().toISOString() });
+  syncMemorySellerDetailsForUser(state, userId, patch);
   return user;
+}
+
+async function assertUserPhoneAvailable(userId: string, phone: string | undefined) {
+  const normalizedPhone = normalizeUserPhoneForConflict(phone);
+  if (!normalizedPhone) return;
+
+  if (hasDatabase) {
+    const existingUsers = await db.select({ id: users.id, phone: users.phone }).from(users);
+    const conflict = existingUsers.some((user) => user.id !== userId && normalizeUserPhoneForConflict(user.phone) === normalizedPhone);
+    if (conflict) throw new DuplicatePhoneNumberError();
+    return;
+  }
+
+  const state = await getMemoryState();
+  const conflict = state.users.some((user) => user.id !== userId && normalizeUserPhoneForConflict(user.phone) === normalizedPhone);
+  if (conflict) throw new DuplicatePhoneNumberError();
+}
+
+function normalizeUserPhoneForConflict(phone: string | undefined) {
+  const digits = phone?.replace(/\D/g, "") ?? "";
+  if (!digits) return "";
+  if (digits.length === 10 && digits.startsWith("0")) return `94${digits.slice(1)}`;
+  return digits;
 }
 
 export async function getSettings(userId: string): Promise<UserSettings> {
@@ -278,7 +363,7 @@ export async function createCheckoutReservation(userId: string, request: Checkou
       invoiceNumber,
       totalLkr,
       status: "order_placed",
-      paymentMethod: "direct_bank_transfer",
+      paymentMethod: "stripe",
       billingDetails: normalizeCheckoutDetails(request.billingDetails),
       deliveryDetails: normalizeCheckoutDetails(request.deliveryDetails),
       customerNote: normalizeOptionalString(request.customerNote),
@@ -326,7 +411,7 @@ export async function createCheckoutReservation(userId: string, request: Checkou
     }),
     totalLkr,
     status: "order_placed",
-    paymentMethod: "direct_bank_transfer",
+    paymentMethod: "stripe",
     billingDetails: normalizeCheckoutDetails(request.billingDetails),
     deliveryDetails: normalizeCheckoutDetails(request.deliveryDetails),
     customerNote: normalizeOptionalString(request.customerNote),
@@ -372,6 +457,146 @@ export async function getAdminPaymentIntents(): Promise<PaymentIntent[]> {
   }
 
   return [...(await getMemoryState()).paymentIntents].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getPaymentIntent(intentId: string): Promise<PaymentIntent | undefined> {
+  if (hasDatabase) {
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1);
+    return rows[0] ? toPaymentIntent(rows[0]) : undefined;
+  }
+
+  return (await getMemoryState()).paymentIntents.find((item) => item.id === intentId);
+}
+
+export async function getPaymentReceipt(userId: string, intentId: string): Promise<PaymentReceipt | undefined> {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.userId !== userId || intent.status !== "succeeded") return undefined;
+
+  const user = await getUser(userId);
+  if (hasDatabase) {
+    const [listingRows, subscriptionRows] = await Promise.all([
+      db.select().from(listings).where(eq(listings.id, intent.listingId)).limit(1),
+      intent.subscriptionId
+        ? db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, intent.subscriptionId)).limit(1)
+        : Promise.resolve([])
+    ]);
+    const listing = listingRows[0] ? toListing(listingRows[0]) : undefined;
+    if (!listing) return undefined;
+    return buildPaymentReceipt(intent, user, listing, subscriptionRows[0] ? toListingSubscription(subscriptionRows[0]) : undefined);
+  }
+
+  const state = await getMemoryState();
+  const listing = state.database.listings.find((item) => item.id === intent.listingId);
+  if (!listing) return undefined;
+  const subscription = intent.subscriptionId
+    ? state.listingSubscriptions.find((item) => item.id === intent.subscriptionId)
+    : undefined;
+  return buildPaymentReceipt(intent, user, listing, subscription);
+}
+
+export async function getListingSubscriptionPaymentIntent(userId: string, subscriptionId: string): Promise<PaymentIntent | undefined> {
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.id, subscriptionId), eq(listingSubscriptions.userId, userId))).limit(1);
+    const subscription = subscriptions[0];
+    if (!subscription) return undefined;
+    const rows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.subscriptionId, subscriptionId), eq(paymentIntents.userId, userId))).orderBy(desc(paymentIntents.createdAt)).limit(1);
+    const existing = rows[0] ? toPaymentIntent(rows[0]) : undefined;
+    if (existing?.status === "pending" && existing.paymentUrl) return existing;
+
+    const listingRows = await db.select().from(listings).where(eq(listings.id, subscription.listingId)).limit(1);
+    const listing = listingRows[0];
+    const canRestartInitialPayment = subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt);
+    if (!listing || !canRestartInitialPayment) return existing;
+
+    const now = new Date();
+    const quote = quoteListingSubscription(subscription.planId, countListingPhotos(listing.media));
+    let intent: PaymentIntent = {
+      id: `pay-${randomUUID()}`,
+      userId,
+      listingId: subscription.listingId,
+      subscriptionId,
+      purpose: "listing_subscription",
+      status: "pending",
+      planId: subscription.planId,
+      quote,
+      amountLkr: quote.totalLkr,
+      currency: "LKR",
+      gateway: listingPaymentGateway(),
+      policyVersion: "2026-06-11",
+      policyAcceptedAt: now.toISOString(),
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    };
+    intent = await prepareGatewayPayment(userId, intent);
+
+    const [inserted] = await db.insert(paymentIntents).values({
+      id: intent.id,
+      userId,
+      listingId: subscription.listingId,
+      subscriptionId,
+      purpose: intent.purpose,
+      status: intent.status,
+      planId: subscription.planId,
+      quote,
+      amountLkr: intent.amountLkr,
+      currency: intent.currency,
+      gateway: intent.gateway,
+      gatewayReference: intent.gatewayReference,
+      stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
+      stripeSubscriptionId: intent.stripeSubscriptionId,
+      stripeCustomerId: intent.stripeCustomerId,
+      stripeInvoiceId: intent.stripeInvoiceId,
+      paymentUrl: intent.paymentUrl,
+      policyVersion: intent.policyVersion,
+      policyAcceptedAt: now,
+      createdAt: now,
+      updatedAt: now
+    }).returning();
+
+    await db.update(listingSubscriptions).set({ status: "pending_payment", autoRenew: true, cancelledAt: null, paymentIntentId: intent.id, updatedAt: now }).where(eq(listingSubscriptions.id, subscriptionId));
+    await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId: subscription.listingId, paymentIntentId: intent.id, policyVersion: intent.policyVersion, acceptedAt: now });
+    return toPaymentIntent(inserted);
+  }
+
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
+  if (!subscription) return undefined;
+  const existing = state.paymentIntents
+    .filter((item) => item.subscriptionId === subscriptionId && item.userId === userId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (existing?.status === "pending" && existing.paymentUrl) return existing;
+  const canRestartInitialPayment = subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt);
+  if (!canRestartInitialPayment) return existing;
+
+  const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+  if (!listing) return existing;
+  const now = new Date();
+  const quote = quoteListingSubscription(subscription.planId, countListingPhotos(listing.media));
+  let intent: PaymentIntent = {
+    id: `pay-${randomUUID()}`,
+    userId,
+    listingId: subscription.listingId,
+    subscriptionId,
+    purpose: "listing_subscription",
+    status: "pending",
+    planId: subscription.planId,
+    quote,
+    amountLkr: quote.totalLkr,
+    currency: "LKR",
+    gateway: listingPaymentGateway(),
+    policyVersion: "2026-06-11",
+    policyAcceptedAt: now.toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+  intent = await prepareGatewayPayment(userId, intent);
+  subscription.status = "pending_payment";
+  subscription.autoRenew = true;
+  subscription.cancelledAt = undefined;
+  subscription.paymentIntentId = intent.id;
+  subscription.updatedAt = now.toISOString();
+  state.paymentIntents.push(intent);
+  return intent;
 }
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | undefined> {
@@ -441,6 +666,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
 
 export async function createListing(userId: string, input: ListingInput) {
   const seller = await ensureSellerProfile(userId);
+  const sellerUser = await getUser(userId);
   const now = new Date();
   const listing: Listing = {
     id: `gem-${randomUUID()}`,
@@ -483,8 +709,24 @@ export async function createListing(userId: string, input: ListingInput) {
       createdAt: now,
       updatedAt: now
     });
+    await db
+      .insert(listingContacts)
+      .values({
+        listingId: listing.id,
+        phone: sellerUser.phone,
+        remainingReveals: 0
+      })
+      .onConflictDoUpdate({
+        target: listingContacts.listingId,
+        set: { phone: sellerUser.phone }
+      });
   } else {
-    (await getMemoryState()).database.listings.push(listing);
+    const state = await getMemoryState();
+    state.database.listings.push(listing);
+    state.database.listingContacts[listing.id] = {
+      phone: sellerUser.phone,
+      remainingReveals: 0
+    };
   }
   return listing;
 }
@@ -492,10 +734,49 @@ export async function createListing(userId: string, input: ListingInput) {
 export async function removeUserListing(userId: string, listingId: string) {
   const seller = await ensureSellerProfile(userId);
   let deletedFromDb;
+  const now = new Date();
   
   if (hasDatabase) {
-    const [deleted] = await db.delete(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).returning();
-    if (deleted) deletedFromDb = toListing(deleted);
+    const existingRows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+    if (existingRows[0]) {
+      const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.listingId, listingId), eq(listingSubscriptions.userId, userId)));
+      const activeSubscription = subscriptions.find((subscription) => isSubscriptionInPaidAccess(subscription.status, subscription.expiresAt, now));
+      if (activeSubscription) {
+        const intents = await db.select().from(paymentIntents).where(and(eq(paymentIntents.listingId, listingId), eq(paymentIntents.userId, userId)));
+        const stripeSubscriptionIds = new Set(
+          intents
+            .filter((intent) => intent.subscriptionId === activeSubscription.id)
+            .map((intent) => intent.stripeSubscriptionId ?? (intent.gatewayReference?.startsWith("sub_") ? intent.gatewayReference : undefined))
+            .filter((stripeSubscriptionId): stripeSubscriptionId is string => Boolean(stripeSubscriptionId))
+        );
+        await Promise.all(Array.from(stripeSubscriptionIds, (stripeSubscriptionId) => setStripeSubscriptionCancelAtPeriodEnd(stripeSubscriptionId)));
+        await db.update(listingSubscriptions).set({ autoRenew: false, cancelledAt: now, updatedAt: now }).where(eq(listingSubscriptions.id, activeSubscription.id));
+        await db.update(listings).set({ expiresAt: activeSubscription.expiresAt, updatedAt: now }).where(eq(listings.id, listingId));
+        return toListing({ ...existingRows[0], expiresAt: activeSubscription.expiresAt, updatedAt: now });
+      }
+      const subscriptionIds = subscriptions.map((subscription) => subscription.id);
+      const intents = await db.select().from(paymentIntents).where(and(eq(paymentIntents.listingId, listingId), eq(paymentIntents.userId, userId)));
+      const stripeSubscriptionIds = new Set(
+        intents
+          .map((intent) => intent.stripeSubscriptionId ?? (intent.gatewayReference?.startsWith("sub_") ? intent.gatewayReference : undefined))
+          .filter((stripeSubscriptionId): stripeSubscriptionId is string => Boolean(stripeSubscriptionId))
+      );
+      await Promise.all(Array.from(stripeSubscriptionIds, (stripeSubscriptionId) => setStripeSubscriptionCancelAtPeriodEnd(stripeSubscriptionId)));
+
+      if (subscriptionIds.length > 0) {
+        await db.delete(renewalEvents).where(inArray(renewalEvents.subscriptionId, subscriptionIds));
+      }
+      await db.delete(policyAcceptances).where(eq(policyAcceptances.listingId, listingId));
+      await db.delete(paymentIntents).where(and(eq(paymentIntents.listingId, listingId), eq(paymentIntents.userId, userId)));
+      await db.delete(listingSubscriptions).where(and(eq(listingSubscriptions.listingId, listingId), eq(listingSubscriptions.userId, userId)));
+      await db.delete(cartItems).where(eq(cartItems.listingId, listingId));
+      await db.delete(conversations).where(eq(conversations.listingId, listingId));
+      await db.delete(listingContacts).where(eq(listingContacts.listingId, listingId));
+      await db.delete(listingMedia).where(eq(listingMedia.listingId, listingId));
+      await db.update(reports).set({ status: "resolved", listingId: null }).where(eq(reports.listingId, listingId));
+      const [deleted] = await db.delete(listings).where(eq(listings.id, listingId)).returning();
+      if (deleted) deletedFromDb = toListing(deleted);
+    }
   }
 
   const state = await getMemoryState();
@@ -503,8 +784,22 @@ export async function removeUserListing(userId: string, listingId: string) {
   let deletedFromJson;
   
   if (index >= 0) {
+    const activeSubscription = state.listingSubscriptions.find((subscription) => subscription.listingId === listingId && subscription.userId === userId && isSubscriptionInPaidAccess(subscription.status, subscription.expiresAt, now));
+    if (activeSubscription) {
+      const intent = state.paymentIntents.find((item) => item.subscriptionId === activeSubscription.id);
+      const stripeSubscriptionId = intent?.stripeSubscriptionId ?? (intent?.gatewayReference?.startsWith("sub_") ? intent.gatewayReference : undefined);
+      if (stripeSubscriptionId) await setStripeSubscriptionCancelAtPeriodEnd(stripeSubscriptionId);
+      activeSubscription.autoRenew = false;
+      activeSubscription.cancelledAt = now.toISOString();
+      activeSubscription.updatedAt = now.toISOString();
+      state.database.listings[index].expiresAt = activeSubscription.expiresAt;
+      return state.database.listings[index];
+    }
     deletedFromJson = state.database.listings[index];
     state.database.listings.splice(index, 1);
+    delete state.database.listingContacts[listingId];
+    state.listingSubscriptions = state.listingSubscriptions.filter((subscription) => !(subscription.listingId === listingId && subscription.userId === userId));
+    state.paymentIntents = state.paymentIntents.filter((intent) => !(intent.listingId === listingId && intent.userId === userId));
   }
   
   return deletedFromDb || deletedFromJson;
@@ -570,6 +865,7 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
   const quote = quoteListingSubscription(planId, Number(input.photoCount ?? 0));
   const now = new Date();
   const policyVersion = "2026-06-11";
+  const gateway = listingPaymentGateway();
 
   if (hasDatabase) {
     const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
@@ -598,13 +894,13 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
       quote,
       amountLkr: quote.totalLkr,
       currency: "LKR",
-      gateway: "webxpay",
+      gateway,
       policyVersion,
       policyAcceptedAt: now.toISOString(),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
-    intent = { ...intent, paymentUrl: createWebxpayPaymentUrl(intent) };
+    intent = await prepareGatewayPayment(userId, intent);
 
     const [inserted] = await db.insert(paymentIntents).values({
       id: intent.id,
@@ -618,6 +914,11 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
       amountLkr: intent.amountLkr,
       currency: intent.currency,
       gateway: intent.gateway,
+      gatewayReference: intent.gatewayReference,
+      stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
+      stripeSubscriptionId: intent.stripeSubscriptionId,
+      stripeCustomerId: intent.stripeCustomerId,
+      stripeInvoiceId: intent.stripeInvoiceId,
       paymentUrl: intent.paymentUrl,
       policyVersion,
       policyAcceptedAt: now,
@@ -655,44 +956,177 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
     quote,
     amountLkr: quote.totalLkr,
     currency: "LKR",
-    gateway: "webxpay",
+    gateway,
     policyVersion,
     policyAcceptedAt: now.toISOString(),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()
   };
-  intent = { ...intent, paymentUrl: createWebxpayPaymentUrl(intent) };
+  intent = await prepareGatewayPayment(userId, intent);
   subscription.paymentIntentId = intent.id;
   state.listingSubscriptions.push(subscription);
   state.paymentIntents.push(intent);
   return intent;
 }
 
-export async function confirmPaymentIntent(intentId: string, status: PaymentStatus, gatewayReference?: string) {
+export async function confirmPaymentIntent(intentId: string, status: PaymentStatus, gatewayReference?: string, stripeState: StripePaymentState = {}) {
   if (hasDatabase) {
     const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1);
-    if (!rows[0]) return undefined;
-    const existing = toPaymentIntent(rows[0]);
-    if (existing.status === "succeeded") return existing;
-    const nextStatus = status === "succeeded" ? "succeeded" : status === "cancelled" ? "cancelled" : "failed";
-    const [updated] = await db.update(paymentIntents).set({ status: nextStatus, gatewayReference, updatedAt: new Date() }).where(eq(paymentIntents.id, intentId)).returning();
-    if (nextStatus === "succeeded") await activateListingSubscription(updated.subscriptionId ?? undefined, intentId);
+    const existingRow = rows[0];
+    if (!existingRow) return undefined;
+    const existing = toPaymentIntent(existingRow);
+    if (existing.status === "succeeded" && status !== "succeeded") return existing;
+    const nextStatus = normalizePaymentStatus(status);
+    const wasSucceeded = existing.status === "succeeded";
+    const nextStripeState = mergeStripePaymentState(existing, gatewayReference, stripeState);
+    const [updated] = await db.update(paymentIntents).set({
+      status: wasSucceeded ? "succeeded" : nextStatus,
+      gatewayReference: nextStripeState.gatewayReference,
+      stripeCheckoutSessionId: nextStripeState.stripeCheckoutSessionId,
+      stripeSubscriptionId: nextStripeState.stripeSubscriptionId,
+      stripeCustomerId: nextStripeState.stripeCustomerId,
+      stripeInvoiceId: nextStripeState.stripeInvoiceId,
+      updatedAt: new Date()
+    }).where(eq(paymentIntents.id, intentId)).returning();
+    if (nextStatus === "succeeded" && !wasSucceeded) {
+      await activateListingSubscription(updated.subscriptionId ?? undefined, intentId);
+    } else if (!wasSucceeded && nextStatus !== "pending") {
+      await applyListingSubscriptionPaymentStatus(updated.subscriptionId ?? undefined, nextStatus);
+    }
     return toPaymentIntent(updated);
   }
 
   const state = await getMemoryState();
   const intent = state.paymentIntents.find((item) => item.id === intentId);
   if (!intent) return undefined;
-  if (intent.status === "succeeded") return intent;
-  intent.status = status === "succeeded" ? "succeeded" : status === "cancelled" ? "cancelled" : "failed";
-  intent.gatewayReference = gatewayReference;
+  if (intent.status === "succeeded" && status !== "succeeded") return intent;
+  const nextStatus = normalizePaymentStatus(status);
+  const wasSucceeded = intent.status === "succeeded";
+  const nextStripeState = mergeStripePaymentState(intent, gatewayReference, stripeState);
+  intent.status = wasSucceeded ? "succeeded" : nextStatus;
+  intent.gatewayReference = nextStripeState.gatewayReference;
+  intent.stripeCheckoutSessionId = nextStripeState.stripeCheckoutSessionId;
+  intent.stripeSubscriptionId = nextStripeState.stripeSubscriptionId;
+  intent.stripeCustomerId = nextStripeState.stripeCustomerId;
+  intent.stripeInvoiceId = nextStripeState.stripeInvoiceId;
   intent.updatedAt = new Date().toISOString();
-  if (intent.status === "succeeded") await activateListingSubscription(intent.subscriptionId, intentId);
+  if (nextStatus === "succeeded" && !wasSucceeded) {
+    await activateListingSubscription(intent.subscriptionId, intentId);
+  } else if (!wasSucceeded && nextStatus !== "pending") {
+    await applyListingSubscriptionPaymentStatus(intent.subscriptionId, nextStatus);
+  }
   return intent;
+}
+
+export async function recordStripeSubscriptionInvoicePayment(input: {
+  stripeSubscriptionId: string;
+  stripeInvoiceId: string;
+  stripePaymentIntentId?: string;
+  billingReason?: string;
+}) {
+  if (!input.stripeSubscriptionId || !input.stripeInvoiceId) return undefined;
+
+  const intent = await getPaymentIntentByStripeSubscription(input.stripeSubscriptionId);
+  if (!intent) return undefined;
+  const paidEventId = `${input.stripeInvoiceId}:paid`;
+
+  if (input.billingReason === "subscription_create") {
+    await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "initial_paid", "Initial Stripe subscription invoice paid.");
+    return confirmPaymentIntent(intent.id, "succeeded", input.stripeSubscriptionId, {
+      stripeSubscriptionId: input.stripeSubscriptionId,
+      stripeInvoiceId: input.stripeInvoiceId
+    });
+  }
+
+  const inserted = await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "renewal_paid", "Stripe subscription renewal invoice paid.");
+  if (!inserted) return intent;
+  await updatePaymentStripeState(intent.id, { stripeSubscriptionId: input.stripeSubscriptionId, stripeInvoiceId: input.stripeInvoiceId });
+  await extendListingSubscription(intent.subscriptionId, intent.id);
+  return getPaymentIntent(intent.id);
+}
+
+export async function markStripeSubscriptionPastDue(
+  stripeSubscriptionId: string,
+  stripeInvoiceId: string,
+  status = "payment_failed",
+  notes = "Stripe subscription invoice payment failed."
+) {
+  const intent = await getPaymentIntentByStripeSubscription(stripeSubscriptionId);
+  if (!intent?.subscriptionId) return undefined;
+  await recordRenewalEventOnce(intent.subscriptionId, `${stripeInvoiceId}:${status}`, undefined, status, notes);
+  await updatePaymentStripeState(intent.id, { stripeSubscriptionId, stripeInvoiceId });
+
+  if (hasDatabase) {
+    const [updated] = await db.update(listingSubscriptions).set({ status: "past_due", updatedAt: new Date() }).where(eq(listingSubscriptions.id, intent.subscriptionId)).returning();
+    return updated ? toListingSubscription(updated) : undefined;
+  }
+
+  const subscription = (await getMemoryState()).listingSubscriptions.find((item) => item.id === intent.subscriptionId);
+  if (!subscription) return undefined;
+  subscription.status = "past_due";
+  subscription.updatedAt = new Date().toISOString();
+  return subscription;
+}
+
+export async function syncStripeSubscriptionStatus(input: {
+  stripeSubscriptionId: string;
+  status: string;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: Date;
+}) {
+  const intent = await getPaymentIntentByStripeSubscription(input.stripeSubscriptionId);
+  if (!intent?.subscriptionId) return undefined;
+
+  const now = new Date();
+  const nextStatus = mapStripeSubscriptionStatus(input.status);
+  if (!nextStatus && input.cancelAtPeriodEnd === undefined && !input.currentPeriodEnd) return undefined;
+  const updates: Partial<typeof listingSubscriptions.$inferInsert> = {
+    autoRenew: input.cancelAtPeriodEnd === undefined ? undefined : !input.cancelAtPeriodEnd,
+    expiresAt: input.currentPeriodEnd,
+    updatedAt: now
+  };
+  if (nextStatus) updates.status = nextStatus;
+  if (nextStatus === "cancelled" || nextStatus === "expired") {
+    updates.autoRenew = false;
+    updates.cancelledAt = now;
+  }
+
+  if (hasDatabase) {
+    const [updated] = await db
+      .update(listingSubscriptions)
+      .set(withoutUndefined(updates))
+      .where(eq(listingSubscriptions.id, intent.subscriptionId))
+      .returning();
+    if ((nextStatus === "cancelled" || nextStatus === "expired") && updated) {
+      await db.update(listings).set({ status: "expired", expiresAt: input.currentPeriodEnd ?? now, updatedAt: now }).where(eq(listings.id, updated.listingId));
+    }
+    return updated ? toListingSubscription(updated) : undefined;
+  }
+
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === intent.subscriptionId);
+  if (!subscription) return undefined;
+  if (nextStatus) subscription.status = nextStatus;
+  if (input.cancelAtPeriodEnd !== undefined) subscription.autoRenew = !input.cancelAtPeriodEnd;
+  if (input.currentPeriodEnd) subscription.expiresAt = input.currentPeriodEnd.toISOString();
+  if (nextStatus === "cancelled" || nextStatus === "expired") {
+    subscription.autoRenew = false;
+    subscription.cancelledAt = now.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = "expired";
+      listing.expiresAt = (input.currentPeriodEnd ?? now).toISOString();
+    }
+  }
+  subscription.updatedAt = now.toISOString();
+  return subscription;
 }
 
 export async function cancelListingSubscription(userId: string, subscriptionId: string) {
   const now = new Date();
+  const stripeSubscriptionId = await getStripeSubscriptionIdForListingSubscription(userId, subscriptionId);
+  if (stripeSubscriptionId) await setStripeSubscriptionCancelAtPeriodEnd(stripeSubscriptionId);
+
   if (hasDatabase) {
     const [updated] = await db.update(listingSubscriptions).set({ autoRenew: false, cancelledAt: now, updatedAt: now }).where(and(eq(listingSubscriptions.id, subscriptionId), eq(listingSubscriptions.userId, userId))).returning();
     return updated ? toListingSubscription(updated) : undefined;
@@ -708,6 +1142,63 @@ export async function cancelListingSubscription(userId: string, subscriptionId: 
 
 export async function createStorageUpload(userId: string, request: StorageUploadRequest) {
   return createUserUploadTarget(userId, request);
+}
+
+async function syncSellerDetailsForUser(userId: string, patch: UserPatch) {
+  if (patch.name === undefined && patch.phone === undefined && patch.address === undefined) return;
+
+  const sellerRows = await db.select({ id: sellerProfiles.id }).from(sellerProfiles).where(eq(sellerProfiles.userId, userId));
+
+  if (patch.name !== undefined) {
+    await db.update(sellerProfiles).set({ displayName: patch.name }).where(eq(sellerProfiles.userId, userId));
+  }
+
+  const sellerIds = sellerRows.map((seller) => seller.id);
+
+  if (patch.address !== undefined) {
+    await db.update(sellerProfiles).set({ location: patch.address }).where(eq(sellerProfiles.userId, userId));
+    if (sellerIds.length > 0) {
+      await db.update(listings).set({ location: patch.address, updatedAt: new Date() }).where(inArray(listings.sellerId, sellerIds));
+    }
+  }
+
+  if (patch.phone === undefined || sellerRows.length === 0) return;
+
+  const listingRows = await db.select({ id: listings.id }).from(listings).where(inArray(listings.sellerId, sellerIds));
+  if (listingRows.length === 0) return;
+
+  await db
+    .insert(listingContacts)
+    .values(listingRows.map((listing) => ({ listingId: listing.id, phone: patch.phone!, remainingReveals: 0 })))
+    .onConflictDoUpdate({
+      target: listingContacts.listingId,
+      set: { phone: patch.phone }
+    });
+}
+
+function syncMemorySellerDetailsForUser(state: MemoryState, userId: string, patch: UserPatch) {
+  if (patch.name === undefined && patch.phone === undefined && patch.address === undefined) return;
+
+  const sellerIds = new Set<string>();
+  for (const seller of state.database.sellers) {
+    if (seller.userId !== userId) continue;
+    sellerIds.add(seller.id);
+    if (patch.name !== undefined) seller.displayName = patch.name;
+    if (patch.address !== undefined) seller.location = patch.address;
+  }
+
+  if (sellerIds.size === 0) return;
+
+  for (const listing of state.database.listings) {
+    if (!sellerIds.has(listing.sellerId)) continue;
+    if (patch.address !== undefined) listing.location = patch.address;
+    if (patch.phone === undefined) continue;
+    const existing = state.database.listingContacts[listing.id];
+    state.database.listingContacts[listing.id] = {
+      phone: patch.phone,
+      remainingReveals: existing?.remainingReveals ?? 0
+    };
+  }
 }
 
 async function ensureSettings(userId: string) {
@@ -771,7 +1262,8 @@ async function ensureCheckoutOrderSchema() {
   checkoutOrderSchemaPromise ??= (async () => {
     await db.execute(sql`alter table order_items drop constraint if exists order_items_listing_id_listings_id_fk`);
     await db.execute(sql`alter table orders add column if not exists invoice_number varchar`);
-    await db.execute(sql`alter table orders add column if not exists payment_method varchar not null default 'direct_bank_transfer'`);
+    await db.execute(sql`alter table orders add column if not exists payment_method varchar not null default 'stripe'`);
+    await db.execute(sql`update orders set payment_method = 'stripe' where payment_method <> 'stripe'`);
     await db.execute(sql`alter table orders add column if not exists billing_details jsonb not null default '{}'::jsonb`);
     await db.execute(sql`alter table orders add column if not exists delivery_details jsonb not null default '{}'::jsonb`);
     await db.execute(sql`alter table orders add column if not exists customer_note text`);
@@ -869,7 +1361,7 @@ async function ensureSellerProfile(userId: string) {
         displayName: user.name,
         shopSlug: `${user.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${randomUUID().slice(0, 8)}`,
         memberSince: String(new Date().getFullYear()),
-        location: "Sri Lanka",
+        location: user.address || "Sri Lanka",
         rating: 0
       })
       .returning();
@@ -887,7 +1379,7 @@ async function ensureSellerProfile(userId: string) {
     verificationStatus: "unverified" as const,
     shopSlug: `${user.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${randomUUID().slice(0, 8)}`,
     memberSince: String(new Date().getFullYear()),
-    location: "Sri Lanka",
+    location: user.address || "Sri Lanka",
     rating: 0
   };
   state.database.sellers.push(seller);
@@ -924,6 +1416,109 @@ async function getPaymentIntents(userId: string): Promise<PaymentIntent[]> {
   return (await getMemoryState()).paymentIntents.filter((item) => item.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+function isSubscriptionInPaidAccess(status: ListingSubscriptionStatus, expiresAt: Date | string | null | undefined, now = new Date()) {
+  if (status !== "active" && status !== "past_due") return false;
+  if (!expiresAt) return false;
+  return new Date(expiresAt) > now;
+}
+
+function normalizePaymentStatus(status: PaymentStatus): PaymentStatus {
+  if (status === "succeeded" || status === "pending" || status === "cancelled" || status === "expired") return status;
+  return "failed";
+}
+
+function mergeStripePaymentState(intent: PaymentIntent, gatewayReference?: string, stripeState: StripePaymentState = {}) {
+  const stripeCheckoutSessionId =
+    stripeState.stripeCheckoutSessionId ??
+    intent.stripeCheckoutSessionId ??
+    (gatewayReference?.startsWith("cs_") ? gatewayReference : undefined);
+  const stripeSubscriptionId =
+    stripeState.stripeSubscriptionId ??
+    intent.stripeSubscriptionId ??
+    (gatewayReference?.startsWith("sub_") ? gatewayReference : undefined);
+  const gatewayReferenceFallback = stripeSubscriptionId ?? stripeCheckoutSessionId ?? gatewayReference ?? intent.gatewayReference;
+
+  return {
+    gatewayReference: gatewayReferenceFallback,
+    stripeCheckoutSessionId,
+    stripeSubscriptionId,
+    stripeCustomerId: stripeState.stripeCustomerId ?? intent.stripeCustomerId,
+    stripeInvoiceId: stripeState.stripeInvoiceId ?? intent.stripeInvoiceId
+  };
+}
+
+async function updatePaymentStripeState(intentId: string, stripeState: StripePaymentState) {
+  const existing = await getPaymentIntent(intentId);
+  if (!existing) return undefined;
+  const nextState = mergeStripePaymentState(existing, undefined, stripeState);
+
+  if (hasDatabase) {
+    const [updated] = await db.update(paymentIntents).set({
+      gatewayReference: nextState.gatewayReference,
+      stripeCheckoutSessionId: nextState.stripeCheckoutSessionId,
+      stripeSubscriptionId: nextState.stripeSubscriptionId,
+      stripeCustomerId: nextState.stripeCustomerId,
+      stripeInvoiceId: nextState.stripeInvoiceId,
+      updatedAt: new Date()
+    }).where(eq(paymentIntents.id, intentId)).returning();
+    return updated ? toPaymentIntent(updated) : undefined;
+  }
+
+  const intent = (await getMemoryState()).paymentIntents.find((item) => item.id === intentId);
+  if (!intent) return undefined;
+  intent.gatewayReference = nextState.gatewayReference;
+  intent.stripeCheckoutSessionId = nextState.stripeCheckoutSessionId;
+  intent.stripeSubscriptionId = nextState.stripeSubscriptionId;
+  intent.stripeCustomerId = nextState.stripeCustomerId;
+  intent.stripeInvoiceId = nextState.stripeInvoiceId;
+  intent.updatedAt = new Date().toISOString();
+  return intent;
+}
+
+async function applyListingSubscriptionPaymentStatus(subscriptionId: string | undefined, paymentStatus: PaymentStatus) {
+  if (!subscriptionId) return;
+  const now = new Date();
+  const nextSubscriptionStatus =
+    paymentStatus === "cancelled" ? "pending_payment" :
+    paymentStatus === "expired" ? "expired" :
+    paymentStatus === "failed" ? "past_due" :
+    undefined;
+  if (!nextSubscriptionStatus) return;
+
+  if (hasDatabase) {
+    const [updated] = await db.update(listingSubscriptions).set({
+      status: nextSubscriptionStatus,
+      autoRenew: nextSubscriptionStatus === "pending_payment" ? true : false,
+      cancelledAt: nextSubscriptionStatus === "pending_payment" ? null : undefined,
+      updatedAt: now
+    }).where(eq(listingSubscriptions.id, subscriptionId)).returning();
+    if (nextSubscriptionStatus === "expired" && updated) {
+      await db.update(listings).set({ status: "expired", updatedAt: now }).where(eq(listings.id, updated.listingId));
+    }
+    return;
+  }
+
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
+  if (!subscription) return;
+  subscription.status = nextSubscriptionStatus;
+  subscription.autoRenew = nextSubscriptionStatus === "pending_payment";
+  if (nextSubscriptionStatus === "pending_payment") subscription.cancelledAt = undefined;
+  subscription.updatedAt = now.toISOString();
+  if (nextSubscriptionStatus === "expired") {
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) listing.status = "expired";
+  }
+}
+
+function mapStripeSubscriptionStatus(status: string): ListingSubscriptionStatus | undefined {
+  if (status === "active" || status === "trialing") return "active";
+  if (status === "past_due" || status === "incomplete") return "past_due";
+  if (status === "canceled" || status === "paused") return "cancelled";
+  if (status === "incomplete_expired" || status === "unpaid") return "expired";
+  return undefined;
+}
+
 async function activateListingSubscription(subscriptionId: string | undefined, paymentIntentId: string) {
   if (!subscriptionId) return;
   const now = new Date();
@@ -937,7 +1532,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
     const expiresAt = addMonths(now, plan.validityMonths);
     await db.update(listingSubscriptions).set({
       status: "active",
-      startsAt: now,
+      startsAt: subscription.startsAt ?? now,
       expiresAt,
       paymentIntentId,
       updatedAt: now
@@ -958,7 +1553,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
   if (!plan) return;
   const expiresAt = addMonths(now, plan.validityMonths);
   subscription.status = "active";
-  subscription.startsAt = now.toISOString();
+  subscription.startsAt ??= now.toISOString();
   subscription.expiresAt = expiresAt.toISOString();
   subscription.paymentIntentId = paymentIntentId;
   subscription.updatedAt = now.toISOString();
@@ -970,10 +1565,118 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
   }
 }
 
+async function extendListingSubscription(subscriptionId: string | undefined, paymentIntentId: string) {
+  if (!subscriptionId) return;
+  const now = new Date();
+
+  if (hasDatabase) {
+    const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
+    const subscription = rows[0];
+    if (!subscription) return;
+    const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+    if (!plan) return;
+    const baseDate = subscription.expiresAt && subscription.expiresAt > now ? subscription.expiresAt : now;
+    const expiresAt = addMonths(baseDate, plan.validityMonths);
+    await db.update(listingSubscriptions).set({
+      status: "active",
+      startsAt: subscription.startsAt ?? now,
+      expiresAt,
+      paymentIntentId,
+      updatedAt: now
+    }).where(eq(listingSubscriptions.id, subscriptionId));
+    await db.update(listings).set({ status: "pending_review", moderationStatus: "queued", expiresAt, updatedAt: now }).where(eq(listings.id, subscription.listingId));
+    return;
+  }
+
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
+  if (!subscription) return;
+  const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+  if (!plan) return;
+  const currentExpiresAt = subscription.expiresAt ? new Date(subscription.expiresAt) : undefined;
+  const baseDate = currentExpiresAt && currentExpiresAt > now ? currentExpiresAt : now;
+  const expiresAt = addMonths(baseDate, plan.validityMonths);
+  subscription.status = "active";
+  subscription.startsAt ??= now.toISOString();
+  subscription.expiresAt = expiresAt.toISOString();
+  subscription.paymentIntentId = paymentIntentId;
+  subscription.updatedAt = now.toISOString();
+  const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+  if (listing) {
+    listing.status = "pending_review";
+    listing.moderationStatus = "queued";
+    listing.expiresAt = expiresAt.toISOString();
+  }
+}
+
+async function getPaymentIntentByStripeSubscription(stripeSubscriptionId: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.stripeSubscriptionId, stripeSubscriptionId)).limit(1);
+    if (rows[0]) return toPaymentIntent(rows[0]);
+    const legacyRows = await db.select().from(paymentIntents).where(eq(paymentIntents.gatewayReference, stripeSubscriptionId)).limit(1);
+    return legacyRows[0] ? toPaymentIntent(legacyRows[0]) : undefined;
+  }
+  return (await getMemoryState()).paymentIntents.find((item) => item.stripeSubscriptionId === stripeSubscriptionId || item.gatewayReference === stripeSubscriptionId);
+}
+
+async function getPaymentIntentByStripeCheckoutSession(stripeCheckoutSessionId: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.stripeCheckoutSessionId, stripeCheckoutSessionId)).limit(1);
+    if (rows[0]) return toPaymentIntent(rows[0]);
+    const legacyRows = await db.select().from(paymentIntents).where(eq(paymentIntents.gatewayReference, stripeCheckoutSessionId)).limit(1);
+    return legacyRows[0] ? toPaymentIntent(legacyRows[0]) : undefined;
+  }
+  return (await getMemoryState()).paymentIntents.find((item) => item.stripeCheckoutSessionId === stripeCheckoutSessionId || item.gatewayReference === stripeCheckoutSessionId);
+}
+
+export async function isStripeCheckoutSessionForPaymentIntent(intent: PaymentIntent, stripeCheckoutSessionId: string) {
+  if (intent.stripeCheckoutSessionId === stripeCheckoutSessionId || intent.gatewayReference === stripeCheckoutSessionId) return true;
+  const sessionIntent = await getPaymentIntentByStripeCheckoutSession(stripeCheckoutSessionId);
+  return sessionIntent?.id === intent.id;
+}
+
+async function getStripeSubscriptionIdForListingSubscription(userId: string, subscriptionId: string) {
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.id, subscriptionId), eq(listingSubscriptions.userId, userId))).limit(1);
+    if (!subscriptions[0]) return undefined;
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.subscriptionId, subscriptionId)).orderBy(desc(paymentIntents.createdAt)).limit(1);
+    return rows[0]?.stripeSubscriptionId ?? (rows[0]?.gatewayReference?.startsWith("sub_") ? rows[0].gatewayReference : undefined);
+  }
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
+  if (!subscription) return undefined;
+  const intent = state.paymentIntents.find((item) => item.subscriptionId === subscriptionId);
+  return intent?.stripeSubscriptionId ?? (intent?.gatewayReference?.startsWith("sub_") ? intent.gatewayReference : undefined);
+}
+
+async function recordRenewalEventOnce(subscriptionId: string | undefined, eventId: string, paymentIntentId: string | undefined, status: string, notes: string) {
+  if (!subscriptionId) return false;
+  if (hasDatabase) {
+    const existing = await db.select().from(renewalEvents).where(eq(renewalEvents.id, eventId)).limit(1);
+    if (existing[0]) return false;
+    await db.insert(renewalEvents).values({
+      id: eventId,
+      subscriptionId,
+      paymentIntentId,
+      status,
+      gatewayReference: eventId,
+      notes
+    });
+    return true;
+  }
+  if (processedMemoryRenewalEventIds.has(eventId)) return false;
+  processedMemoryRenewalEventIds.add(eventId);
+  return true;
+}
+
 function addMonths(date: Date, months: number) {
   const next = new Date(date);
   next.setMonth(next.getMonth() + months);
   return next;
+}
+
+function countListingPhotos(media: ListingMedia[] | unknown) {
+  return Array.isArray(media) ? media.filter((item) => item?.kind === "photo").length : 0;
 }
 
 function ensureMemoryCart(state: MemoryState, userId: string): Cart {
@@ -1010,6 +1713,7 @@ function toUser(row: typeof users.$inferSelect): User {
     firebaseUid: row.firebaseUid ?? undefined,
     name: row.name,
     phone: row.phone,
+    address: row.address,
     email: row.email,
     role: row.role,
     locale: row.locale as User["locale"],
@@ -1122,14 +1826,74 @@ function toPaymentIntent(row: typeof paymentIntents.$inferSelect): PaymentIntent
     quote: row.quote,
     amountLkr: row.amountLkr,
     currency: "LKR",
-    gateway: "webxpay",
+    gateway: row.gateway as PaymentIntent["gateway"],
     gatewayReference: row.gatewayReference ?? undefined,
+    stripeCheckoutSessionId: row.stripeCheckoutSessionId ?? undefined,
+    stripeSubscriptionId: row.stripeSubscriptionId ?? undefined,
+    stripeCustomerId: row.stripeCustomerId ?? undefined,
+    stripeInvoiceId: row.stripeInvoiceId ?? undefined,
     paymentUrl: row.paymentUrl ?? undefined,
     policyVersion: row.policyVersion,
     policyAcceptedAt: row.policyAcceptedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
+}
+
+function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing, subscription?: ListingSubscription): PaymentReceipt {
+  const lineItems: PaymentReceipt["lineItems"] = [
+    {
+      label: `${intent.quote.plan.name} listing subscription`,
+      quantity: 1,
+      amountLkr: intent.quote.basePriceLkr
+    }
+  ];
+
+  if (intent.quote.extraPhotoCount > 0 && intent.quote.extraPhotoTotalLkr > 0) {
+    lineItems.push({
+      label: `${intent.quote.extraPhotoCount} extra ${intent.quote.extraPhotoCount === 1 ? "photo" : "photos"}`,
+      quantity: intent.quote.extraPhotoCount,
+      amountLkr: intent.quote.extraPhotoTotalLkr
+    });
+  }
+
+  return {
+    paymentIntentId: intent.id,
+    receiptNumber: receiptNumberForPayment(intent),
+    status: intent.status,
+    paidAt: intent.updatedAt,
+    customer: {
+      name: user.name,
+      email: user.email
+    },
+    listing: {
+      id: listing.id,
+      title: listing.title
+    },
+    subscription: {
+      id: subscription?.id ?? intent.subscriptionId,
+      planName: intent.quote.plan.name,
+      startsAt: subscription?.startsAt,
+      expiresAt: subscription?.expiresAt
+    },
+    currency: "LKR",
+    lineItems,
+    totalLkr: intent.amountLkr,
+    stripe: {
+      checkoutSessionId: intent.stripeCheckoutSessionId,
+      subscriptionId: intent.stripeSubscriptionId,
+      customerId: intent.stripeCustomerId,
+      invoiceId: intent.stripeInvoiceId
+    },
+    createdAt: intent.createdAt,
+    updatedAt: intent.updatedAt
+  };
+}
+
+function receiptNumberForPayment(intent: PaymentIntent) {
+  const date = new Date(intent.updatedAt || intent.createdAt).toISOString().slice(0, 10).replace(/-/g, "");
+  const suffix = intent.id.replace(/[^a-z0-9]/gi, "").slice(-8).toUpperCase() || "PAYMENT";
+  return `RCP-${date}-${suffix}`;
 }
 
 function withoutUndefined<T extends Record<string, unknown>>(value: T) {

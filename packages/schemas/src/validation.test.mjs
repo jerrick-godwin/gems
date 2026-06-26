@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "./index.ts";
+import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, validateGemListing } from "./index.ts";
 
 const validDetails = {
   fullName: "Jerrick Godwin",
@@ -14,11 +14,11 @@ const validDetails = {
   country: "Sri Lanka"
 };
 
-test("checkout request accepts complete direct bank transfer details", () => {
+test("checkout request accepts complete Stripe details", () => {
   assert.deepEqual(validateCheckoutRequest({
     billingDetails: validDetails,
     deliveryDetails: validDetails,
-    paymentMethod: "direct_bank_transfer"
+    paymentMethod: "stripe"
   }), []);
 });
 
@@ -30,7 +30,7 @@ test("checkout request rejects missing details and unsupported payment methods",
   });
   assert.ok(errors.some((error) => error.includes("Billing fullName")));
   assert.ok(errors.some((error) => error.includes("Delivery email is invalid")));
-  assert.ok(errors.some((error) => error.includes("direct bank transfer")));
+  assert.ok(errors.some((error) => error.includes("Stripe")));
 });
 
 test("admin order statuses match the supported workflow", () => {
@@ -53,4 +53,31 @@ test("listing subscription pricing follows plan photo allowances", () => {
   assert.equal(quoteListingSubscription("pro", 7).totalLkr, 1500);
   assert.equal(quoteListingSubscription("plus", 10).totalLkr, 20000);
   assert.equal(quoteListingSubscription("plus", 11).totalLkr, 20500);
+});
+
+test("gem listing validation allows optional dimensions, shape, and cut", () => {
+  assert.deepEqual(validateGemListing({
+    title: "Ceylon Blue Sapphire",
+    priceLkr: 3500000,
+    attributes: {
+      carat: 5.4,
+      dimensions: "",
+      shape: "",
+      cut: "",
+      color: "Royal blue",
+      clarity: "Eye clean",
+      origin: "Ratnapura",
+      treatment: "untreated",
+      certificateStatus: "none"
+    },
+    media: [{
+      id: "media-1",
+      listingId: "listing-1",
+      kind: "photo",
+      url: "https://example.com/gem.jpg",
+      alt: "Gem photo",
+      order: 0,
+      moderationStatus: "not_submitted"
+    }]
+  }), []);
 });

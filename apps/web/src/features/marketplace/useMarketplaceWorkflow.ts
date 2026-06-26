@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GemsApiClient, MarketplaceSnapshot } from "@gems/api-client";
 import type { CertificateStatus, Listing, Report, Treatment } from "@gems/schemas";
 import type { SortKey, View } from "../../shared/types";
@@ -27,10 +27,42 @@ export function useMarketplaceWorkflow({
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [revealedPhones, setRevealedPhones] = useState<Record<string, string>>({});
+  const [previewPhones, setPreviewPhones] = useState<Record<string, string>>({});
+  const [fullPhones, setFullPhones] = useState<Record<string, string>>({});
   const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
 
   const reportedListingIds = useMemo(() => myReports.map((report) => report.listingId), [myReports]);
+
+  useEffect(() => {
+    if (!isSignedIn) setFullPhones({});
+  }, [isSignedIn]);
+
+  const refreshSnapshot = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const [nextSnapshot, searchResult] = await Promise.all([
+        api.snapshot(),
+        api.searchListings({
+          ...(query ? { query } : {}),
+          ...(gemType !== "all" ? { gemType } : {}),
+          ...(selectedLocations.length > 0 ? { location: selectedLocations.join(",") } : {}),
+          ...(treatment !== "all" ? { treatment } : {}),
+          ...(certificate !== "all" ? { certificate } : {}),
+          ...(sort ? { sort } : {}),
+          page: page.toString(),
+          limit: "20"
+        })
+      ]);
+      setSnapshot(nextSnapshot);
+      setFilteredListings(searchResult.items);
+      setTotalPages(searchResult.totalPages);
+      setPreviewPhones({});
+      setFullPhones({});
+      setLoadError(null);
+    } catch (error: unknown) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load marketplace snapshot");
+    }
+  }, [api, certificate, gemType, page, query, selectedLocations, sort, treatment]);
 
   useEffect(() => {
     let active = true;
@@ -88,13 +120,18 @@ export function useMarketplaceWorkflow({
 
   const selectedListing = filteredListings.find((listing) => listing.id === selectedId);
 
+  const handlePreviewPhone = async (listingId: string) => {
+    const result = await api.previewPhone(listingId);
+    setPreviewPhones((current) => ({ ...current, [listingId]: result.phone }));
+  };
+
   const handleRevealPhone = async (listingId: string) => {
     if (!isSignedIn) {
       setView("login");
       return;
     }
     const result = await api.revealPhone(listingId);
-    setRevealedPhones((current) => ({ ...current, [listingId]: result.phone }));
+    setFullPhones((current) => ({ ...current, [listingId]: result.phone }));
   };
 
   const handleReportListing = async (listingId: string, reason: string, notes: string) => {
@@ -122,11 +159,14 @@ export function useMarketplaceWorkflow({
     totalPages,
     selectedId,
     setSelectedId,
-    revealedPhones,
+    previewPhones,
+    fullPhones,
     filteredListings,
     approvedListings,
     selectedListing,
     reportedListingIds,
+    refreshSnapshot,
+    handlePreviewPhone,
     handleRevealPhone,
     handleReportListing
   };

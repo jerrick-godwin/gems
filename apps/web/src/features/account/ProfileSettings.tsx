@@ -1,67 +1,73 @@
-import { useState, type FormEvent } from "react";
+import { Check } from "lucide-react";
+import { useMemo, useState, type FormEvent } from "react";
 import type { GemsApiClient } from "@gems/api-client";
-import type { UserDashboard, UserSettings } from "@gems/schemas";
+import type { UserDashboard } from "@gems/schemas";
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function ProfileSettings({
   api,
   dashboard,
   accountError,
-  onDashboardChange
+  onDashboardChange,
+  onMarketplaceRefresh
 }: {
   api: GemsApiClient;
   dashboard: UserDashboard | null;
   accountError: string | null;
   onDashboardChange: (dashboard: UserDashboard) => void;
+  onMarketplaceRefresh: () => Promise<void>;
 }) {
+  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
-  const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; phone?: string }>({});
   const user = dashboard?.user;
-  const settings = dashboard?.settings;
+  const emailError = useMemo(() => user ? validateEmail(user.email) : undefined, [user]);
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    setProfileStatus("Saving profile...");
+    const name = String(form.get("name") ?? "").trim();
+    const phone = String(form.get("phone") ?? "").trim();
+    const address = String(form.get("address") ?? "").trim();
+    const email = user?.email ?? "";
+    const nextErrors = validateProfileContact(email, phone);
+
+    setFieldErrors(nextErrors);
+    if (nextErrors.email || nextErrors.phone) {
+      setSaveState("error");
+      setProfileStatus("Please fix the highlighted details.");
+      return;
+    }
+
+    setSaveState("saving");
+    setProfileStatus(null);
     try {
       await api.updateMe({
-        name: String(form.get("name") ?? ""),
-        phone: String(form.get("phone") ?? ""),
-        locale: String(form.get("locale") ?? "en") as "en"
+        name,
+        phone,
+        address
       });
-      onDashboardChange(await api.dashboard());
+      const [nextDashboard] = await Promise.all([api.dashboard(), onMarketplaceRefresh()]);
+      onDashboardChange(nextDashboard);
+      setFieldErrors({});
+      setSaveState("saved");
       setProfileStatus("Profile saved.");
     } catch (error) {
+      setSaveState("error");
       setProfileStatus(error instanceof Error ? error.message : "Unable to save profile.");
-    }
-  };
-
-  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setSettingsStatus("Saving settings...");
-    try {
-      await api.updateSettings({
-        theme: String(form.get("theme") ?? "system") as UserSettings["theme"],
-        language: String(form.get("language") ?? "en") as UserSettings["language"],
-        dashboardDefaultView: String(form.get("dashboardDefaultView") ?? "buyer") as UserSettings["dashboardDefaultView"],
-        notificationsEnabled: form.get("notificationsEnabled") === "on"
-      });
-      onDashboardChange(await api.dashboard());
-      setSettingsStatus("Settings saved.");
-    } catch (error) {
-      setSettingsStatus(error instanceof Error ? error.message : "Unable to save settings.");
     }
   };
 
   return (
     <section className="dashboard">
       <div className="section-heading">
-        <h1>Profile and Settings</h1>
-        <p>Manage account details, web preferences, and dashboard defaults.</p>
+        <h1>Profile</h1>
+        <p>Manage your account details.</p>
       </div>
       {accountError && <div className="empty-results"><h2>Account unavailable</h2><p>{accountError}</p></div>}
-      <div className="two-column">
-        <form className="data-panel settings-form" onSubmit={saveProfile}>
+      <div className="profile-form-shell">
+        <form key={`${user?.id ?? "profile"}-${user?.updatedAt ?? "pending"}`} className="data-panel settings-form" onSubmit={saveProfile}>
           <h2>Profile</h2>
           <div className="settings-grid">
             <label>
@@ -70,60 +76,57 @@ export function ProfileSettings({
             </label>
             <label>
               Email
-              <input value={user?.email ?? ""} readOnly />
+              <input value={user?.email ?? ""} readOnly aria-readonly="true" aria-invalid={Boolean(fieldErrors.email || emailError)} />
+              {(fieldErrors.email || emailError) && <span className="field-error">{fieldErrors.email ?? emailError}</span>}
             </label>
             <label>
               Phone
-              <input name="phone" defaultValue={user?.phone ?? ""} />
+              <input
+                name="phone"
+                defaultValue={user?.phone ?? ""}
+                inputMode="tel"
+                autoComplete="tel"
+                aria-invalid={Boolean(fieldErrors.phone)}
+                onChange={() => setFieldErrors((current) => ({ ...current, phone: undefined }))}
+              />
+              {fieldErrors.phone && <span className="field-error">{fieldErrors.phone}</span>}
             </label>
-            <label>
-              Locale
-              <select name="locale" defaultValue={user?.locale ?? "en"}>
-                <option value="en">English</option>
-                <option value="si">Sinhala</option>
-                <option value="ta">Tamil</option>
-              </select>
-            </label>
-          </div>
-          <button className="primary-action" type="submit">Save profile</button>
-          {profileStatus && <p style={{ color: "var(--sage)", fontWeight: 600 }}>{profileStatus}</p>}
-        </form>
-        <form className="data-panel settings-form" onSubmit={saveSettings}>
-          <h2>App and web settings</h2>
-          <div className="settings-grid">
-            <label>
-              Theme
-              <select name="theme" defaultValue={settings?.theme ?? "system"}>
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
-            <label>
-              Language
-              <select name="language" defaultValue={settings?.language ?? "en"}>
-                <option value="en">English</option>
-                <option value="si">Sinhala</option>
-                <option value="ta">Tamil</option>
-              </select>
-            </label>
-            <label>
-              Dashboard default
-              <select name="dashboardDefaultView" defaultValue={settings?.dashboardDefaultView ?? "buyer"}>
-                <option value="buyer">Buyer</option>
-                <option value="seller">Seller</option>
-              </select>
-            </label>
-            <label className="checkbox-label" style={{ gridColumn: "1 / -1" }}>
-              <input name="notificationsEnabled" type="checkbox" defaultChecked={settings?.notificationsEnabled ?? true} />
-              Notifications enabled
+            <label className="settings-field-wide">
+              Address
+              <textarea name="address" defaultValue={user?.address ?? ""} rows={3} autoComplete="street-address" />
             </label>
           </div>
-          <button className="primary-action" type="submit">Save settings</button>
-          {settingsStatus && <p style={{ color: "var(--sage)", fontWeight: 600 }}>{settingsStatus}</p>}
+          <button className="primary-action profile-save-action" type="submit" disabled={saveState === "saving" || !user}>
+            {saveState === "saving" && <span className="button-spinner" aria-hidden="true" />}
+            {saveState === "saved" && <Check size={18} strokeWidth={2.6} aria-hidden="true" />}
+            {saveState === "saving" ? "Saving profile..." : saveState === "saved" ? "Profile saved" : "Save profile"}
+          </button>
+          {profileStatus && <p className={`profile-status profile-status-${saveState}`}>{profileStatus}</p>}
         </form>
       </div>
     </section>
   );
 }
 
+function validateProfileContact(email: string, phone: string) {
+  const errors: { email?: string; phone?: string } = {};
+  const normalizedPhone = phone.trim();
+
+  errors.email = validateEmail(email);
+
+  const digits = normalizedPhone.replace(/\D/g, "");
+  const hasPhoneShape = /^\+?[0-9\s().-]+$/.test(normalizedPhone);
+  if (!normalizedPhone || !hasPhoneShape || digits.length < 9 || digits.length > 15) {
+    errors.phone = "Enter a valid phone number, for example 0769715227 or +94769715227.";
+  }
+
+  return errors;
+}
+
+function validateEmail(email: string) {
+  const normalizedEmail = email.trim();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return "A valid account email is required.";
+  }
+  return undefined;
+}
