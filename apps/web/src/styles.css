@@ -611,6 +611,25 @@ select {
   width: 100%;
 }
 
+.footer-auth-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 4px;
+  width: 116px;
+}
+
+.footer-auth-placeholder-line {
+  display: block;
+  width: 100%;
+  height: 14px;
+  border-radius: var(--radius-sm);
+}
+
+.footer-auth-placeholder-line.short {
+  width: 82px;
+}
+
 /* Bottom bar */
 
 .footer-bottom-bar {

@@ -81,51 +81,13 @@ const mimeTypes: Record<string, string> = {
   ".webp": "image/webp"
 };
 
-const policyPages: Record<string, { title: string; effective: string; lede?: string; body: string[] }> = {
-  "/contact-us": {
-    title: "Contact Us",
-    effective: "Merchant details updated June 11, 2026",
-    lede: "Merchant and licence details for gemslanka.lk.",
-    body: [
-      "Merchant name: KRISTIANA MAGRET GEM & JEWELLERY.",
-      "Email: info@gemslanka.lk.",
-      "Licence number: 20266DL39394."
-    ]
-  },
-  "/terms-and-conditions": {
-    title: "Terms and Conditions",
-    effective: "Effective June 11, 2026",
-    body: [
-      "gemslanka.lk provides listing publication, seller visibility, contact tools, and moderation workflows only. We do not sell, buy, broker, inspect, transport, insure, or guarantee gemstones.",
-      "Any selling, purchasing, negotiation, inspection, payment, delivery, refund, or dispute between buyers and sellers happens outside gemslanka.lk. Users are responsible for their own due diligence before any transaction.",
-      "Each listing uses its own subscription plan. Basic is valid for 1 month, Pro for 2 months, and Plus for 3 months. Subscriptions automatically renew unless cancelled before the next renewal. Expired or unpaid listings become inactive and are removed from public browsing until renewed.",
-      "All listing subscriptions, renewals, and extra-photo fees are non-refundable, including rejected listings, cancelled renewals, expired listings, duplicate submissions, or seller withdrawal.",
-      "We may reject, remove, expire, or suspend listings and accounts that violate these terms, create marketplace risk, or misuse the service."
-    ]
-  },
-  "/privacy-policy": {
-    title: "Privacy Policy",
-    effective: "Effective June 11, 2026",
-    body: [
-      "gemslanka.lk collects account details, seller profile data, listing details, uploaded media, verification context, reports, support messages, device data, and activity needed to operate the listing service.",
-      "Our payment provider processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.",
-      "We use cookies or local storage for authentication, saved preferences, theme settings, and essential app behavior.",
-      "We keep records while an account, listing, payment, moderation, legal, or security need remains. We use reasonable safeguards, but no internet service can guarantee absolute security.",
-      "Users can update account information, cancel listing auto-renewal, request support, and ask about personal data associated with their account."
-    ]
-  },
-  "/refund-policy": {
-    title: "Refund Policy",
-    effective: "Effective June 11, 2026",
-    body: [
-      "No refunds. gemslanka.lk listing subscriptions, renewals, and extra-photo fees are non-refundable.",
-      "This no-refund policy applies to rejected listings, cancelled renewals, expired listings, duplicate submissions, seller withdrawal, and any buyer/seller transaction outcome outside the platform.",
-      "Cancelling auto-renewal stops future renewal charges only. It does not refund the current listing validity period or any previously paid fees."
-    ]
-  }
-};
-
-const publicPagePaths = ["/", ...Object.keys(policyPages)];
+const publicPagePaths = [
+  "/",
+  "/contact-us",
+  "/terms-and-conditions",
+  "/privacy-policy",
+  "/refund-policy"
+];
 const paymentIntentValidationErrors = new Set([
   "Select a valid listing subscription plan.",
   "Terms and Privacy Policy acceptance is required before payment.",
@@ -141,41 +103,6 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
     "access-control-allow-headers": "authorization,content-type"
   });
   response.end(JSON.stringify(body));
-}
-
-function sendPolicyPage(response: ServerResponse, page: typeof policyPages[string]) {
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  response.end(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(page.title)} | gemslanka.lk</title>
-  <style>
-    body { margin: 0; font-family: Arial, sans-serif; color: #111827; background: #f8fafc; line-height: 1.65; }
-    main { max-width: 860px; margin: 0 auto; padding: 48px 20px; }
-    h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.05; }
-    .effective { margin: 0 0 28px; color: #5f6f6d; font-size: 1.1rem; }
-    section { display: grid; gap: 16px; padding: 28px; background: #fff; border: 1px solid #d9e1df; border-radius: 12px; }
-    p { margin: 0; font-size: 1rem; }
-    nav { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 28px; }
-    a { color: #08715c; font-weight: 700; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>${escapeHtml(page.title)}</h1>
-    <p class="effective">${escapeHtml(page.lede ?? `${page.effective}. These policies apply to gemslanka.lk listing services.`)}</p>
-    <section>${page.body.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}</section>
-    <nav aria-label="Legal pages">
-      <a href="/contact-us">Contact Us</a>
-      <a href="/terms-and-conditions">Terms and Conditions</a>
-      <a href="/privacy-policy">Privacy Policy</a>
-      <a href="/refund-policy">Refund Policy</a>
-    </nav>
-  </main>
-</body>
-</html>`);
 }
 
 function getPublicSiteUrl(request: IncomingMessage) {
@@ -936,12 +863,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
 
     if (request.method === "GET" && url.pathname === "/sitemap.xml") {
       sendSitemapXml(request, response);
-      return;
-    }
-
-    const policyPage = policyPages[url.pathname];
-    if (request.method === "GET" && policyPage) {
-      sendPolicyPage(response, policyPage);
       return;
     }
 

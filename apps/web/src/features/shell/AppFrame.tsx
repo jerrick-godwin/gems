@@ -258,11 +258,19 @@ export function AppFrame({
             <h3 className="footer-col-heading">Marketplace</h3>
             <nav className="footer-col-links" aria-label="Marketplace">
               <a href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
-              {isSignedIn
-                ? <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
-                : <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")}>Sign In</a>
-              }
-              {isSignedIn && <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")}>My Listings</a>}
+              {!authResolved ? (
+                <span className="footer-auth-placeholder" aria-hidden="true">
+                  <span className="skeleton footer-auth-placeholder-line" />
+                  <span className="skeleton footer-auth-placeholder-line short" />
+                </span>
+              ) : isSignedIn ? (
+                <>
+                  <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
+                  <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")}>My Listings</a>
+                </>
+              ) : (
+                <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")}>Sign In</a>
+              )}
             </nav>
           </div>
 
