@@ -1,7 +1,6 @@
 const merchantDisclosure = {
-  merchantName: "KRISTIANA MAGRET GEM & JEWELLARY",
+  merchantName: "KRISTIANA MAGRET GEM & JEWELLERY",
   email: "info@gemslanka.lk",
-  address: "No 31/34 Grandpass Road, Colombo 14, Sri Lanka",
   licenceNumber: "20266DL39394"
 };
 
@@ -16,7 +15,6 @@ export function ContactUs() {
         <div className="contact-detail-grid">
           <ContactDetail label="Merchant name" value={merchantDisclosure.merchantName} />
           <ContactDetail label="Email" value={merchantDisclosure.email} />
-          <ContactDetail label="Contact address" value={merchantDisclosure.address} />
           <ContactDetail label="Licence number" value={merchantDisclosure.licenceNumber} />
         </div>
       </div>
