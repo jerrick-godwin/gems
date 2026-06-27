@@ -4,25 +4,21 @@ export type ModerationStatus = "not_submitted" | "queued" | "needs_changes" | "a
 export type Treatment = "untreated" | "heated" | "diffused" | "filled";
 export type CertificateStatus = "none" | "seller_provided" | "admin_verified";
 export type PromotionType = "bump" | "top" | "urgent" | "featured" | "scheduled";
-export type ListingSubscriptionPlanId = "basic" | "pro" | "plus";
+export type ListingSubscriptionPlanId = string;
 export type ListingSubscriptionStatus = "pending_payment" | "active" | "past_due" | "cancelled" | "expired";
 export type PaymentPurpose = "listing_subscription" | "listing_subscription_renewal";
 export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled" | "expired";
 
 export interface ListingSubscriptionPlan {
-  id: ListingSubscriptionPlanId;
+  id: string;
   name: string;
   priceLkr: number;
   includedPhotos: number;
   extraPhotoPriceLkr: number;
   validityMonths: number;
+  eyebrow: string;
+  summary: string;
 }
-
-export const listingSubscriptionPlans: ListingSubscriptionPlan[] = [
-  { id: "basic", name: "Basic", priceLkr: 500, includedPhotos: 3, extraPhotoPriceLkr: 250, validityMonths: 1 },
-  { id: "pro", name: "Pro", priceLkr: 1000, includedPhotos: 6, extraPhotoPriceLkr: 500, validityMonths: 2 },
-  { id: "plus", name: "Plus", priceLkr: 20000, includedPhotos: 10, extraPhotoPriceLkr: 500, validityMonths: 3 }
-];
 
 export interface ListingPaymentQuote {
   plan: ListingSubscriptionPlan;
@@ -374,14 +370,7 @@ export function formatLkr(value: number) {
   }).format(value);
 }
 
-export function getListingSubscriptionPlan(planId: ListingSubscriptionPlanId) {
-  const plan = listingSubscriptionPlans.find((item) => item.id === planId);
-  if (!plan) throw new Error("Unknown listing subscription plan.");
-  return plan;
-}
-
-export function quoteListingSubscription(planId: ListingSubscriptionPlanId, photoCount: number): ListingPaymentQuote {
-  const plan = getListingSubscriptionPlan(planId);
+export function quoteListingSubscription(plan: ListingSubscriptionPlan, photoCount: number): ListingPaymentQuote {
   const normalizedPhotoCount = Math.max(0, Math.floor(photoCount));
   const extraPhotoCount = Math.max(0, normalizedPhotoCount - plan.includedPhotos);
   const extraPhotoTotalLkr = extraPhotoCount * plan.extraPhotoPriceLkr;

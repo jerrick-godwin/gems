@@ -11,7 +11,8 @@ import {
   locations as locationsTable,
   reports as reportTable,
   savedSearches as savedSearchTable,
-  sellerProfiles as sellerProfileTable
+  sellerProfiles as sellerProfileTable,
+  subscriptionPlans as subscriptionPlanTable
 } from "./db/schema.js";
 import { createSignedReadUrl } from "./storage.js";
 
@@ -41,13 +42,14 @@ export async function getMutableMarketplaceDatabase() {
 
 export async function getMarketplaceSnapshot() {
   if (hasDatabase) {
-    const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows] = await Promise.all([
+    const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows, subscriptionPlanRows] = await Promise.all([
       db.select().from(gemTypeTable).orderBy(asc(gemTypeTable.name)),
       db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`)),
       db.select().from(sellerProfileTable),
       db.select().from(conversationTable),
       db.select().from(savedSearchTable),
-      db.select().from(locationsTable)
+      db.select().from(locationsTable),
+      db.select().from(subscriptionPlanTable).orderBy(asc(subscriptionPlanTable.priceLkr))
     ]);
     return {
       gemTypes: gemTypeRows,
@@ -56,7 +58,8 @@ export async function getMarketplaceSnapshot() {
       sellers: sellerRows.map(toSellerProfile),
       conversations: conversationRows.map(toConversation),
       savedSearches: savedSearchRows.map(toSavedSearch),
-      content: emptyMarketplaceContent()
+      content: emptyMarketplaceContent(),
+      subscriptionPlans: subscriptionPlanRows
     };
   }
 

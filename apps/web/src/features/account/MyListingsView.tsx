@@ -2,17 +2,19 @@ import { CreditCard, RefreshCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard } from "@gems/schemas";
+import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function MyListingsView({
   dashboard,
   gemTypes,
+  subscriptionPlans,
   api,
   onDashboardChange
 }: {
   dashboard: UserDashboard | null;
   gemTypes: GemType[];
+  subscriptionPlans: ListingSubscriptionPlan[];
   api: GemsApiClient;
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
@@ -120,7 +122,7 @@ export function MyListingsView({
               const gemTypeName = gemTypes.find((gemType) => gemType.id === listing.gemTypeId)?.name;
               const attributes = getListingAttributes(listing, gemTypeName);
               const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === listing.id);
-              const plan = subscription ? getListingSubscriptionPlan(subscription.planId) : undefined;
+              const plan = subscription ? subscriptionPlans.find(p => p.id === subscription.planId) : undefined;
               const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
               const paymentLines = payment ? paymentBreakdown(payment) : [];
               return (

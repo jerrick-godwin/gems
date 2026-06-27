@@ -23,10 +23,10 @@ import type {
   UserRole,
   UserSettings
 } from "@gems/schemas";
-import { listingSubscriptionPlans, orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "@gems/schemas";
+import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type ListingSubscriptionPlan } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
-import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users } from "./db/schema.js";
+import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
 import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd } from "./stripe.js";
@@ -59,6 +59,7 @@ interface MemoryState {
   carts: Cart[];
   orders: Order[];
   listingSubscriptions: ListingSubscription[];
+  subscriptionPlans: ListingSubscriptionPlan[];
   paymentIntents: PaymentIntent[];
   listingIdempotencyKeys: Record<string, string>;
   paymentIntentIdempotencyKeys: Record<string, string>;
@@ -539,7 +540,9 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
     if (!listing || !canRestartInitialPayment) return existing;
 
     const now = new Date();
-    const quote = quoteListingSubscription(subscription.planId, countListingPhotos(listing.media));
+    const plan = (await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId)).limit(1))[0];
+    if (!plan) throw new Error("Unknown plan");
+    const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
     let intent: PaymentIntent = {
       id: `pay-${randomUUID()}`,
       userId,
@@ -601,7 +604,9 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
   const listing = state.database.listings.find((item) => item.id === subscription.listingId);
   if (!listing) return existing;
   const now = new Date();
-  const quote = quoteListingSubscription(subscription.planId, countListingPhotos(listing.media));
+  const plan = state.subscriptionPlans.find(p => p.id === subscription.planId);
+  if (!plan) throw new Error("Unknown plan");
+  const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
   let intent: PaymentIntent = {
     id: `pay-${randomUUID()}`,
     userId,
@@ -905,17 +910,16 @@ export async function updateUserListing(userId: string, listingId: string, input
   return listing;
 }
 
-export async function createListingPaymentIntent(userId: string, listingId: string, input: { planId?: string; photoCount?: number; acceptedPolicies?: boolean }, idempotencyKey?: string): Promise<PaymentIntent> {
+export async function createListingPaymentIntent(userId: string, listingId: string, request: { planId: string; photoCount: number; acceptedPolicies: boolean }, idempotencyKey?: string): Promise<PaymentIntent> {
   const seller = await ensureSellerProfile(userId);
-  const planId = input.planId as ListingSubscriptionPlanId;
-  if (!listingSubscriptionPlans.some((plan) => plan.id === planId)) {
-    throw new Error("Select a valid listing subscription plan.");
-  }
-  if (!input.acceptedPolicies) {
+  const planId = request.planId as ListingSubscriptionPlanId;
+  if (!request.acceptedPolicies) {
     throw new Error("Terms and Privacy Policy acceptance is required before payment.");
   }
 
-  const quote = quoteListingSubscription(planId, Number(input.photoCount ?? 0));
+  const plan = await fetchSubscriptionPlan(request.planId);
+  if (!plan) throw new Error("Unknown plan");
+  const quote = quoteListingSubscription(plan, request.photoCount);
   const now = new Date();
   const policyVersion = "2026-06-11";
   const gateway = listingPaymentGateway();
@@ -1036,6 +1040,14 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
   state.paymentIntents.push(intent);
   if (memoryKey) state.paymentIntentIdempotencyKeys[memoryKey] = intent.id;
   return prepareAndUpdateMemoryPaymentIntent(intent);
+}
+
+async function fetchSubscriptionPlan(planId: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, planId)).limit(1);
+    return rows[0];
+  }
+  return (await getMemoryState()).subscriptionPlans.find((p) => p.id === planId);
 }
 
 async function ensurePaymentIntentCheckoutUrl(intent: PaymentIntent) {
@@ -1491,6 +1503,11 @@ async function getMemoryState() {
     carts: [],
     orders: [],
     listingSubscriptions: [],
+    subscriptionPlans: [
+      { id: "basic", name: "Basic", priceLkr: 500, includedPhotos: 3, extraPhotoPriceLkr: 250, validityMonths: 1, eyebrow: "Starter", summary: "" },
+      { id: "pro", name: "Pro", priceLkr: 1000, includedPhotos: 6, extraPhotoPriceLkr: 500, validityMonths: 2, eyebrow: "Recommended", summary: "" },
+      { id: "plus", name: "Plus", priceLkr: 20000, includedPhotos: 10, extraPhotoPriceLkr: 500, validityMonths: 3, eyebrow: "Premium", summary: "" }
+    ],
     paymentIntents: [],
     listingIdempotencyKeys: {},
     paymentIntentIdempotencyKeys: {}
@@ -1643,7 +1660,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
     const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
     const subscription = rows[0];
     if (!subscription) return;
-    const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+    const plan = await fetchSubscriptionPlan(subscription.planId);
     if (!plan) return;
     const expiresAt = addMonths(now, plan.validityMonths);
     await db.update(listingSubscriptions).set({
@@ -1665,7 +1682,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
   const state = await getMemoryState();
   const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
   if (!subscription) return;
-  const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+  const plan = await fetchSubscriptionPlan(subscription.planId);
   if (!plan) return;
   const expiresAt = addMonths(now, plan.validityMonths);
   subscription.status = "active";
@@ -1689,7 +1706,7 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
     const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
     const subscription = rows[0];
     if (!subscription) return;
-    const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+    const plan = await fetchSubscriptionPlan(subscription.planId);
     if (!plan) return;
     const baseDate = subscription.expiresAt && subscription.expiresAt > now ? subscription.expiresAt : now;
     const expiresAt = addMonths(baseDate, plan.validityMonths);
@@ -1707,7 +1724,7 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
   const state = await getMemoryState();
   const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
   if (!subscription) return;
-  const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+  const plan = await fetchSubscriptionPlan(subscription.planId);
   if (!plan) return;
   const currentExpiresAt = subscription.expiresAt ? new Date(subscription.expiresAt) : undefined;
   const baseDate = currentExpiresAt && currentExpiresAt > now ? currentExpiresAt : now;
