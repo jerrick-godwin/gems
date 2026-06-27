@@ -87,6 +87,49 @@ function planIntervalCount(intent: PaymentIntent) {
   return listingSubscriptionPlans.find((plan) => plan.id === intent.planId)?.validityMonths ?? 1;
 }
 
+function recurringPriceData(intent: PaymentIntent, amountLkr: number, name: string, description: string) {
+  return {
+    currency: stripeCurrency().toLowerCase(),
+    unit_amount: stripeAmount(amountLkr),
+    recurring: {
+      interval: "month" as const,
+      interval_count: planIntervalCount(intent)
+    },
+    product_data: {
+      name,
+      description
+    }
+  };
+}
+
+function checkoutLineItems(intent: PaymentIntent) {
+  const lineItems = [
+    {
+      quantity: 1,
+      price_data: recurringPriceData(
+        intent,
+        intent.quote.basePriceLkr,
+        `${intent.quote.plan.name} listing subscription`,
+        `gemslanka.lk listing subscription base plan (${lkrAmount(intent.quote.basePriceLkr)} LKR)`
+      )
+    }
+  ];
+
+  if (intent.quote.extraPhotoCount > 0 && intent.quote.extraPhotoTotalLkr > 0) {
+    lineItems.push({
+      quantity: 1,
+      price_data: recurringPriceData(
+        intent,
+        intent.quote.extraPhotoTotalLkr,
+        `${intent.quote.extraPhotoCount} extra listing ${intent.quote.extraPhotoCount === 1 ? "photo" : "photos"}`,
+        `Recurring extra listing photo allowance (${lkrAmount(intent.quote.extraPhotoTotalLkr)} LKR)`
+      )
+    });
+  }
+
+  return lineItems;
+}
+
 export async function createStripeCheckoutSession(intent: PaymentIntent, customerEmail?: string) {
   const siteUrl = publicSiteUrl();
   const normalizedCustomerEmail = customerEmail?.trim();
@@ -110,23 +153,7 @@ export async function createStripeCheckoutSession(intent: PaymentIntent, custome
         planId: intent.planId
       }
     },
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: stripeCurrency().toLowerCase(),
-          unit_amount: stripeAmount(intent.amountLkr),
-          recurring: {
-            interval: "month",
-            interval_count: planIntervalCount(intent)
-          },
-          product_data: {
-            name: `${intent.quote.plan.name} listing subscription`,
-            description: `gemslanka.lk listing subscription (${lkrAmount(intent.amountLkr)} LKR)`
-          }
-        }
-      }
-    ]
+    line_items: checkoutLineItems(intent)
   }, {
     idempotencyKey: intent.id
   });

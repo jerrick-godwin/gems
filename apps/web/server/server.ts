@@ -199,6 +199,11 @@ function idempotencyKey(request: IncomingMessage) {
   return typeof key === "string" && key.trim() ? key.trim().slice(0, 180) : undefined;
 }
 
+function stripePaymentReturnLocation(paymentIntentId: string, status: "succeeded" | "pending" | "cancelled" | "expired" | "failed") {
+  if (status === "succeeded") return `/receipt?paymentIntentId=${encodeURIComponent(paymentIntentId)}`;
+  return `/?payment=${status === "pending" ? "pending" : status}`;
+}
+
 function numberBody(value: unknown, fallback: number) {
   const next = typeof value === "number" ? value : Number(value);
   return Number.isFinite(next) ? next : fallback;
@@ -385,17 +390,14 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     try {
       const checkoutSession = await retrieveStripeCheckoutSession(sessionId);
-      await confirmPaymentIntent(intent.id, checkoutSession.status, checkoutSession.reference, checkoutSession);
-      const paymentResult = checkoutSession.status === "pending" ? "pending" : checkoutSession.status;
-      const location = checkoutSession.status === "succeeded"
-        ? `/receipt?paymentIntentId=${encodeURIComponent(intent.id)}`
-        : `/?payment=${paymentResult}`;
+      const confirmed = await confirmPaymentIntent(intent.id, checkoutSession.status, checkoutSession.reference, checkoutSession);
+      const location = stripePaymentReturnLocation(intent.id, confirmed?.status ?? checkoutSession.status);
       response.writeHead(302, { location });
       response.end();
     } catch (error) {
       console.warn("Stripe checkout verification failed:", error);
-      await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
-      response.writeHead(302, { location: "/?payment=failed" });
+      const confirmed = await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
+      response.writeHead(302, { location: stripePaymentReturnLocation(intent.id, confirmed?.status ?? "failed") });
       response.end();
     }
     return true;
