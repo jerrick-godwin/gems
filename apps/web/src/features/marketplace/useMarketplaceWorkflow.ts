@@ -71,6 +71,9 @@ export function useMarketplaceWorkflow({
       .then((nextSnapshot) => {
         if (!active) return;
         setSnapshot(nextSnapshot);
+        const publicListings = nextSnapshot.listings.filter((listing) => listing.moderationStatus === "approved");
+        setFilteredListings(publicListings.slice(0, 20));
+        setTotalPages(Math.max(1, Math.ceil(publicListings.length / 20)));
         setLoadError(null);
       })
       .catch((error: unknown) => {

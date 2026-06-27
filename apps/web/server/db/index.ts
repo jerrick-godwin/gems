@@ -8,7 +8,7 @@ const connectionString = process.env.DATABASE_URL;
 export const hasDatabase = Boolean(connectionString);
 
 if (!connectionString) {
-  console.warn("DATABASE_URL is not set. Database operations will fail unless mocked.");
+  console.warn("DATABASE_URL is not set. API requests require PostgreSQL.");
 }
 
 // Disable prefetch as it is not supported for "Transaction" pool mode
@@ -20,8 +20,13 @@ export const db = drizzle(client, { schema });
 
 let compatibilityPromise: Promise<void> | undefined;
 
-export async function ensureDatabaseCompatibility() {
+export function requireDatabase() {
+  if (!hasDatabase) throw new Error("DATABASE_URL is required.");
+}
+
+export async function ensureDatabaseCompatibility(options: { force?: boolean } = {}) {
   if (!hasDatabase) return;
+  if (!options.force && process.env.RUNTIME_DATABASE_COMPATIBILITY !== "true") return;
   compatibilityPromise ??= (async () => {
     await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS address varchar NOT NULL DEFAULT ''`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_checkout_session_id varchar`);
