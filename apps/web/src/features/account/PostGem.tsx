@@ -13,6 +13,21 @@ function parsePriceInput(value: string) {
   return Number(value.replace(/\D/g, "") || 0);
 }
 
+const planHighlights: Record<ListingSubscriptionPlanId, { eyebrow: string; summary: string }> = {
+  basic: {
+    eyebrow: "Starter",
+    summary: "Simple listing for a quick one-month post"
+  },
+  pro: {
+    eyebrow: "Recommended",
+    summary: "Best value for richer gem presentation"
+  },
+  plus: {
+    eyebrow: "Premium",
+    summary: "Longer visibility with the largest photo set"
+  }
+};
+
 export function PostGem({
   gemTypes,
   locations,
@@ -27,7 +42,7 @@ export function PostGem({
   const [status, setStatus] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [certificate, setCertificateFile] = useState<File | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<ListingSubscriptionPlanId>("basic");
+  const [selectedPlan, setSelectedPlan] = useState<ListingSubscriptionPlanId>("pro");
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [priceInput, setPriceInput] = useState("");
   const photosInputRef = useRef<HTMLInputElement>(null);
@@ -245,20 +260,32 @@ export function PostGem({
               <h2 id="listing-plan-heading">Listing Subscription</h2>
             </div>
             <div className="plan-grid">
-              {listingSubscriptionPlans.map((plan) => (
-                <label className={`plan-option ${selectedPlan === plan.id ? "selected" : ""}`} key={plan.id}>
-                  <input type="radio" name="listing-plan" value={plan.id} checked={selectedPlan === plan.id} onChange={() => setSelectedPlan(plan.id)} disabled={isSubmitting} />
-                  <strong>{plan.name}</strong>
-                  <span>{formatLkr(plan.priceLkr)}</span>
-                  <small>{plan.includedPhotos} photos included · {plan.validityMonths} month{plan.validityMonths > 1 ? "s" : ""} validity</small>
-                  <small>Extra photos: {formatLkr(plan.extraPhotoPriceLkr)} each</small>
-                </label>
-              ))}
-            </div>
-            <div className="quote-panel">
-              <span>Payment Due</span>
-              <strong>{formatLkr(quote.totalLkr)}</strong>
-              <small>{quote.extraPhotoCount > 0 ? `${quote.extraPhotoCount} extra photo${quote.extraPhotoCount > 1 ? "s" : ""}: ${formatLkr(quote.extraPhotoTotalLkr)}` : "No extra-photo fees"}</small>
+              {listingSubscriptionPlans.map((plan) => {
+                const isSelected = selectedPlan === plan.id;
+                const highlight = planHighlights[plan.id];
+
+                return (
+                  <label className={`plan-option plan-option-${plan.id} ${isSelected ? "selected" : ""}`} key={plan.id}>
+                    <input type="radio" name="listing-plan" value={plan.id} checked={isSelected} onChange={() => setSelectedPlan(plan.id)} disabled={isSubmitting} />
+                    <span className="plan-option-check" aria-hidden="true">
+                      <Check size={15} strokeWidth={3} />
+                    </span>
+                    <span className="plan-option-eyebrow">{highlight.eyebrow}</span>
+                    <strong>{plan.name}</strong>
+                    <span className="plan-option-price">{formatLkr(plan.priceLkr)}</span>
+                    <small className="plan-option-summary">{highlight.summary}</small>
+                    <span className="plan-feature">
+                      <Check size={15} strokeWidth={2.6} />
+                      {plan.includedPhotos} photos included
+                    </span>
+                    <span className="plan-feature">
+                      <Check size={15} strokeWidth={2.6} />
+                      {plan.validityMonths} month{plan.validityMonths > 1 ? "s" : ""} of advertisement validity
+                    </span>
+                    <span className="plan-extra">Extra photos: {formatLkr(plan.extraPhotoPriceLkr)} each</span>
+                  </label>
+                );
+              })}
             </div>
           </section>
 
@@ -441,6 +468,49 @@ export function PostGem({
                   <option value="heated">Heated</option>
                 </select>
               </label>
+            </div>
+          </section>
+
+          <section className="form-section order-summary-section" aria-labelledby="order-summary-heading">
+            <div className="form-section-header">
+              <h2 id="order-summary-heading">Order Summary</h2>
+            </div>
+            <div className="order-summary-card">
+              <div className="order-summary-plan">
+                <div>
+                  <span>Selected plan</span>
+                  <strong>{quote.plan.name}</strong>
+                </div>
+                <small>
+                  {quote.plan.includedPhotos} photos included · {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
+                </small>
+              </div>
+
+              <div className="order-summary-lines" aria-label="Payment breakdown">
+                <div className="order-summary-line">
+                  <span>Listing subscription</span>
+                  <strong>{formatLkr(quote.basePriceLkr)}</strong>
+                </div>
+                <div className="order-summary-line">
+                  <span>
+                    Photos uploaded
+                    <small>{photos.length} of {quote.plan.includedPhotos} included</small>
+                  </span>
+                  <strong>{quote.extraPhotoCount > 0 ? `${quote.extraPhotoCount} extra` : "Included"}</strong>
+                </div>
+                <div className="order-summary-line">
+                  <span>
+                    Extra-photo fees
+                    <small>{formatLkr(quote.plan.extraPhotoPriceLkr)} each after included photos</small>
+                  </span>
+                  <strong>{quote.extraPhotoTotalLkr > 0 ? formatLkr(quote.extraPhotoTotalLkr) : "None"}</strong>
+                </div>
+              </div>
+
+              <div className="order-summary-total">
+                <span>Payment due</span>
+                <strong>{formatLkr(quote.totalLkr)}</strong>
+              </div>
             </div>
           </section>
 

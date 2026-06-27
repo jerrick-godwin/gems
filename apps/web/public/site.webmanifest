@@ -4,8 +4,8 @@
   "description": "A listing-only gemstone marketplace for sellers and buyer inquiries.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#08715c",
+  "background_color": "#090600",
+  "theme_color": "#fdd404",
   "icons": [
     {
       "src": "/assets/logo-mark-192.png",
