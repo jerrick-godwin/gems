@@ -2,7 +2,7 @@ import { CreditCard, RefreshCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type ListingSubscriptionSummary, type Treatment, type UserDashboard } from "@gems/schemas";
+import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function MyListingsView({
@@ -121,6 +121,8 @@ export function MyListingsView({
               const attributes = getListingAttributes(listing, gemTypeName);
               const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === listing.id);
               const plan = subscription ? getListingSubscriptionPlan(subscription.planId) : undefined;
+              const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
+              const paymentLines = payment ? paymentBreakdown(payment) : [];
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -152,6 +154,17 @@ export function MyListingsView({
                             : subscription.expiresAt && isSubscriptionInPaidAccess(subscription)
                               ? ` · will be removed on ${formatDate(subscription.expiresAt)}`
                               : " · auto-renew cancelled"}
+                        </div>
+                      )}
+                      {payment && (
+                        <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div>
+                            <strong>Listing payment:</strong> {formatLkr(payment.amountLkr)} · {payment.status.replace("_", " ")}
+                            {payment.stripeInvoiceId ? ` · invoice ${shortRef(payment.stripeInvoiceId)}` : ""}
+                          </div>
+                          {paymentLines.length > 0 && (
+                            <div>{paymentLines.join(" · ")}</div>
+                          )}
                         </div>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -298,6 +311,23 @@ function formatTreatment(treatment: Treatment) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function findListingPayment(payments: PaymentIntent[], listingId: string, subscription: ListingSubscription | undefined) {
+  const candidates = payments.filter((payment) => payment.listingId === listingId);
+  return candidates.find((payment) => payment.id === subscription?.paymentIntentId) ?? candidates[0];
+}
+
+function paymentBreakdown(payment: PaymentIntent) {
+  const lines = [`Base ${formatLkr(payment.quote.basePriceLkr)}`];
+  if (payment.quote.extraPhotoCount > 0) {
+    lines.push(`${payment.quote.extraPhotoCount} extra photo${payment.quote.extraPhotoCount === 1 ? "" : "s"} ${formatLkr(payment.quote.extraPhotoTotalLkr)}`);
+  }
+  return lines;
+}
+
+function shortRef(value: string) {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
 function isSubscriptionInPaidAccess(subscription: ListingSubscriptionSummary | undefined) {

@@ -1071,6 +1071,7 @@ export async function confirmPaymentIntent(intentId: string, status: PaymentStat
     const existing = toPaymentIntent(existingRow);
     if (existing.status === "succeeded" && status !== "succeeded") return existing;
     const nextStatus = normalizePaymentStatus(status);
+    if (await shouldIgnoreNonSuccessfulPaymentConfirmation(existing, nextStatus)) return existing;
     const wasSucceeded = existing.status === "succeeded";
     const nextStripeState = mergeStripePaymentState(existing, gatewayReference, stripeState);
     const [updated] = await db.update(paymentIntents).set({
@@ -1095,6 +1096,7 @@ export async function confirmPaymentIntent(intentId: string, status: PaymentStat
   if (!intent) return undefined;
   if (intent.status === "succeeded" && status !== "succeeded") return intent;
   const nextStatus = normalizePaymentStatus(status);
+  if (await shouldIgnoreNonSuccessfulPaymentConfirmation(intent, nextStatus)) return intent;
   const wasSucceeded = intent.status === "succeeded";
   const nextStripeState = mergeStripePaymentState(intent, gatewayReference, stripeState);
   intent.status = wasSucceeded ? "succeeded" : nextStatus;
@@ -1521,6 +1523,24 @@ function isSubscriptionInPaidAccess(status: ListingSubscriptionStatus, expiresAt
 function normalizePaymentStatus(status: PaymentStatus): PaymentStatus {
   if (status === "succeeded" || status === "pending" || status === "cancelled" || status === "expired") return status;
   return "failed";
+}
+
+async function shouldIgnoreNonSuccessfulPaymentConfirmation(intent: PaymentIntent, nextStatus: PaymentStatus) {
+  if (nextStatus === "succeeded") return false;
+  if (intent.status === "cancelled") return true;
+  if (!intent.subscriptionId) return false;
+
+  const subscription = await getListingSubscriptionById(intent.subscriptionId);
+  return Boolean(subscription?.paymentIntentId && subscription.paymentIntentId !== intent.id);
+}
+
+async function getListingSubscriptionById(subscriptionId: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
+    return rows[0] ? toListingSubscription(rows[0]) : undefined;
+  }
+
+  return (await getMemoryState()).listingSubscriptions.find((item) => item.id === subscriptionId);
 }
 
 function mergeStripePaymentState(intent: PaymentIntent, gatewayReference?: string, stripeState: StripePaymentState = {}) {

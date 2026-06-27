@@ -1,6 +1,6 @@
 import { BadgeCheck, ClipboardCheck, CreditCard, Flag, PackageCheck } from "lucide-react";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
-import { formatLkr } from "@gems/schemas";
+import { formatLkr, type PaymentIntent } from "@gems/schemas";
 import { Metric } from "../../shared/Metric";
 import { ActiveListingRow } from "./ActiveListingRow";
 import { ReportRow } from "./ReportRow";
@@ -63,6 +63,13 @@ export function AdminConsole({
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <strong style={{ color: "var(--ink)" }}>{payment.quote.plan.name} listing subscription</strong>
                     <span style={{ color: "var(--muted)", fontWeight: 600 }}>{payment.listingId}</span>
+                    <span style={{ color: "var(--muted)", fontWeight: 600 }}>{paymentBreakdown(payment).join(" · ")}</span>
+                    <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+                      Subscription: {payment.subscriptionId ?? "none"}{payment.stripeSubscriptionId ? ` · Stripe ${shortRef(payment.stripeSubscriptionId)}` : ""}
+                    </span>
+                    <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+                      Checkout: {payment.stripeCheckoutSessionId ? shortRef(payment.stripeCheckoutSessionId) : "not started"}{payment.stripeInvoiceId ? ` · Invoice ${shortRef(payment.stripeInvoiceId)}` : ""}
+                    </span>
                     <span style={{ color: "var(--muted)", fontWeight: 600 }}>Policy accepted: {formatDate(payment.policyAcceptedAt)}</span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -160,4 +167,16 @@ export function AdminConsole({
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function paymentBreakdown(payment: PaymentIntent) {
+  const lines = [`Base ${formatLkr(payment.quote.basePriceLkr)}`];
+  if (payment.quote.extraPhotoCount > 0) {
+    lines.push(`${payment.quote.extraPhotoCount} extra photo${payment.quote.extraPhotoCount === 1 ? "" : "s"} ${formatLkr(payment.quote.extraPhotoTotalLkr)}`);
+  }
+  return lines;
+}
+
+function shortRef(value: string) {
+  return value.length > 18 ? `${value.slice(0, 14)}...` : value;
 }
