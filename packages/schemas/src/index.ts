@@ -199,6 +199,7 @@ export interface PaymentReceipt {
     subscriptionId?: string;
     customerId?: string;
     invoiceId?: string;
+    invoicePdfUrl?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -418,7 +419,7 @@ export function validateCheckoutRequest(input: Partial<CheckoutRequest>) {
     ...validateCheckoutDetails(input.deliveryDetails ?? {}, "Delivery")
   ];
   if (input.paymentMethod !== "stripe") {
-    errors.push("Payment method must be Stripe.");
+    errors.push("Select a valid payment method.");
   }
   return errors;
 }

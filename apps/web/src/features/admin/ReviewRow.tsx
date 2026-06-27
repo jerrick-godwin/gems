@@ -1,16 +1,31 @@
-import { XCircle } from "lucide-react";
+import { ReceiptText, XCircle } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import type { AdminModerationSnapshot } from "@gems/api-client";
-import type { Listing } from "@gems/schemas";
+import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-client";
+import { formatLkr, type Listing, type PaymentIntent } from "@gems/schemas";
+import { publicErrorMessage } from "../../shared/helpers";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
-export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing; snapshot: AdminModerationSnapshot; onModerate: (listingId: string, decision: "approve" | "reject", reason?: string) => Promise<void> }) {
+export function ReviewRow({
+  api,
+  token,
+  listing,
+  snapshot,
+  onModerate
+}: {
+  api: GemsAdminApiClient;
+  token: string;
+  listing: Listing;
+  snapshot: AdminModerationSnapshot;
+  onModerate: (listingId: string, decision: "approve" | "reject", reason?: string) => Promise<void>;
+}) {
   const isQueued = listing.moderationStatus === "queued";
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
   const moderationAction = useSingleFlightAction();
 
   const runModeration = async (decision: "approve" | "reject") => {
@@ -35,6 +50,33 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
 
   const seller = snapshot.sellers.find(s => s.id === listing.sellerId);
   const user = seller ? snapshot.users.find(u => u.id === seller.userId) : null;
+  const payment = latestPaymentForListing(snapshot.payments, listing.id);
+  const canViewReceipt = Boolean(payment && payment.status === "succeeded" && payment.stripeInvoiceId);
+
+  const handleViewReceipt = async () => {
+    if (!payment) return;
+    setReceiptBusy(true);
+    setReceiptError("");
+
+    try {
+      const receiptFile = await api.downloadPaymentReceipt(token, payment.id);
+      const url = URL.createObjectURL(receiptFile.blob);
+      const receiptWindow = window.open(url, "_blank");
+      if (!receiptWindow) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = receiptFile.fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      setReceiptError(publicErrorMessage(error, "Unable to open the receipt right now."));
+    } finally {
+      setReceiptBusy(false);
+    }
+  };
   
   return (
     <div className="review-row" style={{ background: "var(--panel-strong)", padding: 16, borderRadius: "var(--radius)", marginBottom: 12, border: "1px solid var(--line)", boxShadow: "var(--shadow-xs)", display: "block" }}>
@@ -56,6 +98,12 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
             }}>
               {listing.attributes.certificateStatus.replace("_", " ")}
             </span>
+          </span>
+        </div>
+        <div style={{ minWidth: 150, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+          <strong style={{ color: payment ? "var(--emerald)" : "var(--muted)", fontSize: 15 }}>{payment ? formatLkr(payment.amountLkr) : "No payment"}</strong>
+          <span style={{ fontSize: 12, fontWeight: 800, padding: "4px 8px", borderRadius: 999, background: paymentStatusBackground(payment?.status), color: paymentStatusColor(payment?.status), textTransform: "capitalize" }}>
+            {payment ? payment.status.replace("_", " ") : "not found"}
           </span>
         </div>
         <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600 }} onClick={() => setExpanded(!expanded)}>
@@ -127,6 +175,34 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
                 <div><strong>Location:</strong> {listing.location}</div>
               </div>
             </div>
+            <div>
+              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Payment Details</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
+                {payment ? (
+                  <>
+                    <div><strong>Status:</strong> <span style={{ color: paymentStatusColor(payment.status), fontWeight: 800, textTransform: "capitalize" }}>{payment.status.replace("_", " ")}</span></div>
+                    <div><strong>Amount:</strong> <span style={{ color: "var(--muted)" }}>{formatLkr(payment.amountLkr)}</span></div>
+                    <div><strong>Plan:</strong> <span style={{ color: "var(--muted)" }}>{payment.quote.plan.name}</span></div>
+                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <span style={{ color: "var(--muted)" }}>{shortRef(payment.stripeInvoiceId)}</span></div>}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => void handleViewReceipt()}
+                        disabled={!canViewReceipt || receiptBusy}
+                        style={{ minHeight: 36, padding: "0 14px", display: "inline-flex", alignItems: "center", gap: 8, background: canViewReceipt ? "var(--emerald-soft)" : "var(--soft)", color: canViewReceipt ? "var(--emerald)" : "var(--muted)", border: "none", borderRadius: "var(--radius-sm)", cursor: canViewReceipt && !receiptBusy ? "pointer" : "not-allowed", fontWeight: 700 }}
+                      >
+                        <ReceiptText size={16} />
+                        {receiptBusy ? "Opening receipt..." : "View Receipt"}
+                      </button>
+                      {receiptError && <span role="alert" style={{ color: "var(--danger)", fontSize: 12, fontWeight: 700 }}>{receiptError}</span>}
+                      {!canViewReceipt && <span style={{ color: "var(--muted)", fontSize: 12, fontWeight: 600 }}>Receipt appears after a successful invoice payment.</span>}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ color: "var(--muted)", fontWeight: 600 }}>No payment record was found for this listing.</div>
+                )}
+              </div>
+            </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Gem Attributes</h4>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", fontSize: 14 }}>
@@ -166,4 +242,32 @@ export function ReviewRow({ listing, snapshot, onModerate }: { listing: Listing;
       )}
     </div>
   );
+}
+
+function latestPaymentForListing(payments: PaymentIntent[], listingId: string) {
+  return payments
+    .filter((payment) => payment.listingId === listingId)
+    .sort((a, b) => paymentRank(b) - paymentRank(a) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+}
+
+function paymentRank(payment: PaymentIntent) {
+  if (payment.status === "succeeded") return 3;
+  if (payment.status === "pending") return 2;
+  return 1;
+}
+
+function paymentStatusBackground(status?: PaymentIntent["status"]) {
+  if (status === "succeeded") return "var(--emerald-subtle)";
+  if (status === "failed" || status === "cancelled" || status === "expired") return "var(--danger-soft)";
+  return "var(--soft)";
+}
+
+function paymentStatusColor(status?: PaymentIntent["status"]) {
+  if (status === "succeeded") return "var(--emerald)";
+  if (status === "failed" || status === "cancelled" || status === "expired") return "var(--danger)";
+  return "var(--muted)";
+}
+
+function shortRef(value: string) {
+  return value.length > 18 ? `${value.slice(0, 14)}...` : value;
 }

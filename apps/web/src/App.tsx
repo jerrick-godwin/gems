@@ -111,7 +111,7 @@ function App() {
         if (active) {
           setPaymentNotice({
             tone: "warning",
-            message: "Payment status returned from Stripe. Refresh My Listings if your latest status is not visible yet."
+            message: "Payment status returned. Refresh My Listings if your latest status is not visible yet."
           });
         }
       });
@@ -202,12 +202,15 @@ function App() {
   }
 
   if (!marketplace.snapshot) {
+    const isProcessingPaymentReturn = Boolean(paymentNotice);
+
     return (
       <AppFrame {...frameProps} locations={[]}>
         <StatusState
-          title={marketplace.loadError ? "Marketplace unavailable" : "Preparing Gemslanka"}
-          message={marketplace.loadError ?? "Curating live gem listings, seller details, and market filters for you."}
+          title={isProcessingPaymentReturn ? "Processing your payment" : marketplace.loadError ? "Marketplace unavailable" : "Preparing Gemslanka"}
+          message={isProcessingPaymentReturn ? "Please wait while we update your listing and payment status." : marketplace.loadError ?? "Curating live gem listings, seller details, and market filters for you."}
           loading={!marketplace.loadError}
+          variant={isProcessingPaymentReturn && !marketplace.loadError ? "payment" : "marketplace"}
           onRetry={marketplace.refreshSnapshot}
         />
       </AppFrame>
@@ -258,7 +261,15 @@ function App() {
         />
       )}
       {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
-      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "my_listings" && paymentNotice && !account.dashboard && (
+        <StatusState
+          title="Processing your payment"
+          message="Please wait while we update your listing and payment status."
+          loading
+          variant="payment"
+        />
+      )}
+      {view === "my_listings" && (!paymentNotice || account.dashboard) && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} onMarketplaceRefresh={marketplace.refreshSnapshot} />}
     </AppFrame>

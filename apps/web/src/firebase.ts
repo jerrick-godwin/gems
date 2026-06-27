@@ -99,7 +99,7 @@ function notifyLocalAuthListeners() {
 }
 
 function createMissingConfigError() {
-  return new Error("Local Firebase config is missing. Run in development to use local auth, or set VITE_FIREBASE_* values.");
+  return new Error("Authentication is temporarily unavailable. Please try again later.");
 }
 
 function createInvalidCredentialError() {
@@ -109,7 +109,7 @@ function createInvalidCredentialError() {
 }
 
 function createLocalPasswordResetUnavailableError() {
-  const error = new Error("Password reset emails require Firebase Authentication. Add the VITE_FIREBASE_* values in apps/web/.env and restart the dev server.") as Error & { code: string };
+  const error = new Error("Password reset emails are temporarily unavailable. Please try again later.") as Error & { code: string };
   error.code = "auth/local-password-reset-unavailable";
   return error;
 }

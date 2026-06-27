@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
 import type { Report } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { publicErrorMessage } from "../../shared/helpers";
 
 export function ReportRow({
   report,
@@ -40,7 +41,7 @@ export function ReportRow({
         onRemoveListing(listing.id);
         setLoadError(null);
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Unable to remove listing");
+        setLoadError(publicErrorMessage(error, "Unable to remove listing"));
       } finally {
         setBusy(null);
       }
@@ -55,7 +56,7 @@ export function ReportRow({
         onResolveReport(report.id);
         setLoadError(null);
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Unable to reject report");
+        setLoadError(publicErrorMessage(error, "Unable to reject report"));
       } finally {
         setBusy(null);
       }

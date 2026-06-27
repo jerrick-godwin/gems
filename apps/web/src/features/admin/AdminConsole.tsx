@@ -2,6 +2,7 @@ import { BadgeCheck, ClipboardCheck, CreditCard, Flag, PackageCheck } from "luci
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
 import { formatLkr, type PaymentIntent } from "@gems/schemas";
 import { Metric } from "../../shared/Metric";
+import { publicErrorMessage } from "../../shared/helpers";
 import { ActiveListingRow } from "./ActiveListingRow";
 import { ReportRow } from "./ReportRow";
 import { ReviewRow } from "./ReviewRow";
@@ -33,7 +34,7 @@ export function AdminConsole({
       });
       setLoadError(null);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Unable to update listing moderation");
+      setLoadError(publicErrorMessage(error, "Unable to update listing moderation"));
     }
   };
 
@@ -65,7 +66,7 @@ export function AdminConsole({
                     <span style={{ color: "var(--muted)", fontWeight: 600 }}>{payment.listingId}</span>
                     <span style={{ color: "var(--muted)", fontWeight: 600 }}>{paymentBreakdown(payment).join(" · ")}</span>
                     <span style={{ color: "var(--muted)", fontWeight: 600 }}>
-                      Subscription: {payment.subscriptionId ?? "none"}{payment.stripeSubscriptionId ? ` · Stripe ${shortRef(payment.stripeSubscriptionId)}` : ""}
+                      Subscription: {payment.subscriptionId ?? "none"}{payment.stripeSubscriptionId ? ` · Gateway ${shortRef(payment.stripeSubscriptionId)}` : ""}
                     </span>
                     <span style={{ color: "var(--muted)", fontWeight: 600 }}>
                       Checkout: {payment.stripeCheckoutSessionId ? shortRef(payment.stripeCheckoutSessionId) : "not started"}{payment.stripeInvoiceId ? ` · Invoice ${shortRef(payment.stripeInvoiceId)}` : ""}
@@ -95,7 +96,7 @@ export function AdminConsole({
           {pending.length === 0 ? (
             <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontWeight: 500 }}>No listings pending review.</div>
           ) : (
-            pending.map((listing) => <ReviewRow listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)
+            pending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)
           )}
         </section>
         <section className="data-panel" style={{ background: "var(--panel-strong)" }}>

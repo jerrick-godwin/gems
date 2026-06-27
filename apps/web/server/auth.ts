@@ -66,7 +66,7 @@ export async function verifyFirebaseIdToken(token: string, options: { allowDevel
   }
 
   if (!firebaseApp) {
-    throw new Error("Firebase Admin SDK is not initialized.");
+    throw new Error("Authentication service is not initialized.");
   }
 
   const decodedToken = await admin.auth(firebaseApp).verifyIdToken(token);
@@ -76,7 +76,7 @@ export async function verifyFirebaseIdToken(token: string, options: { allowDevel
   const name = decodedToken.name ?? email ?? "Gem Marketplace User";
 
   if (!uid || !email) {
-    throw new Error("Firebase ID token is missing required uid or email claims");
+    throw new Error("Authentication token is missing required claims");
   }
 
   return { uid, email, name };
@@ -84,14 +84,14 @@ export async function verifyFirebaseIdToken(token: string, options: { allowDevel
 
 export async function verifyAdminFirebaseIdToken(token: string): Promise<{ email: string, role: "admin" }> {
   if (!adminFirebaseApp) {
-    throw new Error("Admin Firebase SDK is not initialized.");
+    throw new Error("Admin authentication service is not initialized.");
   }
 
   const decodedToken = await admin.auth(adminFirebaseApp).verifyIdToken(token);
   
   const email = decodedToken.email;
   if (!email) {
-    throw new Error("Firebase ID token is missing email claim");
+    throw new Error("Authentication token is missing email claim");
   }
 
   return { email, role: "admin" };

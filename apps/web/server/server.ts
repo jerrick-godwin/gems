@@ -39,8 +39,11 @@ import {
   recordStripeSubscriptionInvoicePayment,
   syncStripeSubscriptionStatus,
   getAdminPaymentIntents,
+  getAdminPaymentReceipt,
+  getAdminPaymentReceiptPdf,
   getPaymentIntent,
   getPaymentReceipt,
+  getPaymentReceiptPdf,
   getListingSubscriptionPaymentIntent,
   getAdminOrders,
   getDashboard,
@@ -92,7 +95,7 @@ const paymentIntentValidationErrors = new Set([
   "Select a valid listing subscription plan.",
   "Terms and Privacy Policy acceptance is required before payment.",
   "Listing not found.",
-  "Stripe payment collection is not configured."
+  "Payment collection is not configured."
 ]);
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
@@ -234,7 +237,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, 200, { received: true });
     } catch (error) {
       console.warn("Stripe webhook handling failed:", error);
-      sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid Stripe webhook" });
+      sendJson(response, 400, { error: "Invalid payment notification" });
     }
     return true;
   }
@@ -302,6 +305,30 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     if (request.method === "GET" && path === "/api/v1/admin/payments") {
       sendJson(response, 200, await getAdminPaymentIntents());
+      return true;
+    }
+
+    const adminPaymentReceiptMatch = path.match(/^\/api\/v1\/admin\/payment-intents\/([^/]+)\/receipt$/);
+    if (request.method === "GET" && adminPaymentReceiptMatch) {
+      const receipt = await getAdminPaymentReceipt(adminPaymentReceiptMatch[1]);
+      sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Payment receipt not found" });
+      return true;
+    }
+
+    const adminPaymentReceiptPdfMatch = path.match(/^\/api\/v1\/admin\/payment-intents\/([^/]+)\/receipt-pdf$/);
+    if (request.method === "GET" && adminPaymentReceiptPdfMatch) {
+      const receiptPdf = await getAdminPaymentReceiptPdf(adminPaymentReceiptPdfMatch[1]);
+      if (!receiptPdf) {
+        sendJson(response, 404, { error: "Receipt not found" });
+        return true;
+      }
+
+      response.writeHead(200, {
+        "content-type": receiptPdf.contentType,
+        "content-length": receiptPdf.data.byteLength,
+        "content-disposition": `inline; filename="${receiptPdf.fileName.replace(/"/g, "")}"`
+      });
+      response.end(receiptPdf.data);
       return true;
     }
 
@@ -384,7 +411,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const intent = await getPaymentIntent(stripePaymentReturnMatch[1]);
     const sessionId = url.searchParams.get("session_id") ?? "";
     if (!intent || intent.gateway !== "stripe" || !sessionId || !(await isStripeCheckoutSessionForPaymentIntent(intent, sessionId))) {
-      sendJson(response, 400, { error: "Invalid Stripe payment return" });
+      sendJson(response, 400, { error: "Invalid payment return" });
       return true;
     }
 
@@ -462,6 +489,23 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "GET" && paymentReceiptMatch) {
       const receipt = await getPaymentReceipt(user.id, paymentReceiptMatch[1]);
       sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Payment receipt not found" });
+      return true;
+    }
+
+    const paymentReceiptPdfMatch = path.match(/^\/api\/v1\/users\/me\/payment-intents\/([^/]+)\/receipt-pdf$/);
+    if (request.method === "GET" && paymentReceiptPdfMatch) {
+      const receiptPdf = await getPaymentReceiptPdf(user.id, paymentReceiptPdfMatch[1]);
+      if (!receiptPdf) {
+        sendJson(response, 404, { error: "Receipt not found" });
+        return true;
+      }
+
+      response.writeHead(200, {
+        "content-type": receiptPdf.contentType,
+        "content-length": receiptPdf.data.byteLength,
+        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`
+      });
+      response.end(receiptPdf.data);
       return true;
     }
 
@@ -737,10 +781,10 @@ async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripe
         invoice.id,
         event.type,
         event.type === "invoice.payment_action_required"
-          ? "Stripe subscription invoice requires customer action."
+          ? "Subscription invoice requires customer action."
           : event.type === "invoice.finalization_failed"
-            ? "Stripe subscription invoice finalization failed."
-            : "Stripe subscription invoice payment failed."
+            ? "Subscription invoice finalization failed."
+            : "Subscription invoice payment failed."
       );
     }
     return;

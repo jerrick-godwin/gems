@@ -5,6 +5,7 @@ import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type CertificateStatus, type Listing, type SellerProfile, type Treatment } from "@gems/schemas";
 import { MultiSelectDropdown } from "../../shared/MultiSelectDropdown";
 import { StatusState } from "../../shared/StatusState";
+import { publicErrorMessage } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
@@ -281,7 +282,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
       setIsFullRevealLoading(true);
       await onReveal();
     } catch (error) {
-      alert("Unable to load phone number: " + (error instanceof Error ? error.message : "Unknown error"));
+      alert(`Unable to load phone number: ${publicErrorMessage(error, "Unknown error")}`);
     } finally {
       setIsFullRevealLoading(false);
     }
@@ -303,7 +304,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
         setReportModalOpen(false);
         setReported(true);
       } catch (error) {
-        alert("Failed to report listing: " + (error instanceof Error ? error.message : "Unknown error"));
+        alert(`Failed to report listing: ${publicErrorMessage(error, "Unknown error")}`);
       } finally {
         setIsReporting(false);
       }

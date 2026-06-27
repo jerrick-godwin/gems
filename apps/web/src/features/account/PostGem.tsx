@@ -3,7 +3,7 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, quoteListingSubscription, type ListingMedia, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
 import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
-import { formatPriceInput, parsePriceInput, isUploadableUrl } from "../../shared/helpers";
+import { formatPriceInput, parsePriceInput, isUploadableUrl, publicErrorMessage } from "../../shared/helpers";
 
 
 
@@ -203,7 +203,7 @@ export function PostGem({
         setStatus("Payment intent created. Please contact support if you are not redirected to checkout.");
         submitAction.release();
       } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Unable to submit listing.");
+        setStatus(publicErrorMessage(error, "Unable to submit listing."));
         submitAction.release();
       }
     }, { keepLocked: true });
@@ -566,5 +566,4 @@ export function PostGem({
     </section>
   );
 }
-
 

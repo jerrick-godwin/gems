@@ -1,10 +1,10 @@
-import { ShieldCheck } from "lucide-react";
+import { CreditCard, LoaderCircle, ShieldCheck } from "lucide-react";
 
 type StatusStateProps = {
   title: string;
   message: string;
   loading?: boolean;
-  variant?: "marketplace" | "admin";
+  variant?: "marketplace" | "admin" | "payment";
   showAction?: boolean;
   onRetry?: () => void | Promise<void>;
 };
@@ -20,6 +20,22 @@ export function StatusState({ title, message, loading, variant = "marketplace", 
     }
     window.location.reload();
   };
+
+  if (loading && variant === "payment") {
+    return (
+      <section className="status-state payment-processing-state" aria-busy="true" aria-live="polite">
+        <div className="payment-processing-animation" aria-hidden="true">
+          <CreditCard size={42} strokeWidth={1.8} />
+          <LoaderCircle className="payment-processing-spinner" size={24} strokeWidth={2.5} />
+        </div>
+        <div className="status-state-copy">
+          <h1>{title}</h1>
+          <p>{message}</p>
+          <p className="payment-processing-note">Do not close, refresh, or go back while we finish this step.</p>
+        </div>
+      </section>
+    );
+  }
 
   if (loading && variant === "marketplace") {
     return (
