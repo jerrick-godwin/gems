@@ -57,7 +57,7 @@ import {
 } from "./user-repository.js";
 import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
 import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./stripe.js";
-import { ensureDatabaseCompatibility } from "./db/index.js";
+import { ensureDatabaseCompatibility, requireDatabase } from "./db/index.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -219,6 +219,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const path = url.pathname;
 
   if (!path.startsWith("/api/v1")) return false;
+  requireDatabase();
   await ensureDatabaseCompatibility();
 
   if (request.method === "POST" && path === "/api/v1/payments/stripe/webhook") {
@@ -832,7 +833,7 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
 }
 
 async function main() {
-  await ensureDatabaseCompatibility();
+  await ensureDatabaseCompatibility({ force: true });
   let vite: ViteDevServer | undefined;
   const server = createServer((request, response) => {
     void handleRequest(request, response, vite);

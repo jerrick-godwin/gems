@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import type { Conversation, Listing, MarketplaceContent, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
 import { eq, ne, and, or, ilike, desc, asc, sql, inArray } from "drizzle-orm";
 import { db, hasDatabase } from "./db/index.js";
@@ -38,9 +36,7 @@ let cachedDatabase: MarketplaceDatabase | undefined;
 
 export async function getMutableMarketplaceDatabase() {
   if (cachedDatabase) return cachedDatabase;
-  const databaseUrl = new URL("./db/database.json", import.meta.url);
-  cachedDatabase = JSON.parse(await readFile(fileURLToPath(databaseUrl), "utf8")) as MarketplaceDatabase;
-  return cachedDatabase;
+  throw new Error("DATABASE_URL is required; marketplace data must be fetched from PostgreSQL.");
 }
 
 export async function getMarketplaceSnapshot() {
@@ -64,7 +60,7 @@ export async function getMarketplaceSnapshot() {
     };
   }
 
-  throw new Error("DATABASE_URL is required to load marketplace gem types.");
+  throw new Error("DATABASE_URL is required to load marketplace snapshot.");
 }
 
 export async function getGemTypes() {

@@ -15,7 +15,7 @@ This repository includes the infrastructure and runtime hooks needed to move the
 The backend chooses persistence from environment variables:
 
 - When `DATABASE_URL` is set, the marketplace and user repositories use PostgreSQL.
-- When `DATABASE_URL` is absent, local development falls back to `apps/web/server/db/database.json` and in-memory user data.
+- `DATABASE_URL` is required; runtime marketplace and user data are fetched from PostgreSQL.
 - When `AZURE_STORAGE_CONNECTION_STRING` is set, listing image upload URLs are backed by Azure Blob Storage.
 
 ## Migration Checklist

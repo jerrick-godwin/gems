@@ -11,7 +11,6 @@ Gems Marketplace is a Gem inquiry marketplace for Global buyers and sellers. The
 - Shared domain schemas in `packages/schemas`
 - Shared React utilities in `packages/ui`
 - API client helpers in `packages/api-client`
-- Local JSON seed database fallback at `apps/web/server/db/database.json`
 - Drizzle migrations for PostgreSQL
 - Azure App Service, PostgreSQL, Blob Storage, Key Vault, and monitoring infrastructure in `infra`
 
@@ -34,7 +33,7 @@ Copy and configure local browser environment variables:
 cp apps/web/.env.example apps/web/.env
 ```
 
-The app can run without `DATABASE_URL` for local development. In that mode, marketplace records fall back to `apps/web/server/db/database.json` and user records use an in-memory store.
+The app requires `DATABASE_URL` for local development and production. Runtime marketplace and user records are read from PostgreSQL through Drizzle.
 
 Password reset emails are sent by Firebase Authentication, so local reset links only work after the public buyer/seller Firebase web config values are set in `apps/web/.env`:
 
@@ -137,7 +136,7 @@ customer.subscription.deleted
 
 ## Data
 
-When `DATABASE_URL` is set, runtime marketplace and user records are read from PostgreSQL through Drizzle. Without `DATABASE_URL`, local development falls back to `apps/web/server/db/database.json` plus an in-memory user store.
+Runtime marketplace and user records are read from PostgreSQL through Drizzle. Set `DATABASE_URL` before starting the API.
 
 Use these database commands from the repository root:
 
