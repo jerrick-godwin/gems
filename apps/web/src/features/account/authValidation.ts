@@ -1,3 +1,5 @@
+import { sanitizePublicMessage } from "../../shared/helpers";
+
 export interface AuthFieldErrors {
   email?: string;
   password?: string;
@@ -106,9 +108,9 @@ export function authErrorMessage(error: unknown, fallback: string) {
       return "Network error. Check your connection and try again.";
     }
     if (code === "auth/local-password-reset-unavailable") {
-      return "Password reset emails need Firebase Authentication configured. Add the VITE_FIREBASE_* values in apps/web/.env and restart the dev server.";
+      return "Password reset emails are temporarily unavailable. Please try again later.";
     }
   }
 
-  return error instanceof Error ? error.message : fallback;
+  return error instanceof Error ? sanitizePublicMessage(error.message, fallback) : fallback;
 }

@@ -29,7 +29,7 @@ import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
-import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd } from "./stripe.js";
+import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
 type SettingsPatch = Partial<Pick<UserSettings, "theme" | "notificationsEnabled" | "language" | "dashboardDefaultView" | "savedMarketplaceFilters">>;
@@ -77,7 +77,7 @@ interface StripePaymentState {
 }
 
 function listingPaymentGateway(): PaymentIntent["gateway"] {
-  if (!isStripeConfigured()) throw new Error("Stripe payment collection is not configured.");
+  if (!isStripeConfigured()) throw new Error("Payment collection is not configured.");
   return "stripe";
 }
 
@@ -502,8 +502,22 @@ export async function getPaymentIntent(intentId: string): Promise<PaymentIntent 
 export async function getPaymentReceipt(userId: string, intentId: string): Promise<PaymentReceipt | undefined> {
   const intent = await getPaymentIntent(intentId);
   if (!intent || intent.userId !== userId || intent.status !== "succeeded") return undefined;
+  return buildPaymentReceiptForIntent(intent);
+}
 
-  const user = await getUser(userId);
+export async function getAdminPaymentReceipt(intentId: string): Promise<PaymentReceipt | undefined> {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.status !== "succeeded") return undefined;
+  return buildPaymentReceiptForIntent(intent);
+}
+
+async function buildPaymentReceiptForIntent(intent: PaymentIntent): Promise<PaymentReceipt | undefined> {
+  let invoicePdfUrl: string | undefined;
+  if (intent.stripeInvoiceId) {
+    invoicePdfUrl = await retrieveStripeInvoiceUrl(intent.stripeInvoiceId);
+  }
+
+  const user = await getUser(intent.userId);
   if (hasDatabase) {
     const [listingRows, subscriptionRows] = await Promise.all([
       db.select().from(listings).where(eq(listings.id, intent.listingId)).limit(1),
@@ -513,7 +527,7 @@ export async function getPaymentReceipt(userId: string, intentId: string): Promi
     ]);
     const listing = listingRows[0] ? toListing(listingRows[0]) : undefined;
     if (!listing) return undefined;
-    return buildPaymentReceipt(intent, user, listing, subscriptionRows[0] ? toListingSubscription(subscriptionRows[0]) : undefined);
+    return buildPaymentReceipt(intent, user, listing, subscriptionRows[0] ? toListingSubscription(subscriptionRows[0]) : undefined, invoicePdfUrl);
   }
 
   const state = await getMemoryState();
@@ -522,7 +536,19 @@ export async function getPaymentReceipt(userId: string, intentId: string): Promi
   const subscription = intent.subscriptionId
     ? state.listingSubscriptions.find((item) => item.id === intent.subscriptionId)
     : undefined;
-  return buildPaymentReceipt(intent, user, listing, subscription);
+  return buildPaymentReceipt(intent, user, listing, subscription, invoicePdfUrl);
+}
+
+export async function getPaymentReceiptPdf(userId: string, intentId: string) {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.userId !== userId || intent.status !== "succeeded" || !intent.stripeInvoiceId) return undefined;
+  return retrieveStripeReceiptPdf(intent.stripeInvoiceId);
+}
+
+export async function getAdminPaymentReceiptPdf(intentId: string) {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.status !== "succeeded" || !intent.stripeInvoiceId) return undefined;
+  return retrieveStripeReceiptPdf(intent.stripeInvoiceId);
 }
 
 export async function getListingSubscriptionPaymentIntent(userId: string, subscriptionId: string): Promise<PaymentIntent | undefined> {
@@ -1139,14 +1165,14 @@ export async function recordStripeSubscriptionInvoicePayment(input: {
   const paidEventId = `${input.stripeInvoiceId}:paid`;
 
   if (input.billingReason === "subscription_create") {
-    await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "initial_paid", "Initial Stripe subscription invoice paid.");
+    await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "initial_paid", "Initial subscription invoice paid.");
     return confirmPaymentIntent(intent.id, "succeeded", input.stripeSubscriptionId, {
       stripeSubscriptionId: input.stripeSubscriptionId,
       stripeInvoiceId: input.stripeInvoiceId
     });
   }
 
-  const inserted = await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "renewal_paid", "Stripe subscription renewal invoice paid.");
+  const inserted = await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "renewal_paid", "Subscription renewal invoice paid.");
   if (!inserted) return intent;
   await updatePaymentStripeState(intent.id, { stripeSubscriptionId: input.stripeSubscriptionId, stripeInvoiceId: input.stripeInvoiceId });
   await extendListingSubscription(intent.subscriptionId, intent.id);
@@ -1157,7 +1183,7 @@ export async function markStripeSubscriptionPastDue(
   stripeSubscriptionId: string,
   stripeInvoiceId: string,
   status = "payment_failed",
-  notes = "Stripe subscription invoice payment failed."
+  notes = "Subscription invoice payment failed."
 ) {
   const intent = await getPaymentIntentByStripeSubscription(stripeSubscriptionId);
   if (!intent?.subscriptionId) return undefined;
@@ -1973,7 +1999,7 @@ function toPaymentIntent(row: typeof paymentIntents.$inferSelect): PaymentIntent
   };
 }
 
-function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing, subscription?: ListingSubscription): PaymentReceipt {
+function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing, subscription?: ListingSubscription, invoicePdfUrl?: string): PaymentReceipt {
   const lineItems: PaymentReceipt["lineItems"] = [
     {
       label: `${intent.quote.plan.name} listing subscription`,
@@ -2016,7 +2042,8 @@ function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing
       checkoutSessionId: intent.stripeCheckoutSessionId,
       subscriptionId: intent.stripeSubscriptionId,
       customerId: intent.stripeCustomerId,
-      invoiceId: intent.stripeInvoiceId
+      invoiceId: intent.stripeInvoiceId,
+      invoicePdfUrl
     },
     createdAt: intent.createdAt,
     updatedAt: intent.updatedAt

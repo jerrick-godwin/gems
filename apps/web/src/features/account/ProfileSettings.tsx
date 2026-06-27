@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import type { GemsApiClient } from "@gems/api-client";
 import type { UserDashboard } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { publicErrorMessage } from "../../shared/helpers";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -61,7 +62,7 @@ export function ProfileSettings({
         setProfileStatus("Profile saved.");
       } catch (error) {
         setSaveState("error");
-        setProfileStatus(error instanceof Error ? error.message : "Unable to save profile.");
+        setProfileStatus(publicErrorMessage(error, "Unable to save profile."));
       }
     });
   };

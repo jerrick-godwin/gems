@@ -1,9 +1,10 @@
-import { CreditCard, RefreshCcw, Trash2 } from "lucide-react";
+import { CreditCard, Download, RefreshCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { publicErrorMessage } from "../../shared/helpers";
 
 export function MyListingsView({
   dashboard,
@@ -22,6 +23,7 @@ export function MyListingsView({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
   const [payingSubscriptionId, setPayingSubscriptionId] = useState<string | null>(null);
+  const [downloadingPaymentId, setDownloadingPaymentId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCancelSubscriptionId, setConfirmCancelSubscriptionId] = useState<string | null>(null);
   const cancelAction = useSingleFlightAction();
@@ -51,7 +53,7 @@ export function MyListingsView({
         await api.cancelListingSubscription(subscriptionId);
         onDashboardChange(await api.dashboard());
       } catch (error) {
-        alert("Failed to cancel renewal: " + (error instanceof Error ? error.message : "Unknown error"));
+        alert(`Failed to cancel renewal: ${publicErrorMessage(error, "Unknown error")}`);
       } finally {
         setCancellingSubscriptionId(null);
         setConfirmCancelSubscriptionId(null);
@@ -72,27 +74,41 @@ export function MyListingsView({
         }
         window.location.href = paymentIntent.paymentUrl;
       } catch (error) {
-        alert("Failed to open checkout: " + (error instanceof Error ? error.message : "Unknown error"));
+        alert(`Failed to open checkout: ${publicErrorMessage(error, "Unknown error")}`);
         setPayingSubscriptionId(null);
         payAction.release();
       }
     }, { keepLocked: true });
   };
 
+  const handleDownloadReceipt = async (payment: PaymentIntent) => {
+    try {
+      setDownloadingPaymentId(payment.id);
+      const receiptFile = await api.downloadPaymentReceipt(payment.id);
+      const url = URL.createObjectURL(receiptFile.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = receiptFile.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      alert(`Failed to download receipt: ${publicErrorMessage(error, "Unknown error")}`);
+    } finally {
+      setDownloadingPaymentId(null);
+    }
+  };
+
   const handleDelete = async (id: string) => {
-    const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === id);
-    const willRemoveAtExpiry = isSubscriptionInPaidAccess(subscription);
     await deleteAction.run(async () => {
       try {
         setDeletingId(id);
         await api.removeMyListing(id);
         const newDashboard = await api.dashboard();
         onDashboardChange(newDashboard);
-        if (willRemoveAtExpiry && subscription?.expiresAt) {
-          alert(`Renewal has been cancelled. This listing will be removed on ${formatDate(subscription.expiresAt)}.`);
-        }
       } catch (error) {
-        alert("Failed to delete listing: " + (error instanceof Error ? error.message : "Unknown error"));
+        alert(`Failed to delete listing: ${publicErrorMessage(error, "Unknown error")}`);
       } finally {
         setDeletingId(null);
         setConfirmDeleteId(null);
@@ -125,6 +141,7 @@ export function MyListingsView({
               const plan = subscription ? subscriptionPlans.find(p => p.id === subscription.planId) : undefined;
               const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
               const paymentLines = payment ? paymentBreakdown(payment) : [];
+              const canDownloadReceipt = Boolean(payment?.stripeInvoiceId && payment.status === "succeeded");
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -190,6 +207,16 @@ export function MyListingsView({
                       >
                         <CreditCard size={16} strokeWidth={2.5} />
                         {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
+                      </button>
+                    )}
+                    {payment && canDownloadReceipt && (
+                      <button
+                        onClick={() => void handleDownloadReceipt(payment)}
+                        disabled={downloadingPaymentId === payment.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: downloadingPaymentId === payment.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                      >
+                        <Download size={16} strokeWidth={2.5} />
+                        {downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}
                       </button>
                     )}
                     {subscription?.autoRenew && (

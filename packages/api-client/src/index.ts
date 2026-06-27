@@ -149,6 +149,12 @@ export class GemsApiClient {
     return this.authJson(`/users/me/payment-intents/${paymentIntentId}/receipt`);
   }
 
+  async downloadPaymentReceipt(paymentIntentId: string): Promise<{ blob: Blob; fileName: string }> {
+    const response = await this.authRequest(`/users/me/payment-intents/${paymentIntentId}/receipt-pdf`);
+    const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "stripe-receipt.pdf";
+    return { blob: await response.blob(), fileName };
+  }
+
   async cancelListingSubscription(subscriptionId: string): Promise<ListingSubscription> {
     return this.authJson(`/listing-subscriptions/${subscriptionId}/cancel`, { method: "PATCH" });
   }
@@ -182,16 +188,27 @@ export class GemsApiClient {
   }
 
   private async authJson<T>(path: string, init: RequestInit = {}, options: IdempotentRequestOptions = {}): Promise<T> {
+    const response = await this.authRequest(path, init, options);
+    return response.json() as Promise<T>;
+  }
+
+  private async authRequest(path: string, init: RequestInit = {}, options: IdempotentRequestOptions = {}): Promise<Response> {
     const headers = new Headers(init.headers);
-    headers.set("content-type", "application/json");
+    if (init.body !== undefined) headers.set("content-type", "application/json");
     const token = await this.getAccessToken?.();
     if (token) headers.set("authorization", `Bearer ${token}`);
     if (options.idempotencyKey) headers.set("idempotency-key", options.idempotencyKey);
 
     const response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
     if (!response.ok) throw new Error(await readApiError(response));
-    return response.json() as Promise<T>;
+    return response;
   }
+}
+
+function fileNameFromContentDisposition(value: string | null) {
+  if (!value) return undefined;
+  const match = value.match(/filename="([^"]+)"/i) ?? value.match(/filename=([^;]+)/i);
+  return match?.[1]?.trim();
 }
 
 export class GemsAdminApiClient {
@@ -311,6 +328,15 @@ export class GemsAdminApiClient {
     return response.json() as Promise<PaymentIntent[]>;
   }
 
+  async downloadPaymentReceipt(token: string, paymentIntentId: string): Promise<{ blob: Blob; fileName: string }> {
+    const response = await fetch(`${this.baseUrl}/admin/payment-intents/${paymentIntentId}/receipt-pdf`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load receipt");
+    const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "stripe-receipt.pdf";
+    return { blob: await response.blob(), fileName };
+  }
+
   async updateOrderStatus(token: string, orderId: string, status: OrderStatus): Promise<Order> {
     const response = await fetch(`${this.baseUrl}/admin/orders/${orderId}/status`, {
       method: "PATCH",
@@ -369,8 +395,27 @@ function adminHeaders(token: string) {
 async function readApiError(response: Response) {
   try {
     const body = await response.json() as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "API request failed";
+    return typeof body.error === "string" ? sanitizeApiError(body.error) : "API request failed";
   } catch {
     return "API request failed";
   }
+}
+
+function sanitizeApiError(message: string) {
+  return [
+    /\bFirebase(?: Authentication| Admin(?: SDK)?)?\b/i,
+    /\bStripe\b/i,
+    /\bSupabase\b/i,
+    /\bAuth0\b/i,
+    /\bClerk\b/i,
+    /\bResend\b/i,
+    /\bVercel\b/i,
+    /\bPostgres(?:ql)?\b/i,
+    /\bMongo(?:DB)?\b/i,
+    /\bRedis\b/i,
+    /\bVITE_(?:ADMIN_)?FIREBASE_[A-Z0-9_]+\b/,
+    /\bauth\/[a-z0-9-]+\b/i
+  ].some((pattern) => pattern.test(message))
+    ? "Request failed. Please try again."
+    : message;
 }

@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, onIdTokenChanged, signInWithEmailAndPassword, signOut, type Auth } from "firebase/auth";
 import type { GemsAdminApiClient, AdminSession } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
+import { publicErrorMessage } from "../../shared/helpers";
 
 const tokenStorageKey = "gems-admin-token";
 
@@ -74,7 +75,7 @@ export function useAdminSession(api: GemsAdminApiClient) {
       .catch((error: unknown) => {
         if (!active) return;
         clearAdminSession(setToken);
-        setLoadError(error instanceof Error ? error.message : "Admin session expired");
+        setLoadError(publicErrorMessage(error, "Admin session expired"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -88,12 +89,12 @@ export function useAdminSession(api: GemsAdminApiClient) {
   const handleLogin = async (email: string, password: string) => {
     setLoading(true);
     try {
-      if (!auth) throw new Error("Admin Firebase config is missing. Set VITE_ADMIN_FIREBASE_* values in apps/web/.env and restart the dev server.");
+      if (!auth) throw new Error("Admin sign in is temporarily unavailable. Please try again later.");
       await signInWithEmailAndPassword(auth, email, password);
       setLoadError(null);
     } catch (error) {
       clearAdminSession(setToken);
-      setLoadError(error instanceof Error ? error.message : "Unable to sign in");
+      setLoadError(publicErrorMessage(error, "Unable to sign in"));
     } finally {
       setLoading(false);
     }

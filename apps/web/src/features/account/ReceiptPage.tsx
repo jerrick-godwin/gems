@@ -1,8 +1,9 @@
-import { AlertCircle, CheckCircle2, Home, Printer, ReceiptText } from "lucide-react";
+import { CheckCircle2, Home, ReceiptText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, type PaymentReceipt, type UserDashboard } from "@gems/schemas";
+import type { PaymentReceipt, UserDashboard } from "@gems/schemas";
 import { StatusState } from "../../shared/StatusState";
+import { publicErrorMessage } from "../../shared/helpers";
 import type { View } from "../../shared/types";
 
 export function ReceiptPage({
@@ -18,6 +19,8 @@ export function ReceiptPage({
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(Boolean(paymentIntentId));
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
 
   useEffect(() => {
     if (!paymentIntentId) {
@@ -41,7 +44,7 @@ export function ReceiptPage({
       })
       .catch((nextError) => {
         if (!active) return;
-        setError(nextError instanceof Error ? nextError.message : "Unable to load payment receipt.");
+        setError(publicErrorMessage(nextError, "Unable to load payment receipt."));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -57,8 +60,30 @@ export function ReceiptPage({
     onNavigate("market");
   };
 
+  const handleDownloadReceipt = async () => {
+    if (!receipt) return;
+    setDownloadingReceipt(true);
+    setDownloadError("");
+
+    try {
+      const receiptFile = await api.downloadPaymentReceipt(receipt.paymentIntentId);
+      const url = URL.createObjectURL(receiptFile.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = receiptFile.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (nextError) {
+      setDownloadError(publicErrorMessage(nextError, "Unable to download the receipt right now."));
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
+
   if (loading) {
-    return <StatusState title="Preparing receipt" message="Loading your payment receipt." loading />;
+    return <StatusState title="Processing your payment" message="Please wait while we confirm your payment." loading variant="payment" />;
   }
 
   if (error || !receipt) {
@@ -75,101 +100,50 @@ export function ReceiptPage({
     );
   }
 
-  const referenceRows = [
-    ["Stripe checkout", receipt.stripe.checkoutSessionId],
-    ["Stripe subscription", receipt.stripe.subscriptionId],
-    ["Stripe invoice", receipt.stripe.invoiceId],
-    ["Stripe customer", receipt.stripe.customerId]
-  ].filter(([, value]) => Boolean(value));
-
   return (
     <section className="invoice-panel data-panel receipt-panel" aria-labelledby="receipt-title">
+      <span className="eyebrow">Payment successful</span>
       <div className="invoice-header">
         <div>
-          <span className="eyebrow">Payment receipt</span>
-          <h1 id="receipt-title">{receipt.receiptNumber}</h1>
-          <p>{receipt.listing.title}</p>
-        </div>
-        <div className="receipt-status">
-          <CheckCircle2 size={18} />
-          Paid
+          <h1 id="receipt-title">Thank you for your payment!</h1>
         </div>
       </div>
 
-      <div className="invoice-meta">
-        <div className="address-block">
-          <span className="eyebrow">Customer</span>
-          <strong>{receipt.customer.name}</strong>
-          <span>{receipt.customer.email}</span>
-        </div>
-        <div className="address-block">
-          <span className="eyebrow">Payment</span>
-          <strong>{formatDateTime(receipt.paidAt)}</strong>
-          <span>{receipt.paymentIntentId}</span>
-        </div>
-        <div className="address-block">
-          <span className="eyebrow">Listing</span>
-          <strong>{receipt.listing.title}</strong>
-          <span>{receipt.listing.id}</span>
-        </div>
-        <div className="address-block">
-          <span className="eyebrow">Subscription</span>
-          <strong>{receipt.subscription.planName}</strong>
-          <span>{formatSubscriptionDates(receipt.subscription.startsAt, receipt.subscription.expiresAt)}</span>
-        </div>
-      </div>
-
-      <div className="receipt-lines" role="table" aria-label="Receipt line items">
-        <div className="receipt-line receipt-line-heading" role="row">
-          <span role="columnheader">Item</span>
-          <span role="columnheader">Qty</span>
-          <span role="columnheader">Amount</span>
-        </div>
-        {receipt.lineItems.map((item) => (
-          <div className="receipt-line" role="row" key={item.label}>
-            <span role="cell">{item.label}</span>
-            <span role="cell">{item.quantity}</span>
-            <strong role="cell">{formatLkr(item.amountLkr)}</strong>
+      <div className="receipt-paid-summary" aria-label={`Invoice paid ${formatReceiptAmount(receipt.totalLkr)}`}>
+        <div className="receipt-paid-icon" aria-hidden="true">
+          <div className="receipt-paid-document">
+            <span className="receipt-paid-avatar" />
+            <span className="receipt-paid-line receipt-paid-line-short" />
+            <span className="receipt-paid-line" />
+            <span className="receipt-paid-line" />
+            <span className="receipt-paid-line receipt-paid-line-wide" />
+            <span className="receipt-paid-line receipt-paid-line-mid" />
           </div>
-        ))}
-        <div className="receipt-total-row">
-          <span>Total paid</span>
-          <strong>{formatLkr(receipt.totalLkr)}</strong>
+          <span className="receipt-paid-check">
+            <CheckCircle2 size={24} strokeWidth={3} />
+          </span>
         </div>
+        <p>Invoice paid</p>
+        <strong>{formatReceiptAmount(receipt.totalLkr)}</strong>
       </div>
 
-      {referenceRows.length > 0 && (
-        <div className="receipt-references">
-          <div className="receipt-reference-title">
-            <ReceiptText size={18} />
-            Payment references
-          </div>
-          <dl>
-            {referenceRows.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
-
-      <div className="receipt-email-note" role="note">
-        <AlertCircle size={17} />
-        Stripe sends the official receipt or invoice email to {receipt.customer.email} when receipt emails are enabled in Stripe.
-      </div>
-
-      <div className="checkout-actions print-action">
-        <button type="button" className="secondary-action" onClick={() => window.print()}>
-          <Printer size={17} />
-          Print
-        </button>
+      <div className="checkout-actions receipt-actions">
+        {receipt.stripe.invoiceId && (
+          <button type="button" className="primary-action" onClick={handleDownloadReceipt} disabled={downloadingReceipt}>
+            {downloadingReceipt ? <span className="button-spinner" aria-hidden="true" /> : <ReceiptText size={18} />}
+            {downloadingReceipt ? "Preparing receipt..." : "Download Receipt"}
+          </button>
+        )}
         <button type="button" className="secondary-action" onClick={handleReturnHome}>
-          <Home size={17} />
+          <Home size={18} />
           Return Home
         </button>
       </div>
+      {downloadError && (
+        <p role="alert" style={{ color: "var(--danger)", fontSize: 14, fontWeight: 700, marginTop: 12 }}>
+          {downloadError}
+        </p>
+      )}
     </section>
   );
 }
@@ -190,4 +164,13 @@ function formatSubscriptionDates(startsAt?: string, expiresAt?: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function formatReceiptAmount(value: number) {
+  return new Intl.NumberFormat("en-LK", {
+    style: "currency",
+    currency: "LKR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 }
