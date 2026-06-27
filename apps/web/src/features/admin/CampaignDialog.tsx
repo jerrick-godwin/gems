@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import type { Listing, PromotionCampaign } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function CampaignDialog({ 
   listing, 
@@ -23,49 +24,54 @@ export function CampaignDialog({
   const defaultEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
   const [startsAtInput, setStartsAtInput] = useState(defaultStartsAt);
   const [endsAtInput, setEndsAtInput] = useState(defaultEndsAt);
+  const campaignAction = useSingleFlightAction();
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    const startsAt = new Date(startsAtInput);
-    const endsAt = new Date(endsAtInput);
-    endsAt.setHours(23, 59, 59, 999);
-    try {
-      const updated = await api.createCampaign(token, listing.id, {
-        type,
-        status: "active",
-        startsAt: startsAt.toISOString(),
-        endsAt: endsAt.toISOString()
-      });
-      onUpdate(updated);
-    } catch {
-      alert("Failed to create campaign");
-    } finally {
-      setBusy(false);
-    }
+    await campaignAction.run(async () => {
+      setBusy(true);
+      const startsAt = new Date(startsAtInput);
+      const endsAt = new Date(endsAtInput);
+      endsAt.setHours(23, 59, 59, 999);
+      try {
+        const updated = await api.createCampaign(token, listing.id, {
+          type,
+          status: "active",
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString()
+        });
+        onUpdate(updated);
+      } catch {
+        alert("Failed to create campaign");
+      } finally {
+        setBusy(false);
+      }
+    });
   };
 
   const handleAction = async (campaignId: string, action: "pause" | "resume" | "stop" | "extend") => {
-    setBusy(true);
-    try {
-      let updates: Partial<PromotionCampaign> = {};
-      if (action === "pause") updates.status = "paused";
-      if (action === "resume") updates.status = "active";
-      if (action === "stop") updates.status = "stopped";
-      if (action === "extend") {
-        const campaign = (listing.campaigns || []).find(c => c.id === campaignId);
-        if (campaign) {
-          const endsAt = new Date(campaign.endsAt);
-          updates.endsAt = new Date(endsAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    await campaignAction.run(async () => {
+      setBusy(true);
+      try {
+        let updates: Partial<PromotionCampaign> = {};
+        if (action === "pause") updates.status = "paused";
+        if (action === "resume") updates.status = "active";
+        if (action === "stop") updates.status = "stopped";
+        if (action === "extend") {
+          const campaign = (listing.campaigns || []).find(c => c.id === campaignId);
+          if (campaign) {
+            const endsAt = new Date(campaign.endsAt);
+            updates.endsAt = new Date(endsAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          }
         }
+        const updated = await api.updateCampaign(token, listing.id, campaignId, updates);
+        onUpdate(updated);
+      } catch {
+        alert("Failed to update campaign");
+      } finally {
+        setBusy(false);
       }
-      const updated = await api.updateCampaign(token, listing.id, campaignId, updates);
-      onUpdate(updated);
-    } catch {
-      alert("Failed to update campaign");
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   return createPortal(
@@ -96,7 +102,7 @@ export function CampaignDialog({
               <span style={{ fontSize: 12, display: "block", marginBottom: 4 }}>End Date</span>
               <input type="date" value={endsAtInput} onChange={e => setEndsAtInput(e.target.value)} required min={startsAtInput} style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid var(--line)", boxSizing: "border-box" }} />
             </label>
-            <button type="submit" disabled={busy} style={{ minHeight: 38, padding: "0 16px" }}>Create</button>
+            <button type="submit" disabled={campaignAction.busy || busy} style={{ minHeight: 38, padding: "0 16px" }}>Create</button>
           </form>
         </div>
 
@@ -126,15 +132,15 @@ export function CampaignDialog({
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     {campaign.status === "active" && (
-                      <button onClick={() => void handleAction(campaign.id, "pause")} disabled={busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>Pause</button>
+                      <button onClick={() => void handleAction(campaign.id, "pause")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>Pause</button>
                     )}
                     {campaign.status === "paused" && (
-                      <button onClick={() => void handleAction(campaign.id, "resume")} disabled={busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>Resume</button>
+                      <button onClick={() => void handleAction(campaign.id, "resume")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>Resume</button>
                     )}
                     {(campaign.status === "active" || campaign.status === "paused") && (
                       <>
-                        <button onClick={() => void handleAction(campaign.id, "extend")} disabled={busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>+7 Days</button>
-                        <button onClick={() => void handleAction(campaign.id, "stop")} disabled={busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--danger-soft)", color: "var(--danger)" }}>Stop</button>
+                        <button onClick={() => void handleAction(campaign.id, "extend")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>+7 Days</button>
+                        <button onClick={() => void handleAction(campaign.id, "stop")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--danger-soft)", color: "var(--danger)" }}>Stop</button>
                       </>
                     )}
                   </div>

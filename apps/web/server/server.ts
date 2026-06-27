@@ -39,8 +39,11 @@ import {
   recordStripeSubscriptionInvoicePayment,
   syncStripeSubscriptionStatus,
   getAdminPaymentIntents,
+  getAdminPaymentReceipt,
+  getAdminPaymentReceiptPdf,
   getPaymentIntent,
   getPaymentReceipt,
+  getPaymentReceiptPdf,
   getListingSubscriptionPaymentIntent,
   getAdminOrders,
   getDashboard,
@@ -57,7 +60,7 @@ import {
 } from "./user-repository.js";
 import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
 import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./stripe.js";
-import { ensureDatabaseCompatibility } from "./db/index.js";
+import { ensureDatabaseCompatibility, requireDatabase } from "./db/index.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -81,56 +84,18 @@ const mimeTypes: Record<string, string> = {
   ".webp": "image/webp"
 };
 
-const policyPages: Record<string, { title: string; effective: string; lede?: string; body: string[] }> = {
-  "/contact-us": {
-    title: "Contact Us",
-    effective: "Merchant details updated June 11, 2026",
-    lede: "Merchant and licence details for gemslanka.lk.",
-    body: [
-      "Merchant name: KRISTIANA MAGRET GEM & JEWELLERY.",
-      "Email: info@gemslanka.lk.",
-      "Licence number: 20266DL39394."
-    ]
-  },
-  "/terms-and-conditions": {
-    title: "Terms and Conditions",
-    effective: "Effective June 11, 2026",
-    body: [
-      "gemslanka.lk provides listing publication, seller visibility, contact tools, and moderation workflows only. We do not sell, buy, broker, inspect, transport, insure, or guarantee gemstones.",
-      "Any selling, purchasing, negotiation, inspection, payment, delivery, refund, or dispute between buyers and sellers happens outside gemslanka.lk. Users are responsible for their own due diligence before any transaction.",
-      "Each listing uses its own subscription plan. Basic is valid for 1 month, Pro for 2 months, and Plus for 3 months. Subscriptions automatically renew unless cancelled before the next renewal. Expired or unpaid listings become inactive and are removed from public browsing until renewed.",
-      "All listing subscriptions, renewals, and extra-photo fees are non-refundable, including rejected listings, cancelled renewals, expired listings, duplicate submissions, or seller withdrawal.",
-      "We may reject, remove, expire, or suspend listings and accounts that violate these terms, create marketplace risk, or misuse the service."
-    ]
-  },
-  "/privacy-policy": {
-    title: "Privacy Policy",
-    effective: "Effective June 11, 2026",
-    body: [
-      "gemslanka.lk collects account details, seller profile data, listing details, uploaded media, verification context, reports, support messages, device data, and activity needed to operate the listing service.",
-      "Our payment provider processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.",
-      "We use cookies or local storage for authentication, saved preferences, theme settings, and essential app behavior.",
-      "We keep records while an account, listing, payment, moderation, legal, or security need remains. We use reasonable safeguards, but no internet service can guarantee absolute security.",
-      "Users can update account information, cancel listing auto-renewal, request support, and ask about personal data associated with their account."
-    ]
-  },
-  "/refund-policy": {
-    title: "Refund Policy",
-    effective: "Effective June 11, 2026",
-    body: [
-      "No refunds. gemslanka.lk listing subscriptions, renewals, and extra-photo fees are non-refundable.",
-      "This no-refund policy applies to rejected listings, cancelled renewals, expired listings, duplicate submissions, seller withdrawal, and any buyer/seller transaction outcome outside the platform.",
-      "Cancelling auto-renewal stops future renewal charges only. It does not refund the current listing validity period or any previously paid fees."
-    ]
-  }
-};
-
-const publicPagePaths = ["/", ...Object.keys(policyPages)];
+const publicPagePaths = [
+  "/",
+  "/contact-us",
+  "/terms-and-conditions",
+  "/privacy-policy",
+  "/refund-policy"
+];
 const paymentIntentValidationErrors = new Set([
   "Select a valid listing subscription plan.",
   "Terms and Privacy Policy acceptance is required before payment.",
   "Listing not found.",
-  "Stripe payment collection is not configured."
+  "Payment collection is not configured."
 ]);
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
@@ -141,41 +106,6 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
     "access-control-allow-headers": "authorization,content-type"
   });
   response.end(JSON.stringify(body));
-}
-
-function sendPolicyPage(response: ServerResponse, page: typeof policyPages[string]) {
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  response.end(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(page.title)} | gemslanka.lk</title>
-  <style>
-    body { margin: 0; font-family: Arial, sans-serif; color: #111827; background: #f8fafc; line-height: 1.65; }
-    main { max-width: 860px; margin: 0 auto; padding: 48px 20px; }
-    h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.05; }
-    .effective { margin: 0 0 28px; color: #5f6f6d; font-size: 1.1rem; }
-    section { display: grid; gap: 16px; padding: 28px; background: #fff; border: 1px solid #d9e1df; border-radius: 12px; }
-    p { margin: 0; font-size: 1rem; }
-    nav { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 28px; }
-    a { color: #08715c; font-weight: 700; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>${escapeHtml(page.title)}</h1>
-    <p class="effective">${escapeHtml(page.lede ?? `${page.effective}. These policies apply to gemslanka.lk listing services.`)}</p>
-    <section>${page.body.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}</section>
-    <nav aria-label="Legal pages">
-      <a href="/contact-us">Contact Us</a>
-      <a href="/terms-and-conditions">Terms and Conditions</a>
-      <a href="/privacy-policy">Privacy Policy</a>
-      <a href="/refund-policy">Refund Policy</a>
-    </nav>
-  </main>
-</body>
-</html>`);
 }
 
 function getPublicSiteUrl(request: IncomingMessage) {
@@ -266,6 +196,17 @@ function stringBody(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function idempotencyKey(request: IncomingMessage) {
+  const value = request.headers["idempotency-key"];
+  const key = Array.isArray(value) ? value[0] : value;
+  return typeof key === "string" && key.trim() ? key.trim().slice(0, 180) : undefined;
+}
+
+function stripePaymentReturnLocation(paymentIntentId: string, status: "succeeded" | "pending" | "cancelled" | "expired" | "failed") {
+  if (status === "succeeded") return `/receipt?paymentIntentId=${encodeURIComponent(paymentIntentId)}`;
+  return `/?payment=${status === "pending" ? "pending" : status}`;
+}
+
 function numberBody(value: unknown, fallback: number) {
   const next = typeof value === "number" ? value : Number(value);
   return Number.isFinite(next) ? next : fallback;
@@ -286,6 +227,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const path = url.pathname;
 
   if (!path.startsWith("/api/v1")) return false;
+  requireDatabase();
   await ensureDatabaseCompatibility();
 
   if (request.method === "POST" && path === "/api/v1/payments/stripe/webhook") {
@@ -295,7 +237,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, 200, { received: true });
     } catch (error) {
       console.warn("Stripe webhook handling failed:", error);
-      sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid Stripe webhook" });
+      sendJson(response, 400, { error: "Invalid payment notification" });
     }
     return true;
   }
@@ -363,6 +305,30 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     if (request.method === "GET" && path === "/api/v1/admin/payments") {
       sendJson(response, 200, await getAdminPaymentIntents());
+      return true;
+    }
+
+    const adminPaymentReceiptMatch = path.match(/^\/api\/v1\/admin\/payment-intents\/([^/]+)\/receipt$/);
+    if (request.method === "GET" && adminPaymentReceiptMatch) {
+      const receipt = await getAdminPaymentReceipt(adminPaymentReceiptMatch[1]);
+      sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Payment receipt not found" });
+      return true;
+    }
+
+    const adminPaymentReceiptPdfMatch = path.match(/^\/api\/v1\/admin\/payment-intents\/([^/]+)\/receipt-pdf$/);
+    if (request.method === "GET" && adminPaymentReceiptPdfMatch) {
+      const receiptPdf = await getAdminPaymentReceiptPdf(adminPaymentReceiptPdfMatch[1]);
+      if (!receiptPdf) {
+        sendJson(response, 404, { error: "Receipt not found" });
+        return true;
+      }
+
+      response.writeHead(200, {
+        "content-type": receiptPdf.contentType,
+        "content-length": receiptPdf.data.byteLength,
+        "content-disposition": `inline; filename="${receiptPdf.fileName.replace(/"/g, "")}"`
+      });
+      response.end(receiptPdf.data);
       return true;
     }
 
@@ -445,23 +411,20 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const intent = await getPaymentIntent(stripePaymentReturnMatch[1]);
     const sessionId = url.searchParams.get("session_id") ?? "";
     if (!intent || intent.gateway !== "stripe" || !sessionId || !(await isStripeCheckoutSessionForPaymentIntent(intent, sessionId))) {
-      sendJson(response, 400, { error: "Invalid Stripe payment return" });
+      sendJson(response, 400, { error: "Invalid payment return" });
       return true;
     }
 
     try {
       const checkoutSession = await retrieveStripeCheckoutSession(sessionId);
-      await confirmPaymentIntent(intent.id, checkoutSession.status, checkoutSession.reference, checkoutSession);
-      const paymentResult = checkoutSession.status === "pending" ? "pending" : checkoutSession.status;
-      const location = checkoutSession.status === "succeeded"
-        ? `/receipt?paymentIntentId=${encodeURIComponent(intent.id)}`
-        : `/?payment=${paymentResult}`;
+      const confirmed = await confirmPaymentIntent(intent.id, checkoutSession.status, checkoutSession.reference, checkoutSession);
+      const location = stripePaymentReturnLocation(intent.id, confirmed?.status ?? checkoutSession.status);
       response.writeHead(302, { location });
       response.end();
     } catch (error) {
       console.warn("Stripe checkout verification failed:", error);
-      await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
-      response.writeHead(302, { location: "/?payment=failed" });
+      const confirmed = await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
+      response.writeHead(302, { location: stripePaymentReturnLocation(intent.id, confirmed?.status ?? "failed") });
       response.end();
     }
     return true;
@@ -526,6 +489,23 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "GET" && paymentReceiptMatch) {
       const receipt = await getPaymentReceipt(user.id, paymentReceiptMatch[1]);
       sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Payment receipt not found" });
+      return true;
+    }
+
+    const paymentReceiptPdfMatch = path.match(/^\/api\/v1\/users\/me\/payment-intents\/([^/]+)\/receipt-pdf$/);
+    if (request.method === "GET" && paymentReceiptPdfMatch) {
+      const receiptPdf = await getPaymentReceiptPdf(user.id, paymentReceiptPdfMatch[1]);
+      if (!receiptPdf) {
+        sendJson(response, 404, { error: "Receipt not found" });
+        return true;
+      }
+
+      response.writeHead(200, {
+        "content-type": receiptPdf.contentType,
+        "content-length": receiptPdf.data.byteLength,
+        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`
+      });
+      response.end(receiptPdf.data);
       return true;
     }
 
@@ -686,7 +666,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
     const body = await readJsonBody(request).catch(() => ({}));
-    sendJson(response, 201, await createListing(user.id, parseObject(body)));
+    sendJson(response, 201, await createListing(user.id, parseObject(body), idempotencyKey(request)));
     return true;
   }
 
@@ -703,7 +683,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         planId: stringBody(body.planId),
         photoCount: numberBody(body.photoCount, 0),
         acceptedPolicies: body.acceptedPolicies === true
-      });
+      }, idempotencyKey(request));
       sendJson(response, 201, intent);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
@@ -801,10 +781,10 @@ async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripe
         invoice.id,
         event.type,
         event.type === "invoice.payment_action_required"
-          ? "Stripe subscription invoice requires customer action."
+          ? "Subscription invoice requires customer action."
           : event.type === "invoice.finalization_failed"
-            ? "Stripe subscription invoice finalization failed."
-            : "Stripe subscription invoice payment failed."
+            ? "Subscription invoice finalization failed."
+            : "Subscription invoice payment failed."
       );
     }
     return;
@@ -899,7 +879,7 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
 }
 
 async function main() {
-  await ensureDatabaseCompatibility();
+  await ensureDatabaseCompatibility({ force: true });
   let vite: ViteDevServer | undefined;
   const server = createServer((request, response) => {
     void handleRequest(request, response, vite);
@@ -936,12 +916,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
 
     if (request.method === "GET" && url.pathname === "/sitemap.xml") {
       sendSitemapXml(request, response);
-      return;
-    }
-
-    const policyPage = policyPages[url.pathname];
-    if (request.method === "GET" && policyPage) {
-      sendPolicyPage(response, policyPage);
       return;
     }
 

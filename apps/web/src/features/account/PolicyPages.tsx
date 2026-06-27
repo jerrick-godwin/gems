@@ -1,22 +1,21 @@
-const merchantDisclosure = {
-  merchantName: "KRISTIANA MAGRET GEM & JEWELLERY",
-  email: "info@gemslanka.lk",
-  licenceNumber: "20266DL39394"
-};
+import type { MerchantDisclosure } from "@gems/schemas";
 
-export function ContactUs() {
+export function ContactUs({ disclosure }: { disclosure?: MerchantDisclosure }) {
   return (
     <section className="policy-page">
       <div className="section-heading">
         <h1>Contact Us</h1>
-        <p>Merchant and licence details for gemslanka.lk.</p>
       </div>
       <div className="data-panel policy-content contact-disclosure">
-        <div className="contact-detail-grid">
-          <ContactDetail label="Merchant name" value={merchantDisclosure.merchantName} />
-          <ContactDetail label="Email" value={merchantDisclosure.email} />
-          <ContactDetail label="Licence number" value={merchantDisclosure.licenceNumber} />
-        </div>
+        {disclosure ? (
+          <div className="contact-detail-grid">
+            <ContactDetail label="Merchant name" value={disclosure.merchantName} />
+            <ContactDetail label="Email" value={disclosure.email} />
+            <ContactDetail label="Licence number" value={disclosure.licenceNumber} />
+          </div>
+        ) : (
+          <p>Loading merchant details...</p>
+        )}
       </div>
     </section>
   );

@@ -14,7 +14,7 @@ const validDetails = {
   country: "Sri Lanka"
 };
 
-test("checkout request accepts complete Stripe details", () => {
+test("checkout request accepts complete payment details", () => {
   assert.deepEqual(validateCheckoutRequest({
     billingDetails: validDetails,
     deliveryDetails: validDetails,
@@ -30,7 +30,7 @@ test("checkout request rejects missing details and unsupported payment methods",
   });
   assert.ok(errors.some((error) => error.includes("Billing fullName")));
   assert.ok(errors.some((error) => error.includes("Delivery email is invalid")));
-  assert.ok(errors.some((error) => error.includes("Stripe")));
+  assert.ok(errors.some((error) => error.includes("valid payment method")));
 });
 
 test("admin order statuses match the supported workflow", () => {

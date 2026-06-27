@@ -5,7 +5,9 @@ import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type CertificateStatus, type Listing, type SellerProfile, type Treatment } from "@gems/schemas";
 import { MultiSelectDropdown } from "../../shared/MultiSelectDropdown";
 import { StatusState } from "../../shared/StatusState";
+import { publicErrorMessage } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export interface MarketplaceProps {
   gemTypes: MarketplaceSnapshot["gemTypes"];
@@ -223,6 +225,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   const [isFullRevealLoading, setIsFullRevealLoading] = useState(false);
   const [fullPhoneVisible, setFullPhoneVisible] = useState(false);
   const [reportReason, setReportReason] = useState("");
+  const reportAction = useSingleFlightAction();
   const images = useMemo(() => listing.media.filter((media) => media.kind !== "certificate"), [listing.media]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const requestedPhoneListingId = useRef<string>();
@@ -279,7 +282,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
       setIsFullRevealLoading(true);
       await onReveal();
     } catch (error) {
-      alert("Unable to load phone number: " + (error instanceof Error ? error.message : "Unknown error"));
+      alert(`Unable to load phone number: ${publicErrorMessage(error, "Unknown error")}`);
     } finally {
       setIsFullRevealLoading(false);
     }
@@ -294,16 +297,18 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   };
 
   const handleReportSubmit = async (reason: string, notes: string) => {
-    try {
-      setIsReporting(true);
-      await onReport(listing.id, reason, notes);
-      setReportModalOpen(false);
-      setReported(true);
-    } catch (error) {
-      alert("Failed to report listing: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setIsReporting(false);
-    }
+    await reportAction.run(async () => {
+      try {
+        setIsReporting(true);
+        await onReport(listing.id, reason, notes);
+        setReportModalOpen(false);
+        setReported(true);
+      } catch (error) {
+        alert(`Failed to report listing: ${publicErrorMessage(error, "Unknown error")}`);
+      } finally {
+        setIsReporting(false);
+      }
+    });
   };
 
   return (
@@ -373,7 +378,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
             <form className="post-form" style={{ display: "flex", flexDirection: "column", gap: 16 }} onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void handleReportSubmit(data.get("reason") as string, data.get("notes") as string); }}>
               <label>Reason for reporting *<select name="reason" required value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option value="">Select a reason...</option><option value="fake_certificate">Fake Certificate</option><option value="misrepresented_gem">Misrepresented Gem</option><option value="scam_attempt">Scam Attempt</option><option value="duplicate">Duplicate Listing</option><option value="wrong_details">Wrong Details</option><option value="abusive_seller">Abusive Seller</option><option value="other">Other</option></select></label>
               <label>{reportReason === "other" ? "Additional Notes *" : "Additional Notes (optional)"}<textarea name="notes" rows={4} placeholder="Please provide any additional details..." required={reportReason === "other"} /></label>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}><button type="button" onClick={() => setReportModalOpen(false)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 40, padding: "0 16px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "transparent", color: "var(--ink)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Cancel</button><button type="submit" disabled={isReporting} className="primary-action btn-red" style={{ flex: "none", width: "auto", padding: "0 16px", cursor: "pointer" }}>{isReporting ? "Submitting..." : "Submit Report"}</button></div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}><button type="button" onClick={() => setReportModalOpen(false)} disabled={reportAction.busy || isReporting} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 40, padding: "0 16px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "transparent", color: "var(--ink)", fontSize: 14, fontWeight: 700, cursor: reportAction.busy || isReporting ? "not-allowed" : "pointer" }}>Cancel</button><button type="submit" disabled={reportAction.busy || isReporting} className="primary-action btn-red" style={{ flex: "none", width: "auto", padding: "0 16px", cursor: reportAction.busy || isReporting ? "not-allowed" : "pointer" }}>{isReporting ? "Submitting..." : "Submit Report"}</button></div>
             </form>
           </div>
         </div>,

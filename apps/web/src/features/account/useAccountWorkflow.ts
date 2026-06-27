@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { GemsApiClient } from "@gems/api-client";
 import type { Report, UserDashboard } from "@gems/schemas";
+import { publicErrorMessage } from "../../shared/helpers";
 
 export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
   const [accountError, setAccountError] = useState<string | null>(null);
@@ -25,7 +26,7 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setAccountError(error instanceof Error ? error.message : "Unable to load your account data");
+        setAccountError(publicErrorMessage(error, "Unable to load your account data"));
       });
 
     return () => {

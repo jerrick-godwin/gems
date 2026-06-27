@@ -66,9 +66,23 @@ export const locations = pgTable("locations", {
   name: varchar("name").notNull().unique()
 });
 
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: varchar("id").primaryKey(),
+  name: varchar("name").notNull(),
+  priceLkr: integer("price_lkr").notNull(),
+  includedPhotos: integer("included_photos").notNull(),
+  extraPhotoPriceLkr: integer("extra_photo_price_lkr").notNull(),
+  validityMonths: integer("validity_months").notNull(),
+  eyebrow: varchar("eyebrow").notNull(),
+  summary: text("summary").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
 export const listings = pgTable("listings", {
   id: varchar("id").primaryKey(),
   sellerId: varchar("seller_id").references(() => sellerProfiles.id).notNull(),
+  idempotencyKey: varchar("idempotency_key"),
   gemTypeId: varchar("gem_type_id").references(() => gemTypes.id).notNull(),
   title: varchar("title").notNull(),
   description: text("description").notNull(),
@@ -93,13 +107,15 @@ export const listings = pgTable("listings", {
   }>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  listingsSellerIdempotencyUnique: uniqueIndex("listings_seller_idempotency_unique").on(table.sellerId, table.idempotencyKey)
+}));
 
 export const listingSubscriptions = pgTable("listing_subscriptions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   listingId: varchar("listing_id").references(() => listings.id).notNull(),
-  planId: varchar("plan_id").$type<ListingSubscriptionPlanId>().notNull(),
+  planId: varchar("plan_id").references(() => subscriptionPlans.id).notNull(),
   status: varchar("status").$type<ListingSubscriptionStatus>().notNull().default("pending_payment"),
   autoRenew: boolean("auto_renew").notNull().default(true),
   startsAt: timestamp("starts_at"),
@@ -114,10 +130,11 @@ export const paymentIntents = pgTable("payment_intents", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  idempotencyKey: varchar("idempotency_key"),
   subscriptionId: varchar("subscription_id"),
   purpose: varchar("purpose").$type<PaymentPurpose>().notNull(),
   status: varchar("status").$type<PaymentStatus>().notNull().default("pending"),
-  planId: varchar("plan_id").$type<ListingSubscriptionPlanId>().notNull(),
+  planId: varchar("plan_id").references(() => subscriptionPlans.id).notNull(),
   quote: jsonb("quote").$type<ListingPaymentQuote>().notNull(),
   amountLkr: integer("amount_lkr").notNull(),
   currency: varchar("currency").notNull().default("LKR"),
@@ -132,7 +149,9 @@ export const paymentIntents = pgTable("payment_intents", {
   policyAcceptedAt: timestamp("policy_accepted_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  paymentIntentsUserListingIdempotencyUnique: uniqueIndex("payment_intents_user_listing_idempotency_unique").on(table.userId, table.listingId, table.idempotencyKey)
+}));
 
 export const renewalEvents = pgTable("renewal_events", {
   id: varchar("id").primaryKey(),
@@ -242,4 +261,11 @@ export const orderItems = pgTable("order_items", {
   attributesSnapshot: jsonb("attributes_snapshot").$type<GemAttributes>(),
   quantity: integer("quantity").notNull().default(1),
   unitPriceLkr: integer("unit_price_lkr").notNull()
+});
+
+export const merchantDisclosure = pgTable("merchant_disclosure", {
+  id: varchar("id").primaryKey(),
+  merchantName: varchar("merchant_name").notNull(),
+  email: varchar("email").notNull(),
+  licenceNumber: varchar("licence_number").notNull()
 });

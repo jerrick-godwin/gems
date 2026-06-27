@@ -64,6 +64,27 @@
       "when": 1782356400000,
       "tag": "0009_worldwide_gem_types",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782529200000,
+      "tag": "0010_idempotency_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782560829650,
+      "tag": "0010_subscription_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782563597555,
+      "tag": "0011_quick_iron_patriot",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   Cart,
   CartItem,
@@ -23,13 +23,13 @@ import type {
   UserRole,
   UserSettings
 } from "@gems/schemas";
-import { listingSubscriptionPlans, orderStatuses, quoteListingSubscription, validateCheckoutRequest } from "@gems/schemas";
+import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type ListingSubscriptionPlan } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
-import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users } from "./db/schema.js";
+import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
-import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd } from "./stripe.js";
+import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
 type SettingsPatch = Partial<Pick<UserSettings, "theme" | "notificationsEnabled" | "language" | "dashboardDefaultView" | "savedMarketplaceFilters">>;
@@ -59,7 +59,10 @@ interface MemoryState {
   carts: Cart[];
   orders: Order[];
   listingSubscriptions: ListingSubscription[];
+  subscriptionPlans: ListingSubscriptionPlan[];
   paymentIntents: PaymentIntent[];
+  listingIdempotencyKeys: Record<string, string>;
+  paymentIntentIdempotencyKeys: Record<string, string>;
 }
 
 let memoryState: MemoryState | undefined;
@@ -74,7 +77,7 @@ interface StripePaymentState {
 }
 
 function listingPaymentGateway(): PaymentIntent["gateway"] {
-  if (!isStripeConfigured()) throw new Error("Stripe payment collection is not configured.");
+  if (!isStripeConfigured()) throw new Error("Payment collection is not configured.");
   return "stripe";
 }
 
@@ -179,37 +182,43 @@ export async function getUserProfile(userId: string) {
 }
 
 export async function updateUserProfile(userId: string, patch: UserPatch) {
-  await assertUserPhoneAvailable(userId, patch.phone);
+  const currentUser = await getUser(userId);
+  const changedPatch = getChangedUserProfilePatch(currentUser, patch);
+
+  if (Object.keys(changedPatch).length === 0) return currentUser;
+
+  await assertUserPhoneAvailable(userId, changedPatch.phone, currentUser.phone);
 
   if (hasDatabase) {
     const now = new Date();
     const [updated] = await db
       .update(users)
       .set(withoutUndefined({
-        name: patch.name,
-        phone: patch.phone,
-        address: patch.address,
-        locale: patch.locale,
-        profileImageKey: patch.profileImageKey,
-        profileImageUrl: patch.profileImageUrl,
+        name: changedPatch.name,
+        phone: changedPatch.phone,
+        address: changedPatch.address,
+        locale: changedPatch.locale,
+        profileImageKey: changedPatch.profileImageKey,
+        profileImageUrl: changedPatch.profileImageUrl,
         updatedAt: now
       }))
       .where(eq(users.id, userId))
       .returning();
-    await syncSellerDetailsForUser(userId, patch);
+    await syncSellerDetailsForUser(userId, changedPatch);
     return toUser(updated);
   }
 
   const state = await getMemoryState();
   const user = findMemoryUser(state, userId);
-  Object.assign(user, withoutUndefined(patch), { updatedAt: new Date().toISOString() });
-  syncMemorySellerDetailsForUser(state, userId, patch);
+  Object.assign(user, withoutUndefined(changedPatch), { updatedAt: new Date().toISOString() });
+  syncMemorySellerDetailsForUser(state, userId, changedPatch);
   return user;
 }
 
-async function assertUserPhoneAvailable(userId: string, phone: string | undefined) {
+async function assertUserPhoneAvailable(userId: string, phone: string | undefined, currentPhone?: string) {
   const normalizedPhone = normalizeUserPhoneForConflict(phone);
   if (!normalizedPhone) return;
+  if (normalizedPhone === normalizeUserPhoneForConflict(currentPhone)) return;
 
   if (hasDatabase) {
     const existingUsers = await db.select({ id: users.id, phone: users.phone }).from(users);
@@ -228,6 +237,28 @@ function normalizeUserPhoneForConflict(phone: string | undefined) {
   if (!digits) return "";
   if (digits.length === 10 && digits.startsWith("0")) return `94${digits.slice(1)}`;
   return digits;
+}
+
+function normalizeIdempotencyKey(key: string | undefined) {
+  const normalized = key?.trim();
+  return normalized ? normalized.slice(0, 180) : undefined;
+}
+
+function stableIdFromKey(prefix: string, key: string) {
+  return `${prefix}-${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
+}
+
+function getChangedUserProfilePatch(currentUser: User, patch: UserPatch) {
+  const changedPatch: UserPatch = {};
+
+  if (patch.name !== undefined && patch.name !== currentUser.name) changedPatch.name = patch.name;
+  if (patch.phone !== undefined && patch.phone !== currentUser.phone) changedPatch.phone = patch.phone;
+  if (patch.address !== undefined && patch.address !== currentUser.address) changedPatch.address = patch.address;
+  if (patch.locale !== undefined && patch.locale !== currentUser.locale) changedPatch.locale = patch.locale;
+  if (patch.profileImageKey !== undefined && patch.profileImageKey !== currentUser.profileImageKey) changedPatch.profileImageKey = patch.profileImageKey;
+  if (patch.profileImageUrl !== undefined && patch.profileImageUrl !== currentUser.profileImageUrl) changedPatch.profileImageUrl = patch.profileImageUrl;
+
+  return changedPatch;
 }
 
 export async function getSettings(userId: string): Promise<UserSettings> {
@@ -471,8 +502,22 @@ export async function getPaymentIntent(intentId: string): Promise<PaymentIntent 
 export async function getPaymentReceipt(userId: string, intentId: string): Promise<PaymentReceipt | undefined> {
   const intent = await getPaymentIntent(intentId);
   if (!intent || intent.userId !== userId || intent.status !== "succeeded") return undefined;
+  return buildPaymentReceiptForIntent(intent);
+}
 
-  const user = await getUser(userId);
+export async function getAdminPaymentReceipt(intentId: string): Promise<PaymentReceipt | undefined> {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.status !== "succeeded") return undefined;
+  return buildPaymentReceiptForIntent(intent);
+}
+
+async function buildPaymentReceiptForIntent(intent: PaymentIntent): Promise<PaymentReceipt | undefined> {
+  let invoicePdfUrl: string | undefined;
+  if (intent.stripeInvoiceId) {
+    invoicePdfUrl = await retrieveStripeInvoiceUrl(intent.stripeInvoiceId);
+  }
+
+  const user = await getUser(intent.userId);
   if (hasDatabase) {
     const [listingRows, subscriptionRows] = await Promise.all([
       db.select().from(listings).where(eq(listings.id, intent.listingId)).limit(1),
@@ -482,7 +527,7 @@ export async function getPaymentReceipt(userId: string, intentId: string): Promi
     ]);
     const listing = listingRows[0] ? toListing(listingRows[0]) : undefined;
     if (!listing) return undefined;
-    return buildPaymentReceipt(intent, user, listing, subscriptionRows[0] ? toListingSubscription(subscriptionRows[0]) : undefined);
+    return buildPaymentReceipt(intent, user, listing, subscriptionRows[0] ? toListingSubscription(subscriptionRows[0]) : undefined, invoicePdfUrl);
   }
 
   const state = await getMemoryState();
@@ -491,7 +536,19 @@ export async function getPaymentReceipt(userId: string, intentId: string): Promi
   const subscription = intent.subscriptionId
     ? state.listingSubscriptions.find((item) => item.id === intent.subscriptionId)
     : undefined;
-  return buildPaymentReceipt(intent, user, listing, subscription);
+  return buildPaymentReceipt(intent, user, listing, subscription, invoicePdfUrl);
+}
+
+export async function getPaymentReceiptPdf(userId: string, intentId: string) {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.userId !== userId || intent.status !== "succeeded" || !intent.stripeInvoiceId) return undefined;
+  return retrieveStripeReceiptPdf(intent.stripeInvoiceId);
+}
+
+export async function getAdminPaymentReceiptPdf(intentId: string) {
+  const intent = await getPaymentIntent(intentId);
+  if (!intent || intent.status !== "succeeded" || !intent.stripeInvoiceId) return undefined;
+  return retrieveStripeReceiptPdf(intent.stripeInvoiceId);
 }
 
 export async function getListingSubscriptionPaymentIntent(userId: string, subscriptionId: string): Promise<PaymentIntent | undefined> {
@@ -509,7 +566,9 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
     if (!listing || !canRestartInitialPayment) return existing;
 
     const now = new Date();
-    const quote = quoteListingSubscription(subscription.planId, countListingPhotos(listing.media));
+    const plan = (await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId)).limit(1))[0];
+    if (!plan) throw new Error("Unknown plan");
+    const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
     let intent: PaymentIntent = {
       id: `pay-${randomUUID()}`,
       userId,
@@ -571,7 +630,9 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
   const listing = state.database.listings.find((item) => item.id === subscription.listingId);
   if (!listing) return existing;
   const now = new Date();
-  const quote = quoteListingSubscription(subscription.planId, countListingPhotos(listing.media));
+  const plan = state.subscriptionPlans.find(p => p.id === subscription.planId);
+  if (!plan) throw new Error("Unknown plan");
+  const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
   let intent: PaymentIntent = {
     id: `pay-${randomUUID()}`,
     userId,
@@ -664,12 +725,26 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
   };
 }
 
-export async function createListing(userId: string, input: ListingInput) {
+export async function createListing(userId: string, input: ListingInput, idempotencyKey?: string) {
   const seller = await ensureSellerProfile(userId);
   const sellerUser = await getUser(userId);
   const now = new Date();
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
+  if (hasDatabase && normalizedIdempotencyKey) {
+    const existing = await db.select().from(listings).where(and(eq(listings.sellerId, seller.id), eq(listings.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+    if (existing[0]) return toListing(existing[0]);
+  }
+
+  if (!hasDatabase && normalizedIdempotencyKey) {
+    const state = await getMemoryState();
+    const existingId = state.listingIdempotencyKeys[`${seller.id}:${normalizedIdempotencyKey}`];
+    const existing = existingId ? state.database.listings.find((item) => item.id === existingId) : undefined;
+    if (existing) return existing;
+  }
+
   const listing: Listing = {
-    id: `gem-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("gem", `${seller.id}:${normalizedIdempotencyKey}`) : `gem-${randomUUID()}`,
     sellerId: seller.id,
     gemTypeId: input.gemTypeId ?? "sapphire",
     title: input.title ?? "Untitled gem listing",
@@ -701,14 +776,22 @@ export async function createListing(userId: string, input: ListingInput) {
   };
 
   if (hasDatabase) {
-    await db.insert(listings).values({
-      ...listing,
-      id: listing.id,
-      publishedAt: null,
-      expiresAt: null,
-      createdAt: now,
-      updatedAt: now
-    });
+    try {
+      await db.insert(listings).values({
+        ...listing,
+        idempotencyKey: normalizedIdempotencyKey,
+        id: listing.id,
+        publishedAt: null,
+        expiresAt: null,
+        createdAt: now,
+        updatedAt: now
+      });
+    } catch (error) {
+      if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
+      const existing = await db.select().from(listings).where(and(eq(listings.sellerId, seller.id), eq(listings.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (existing[0]) return toListing(existing[0]);
+      throw error;
+    }
     await db
       .insert(listingContacts)
       .values({
@@ -723,6 +806,7 @@ export async function createListing(userId: string, input: ListingInput) {
   } else {
     const state = await getMemoryState();
     state.database.listings.push(listing);
+    if (normalizedIdempotencyKey) state.listingIdempotencyKeys[`${seller.id}:${normalizedIdempotencyKey}`] = listing.id;
     state.database.listingContacts[listing.id] = {
       phone: sellerUser.phone,
       remainingReveals: 0
@@ -852,42 +936,37 @@ export async function updateUserListing(userId: string, listingId: string, input
   return listing;
 }
 
-export async function createListingPaymentIntent(userId: string, listingId: string, input: { planId?: string; photoCount?: number; acceptedPolicies?: boolean }): Promise<PaymentIntent> {
+export async function createListingPaymentIntent(userId: string, listingId: string, request: { planId: string; photoCount: number; acceptedPolicies: boolean }, idempotencyKey?: string): Promise<PaymentIntent> {
   const seller = await ensureSellerProfile(userId);
-  const planId = input.planId as ListingSubscriptionPlanId;
-  if (!listingSubscriptionPlans.some((plan) => plan.id === planId)) {
-    throw new Error("Select a valid listing subscription plan.");
-  }
-  if (!input.acceptedPolicies) {
+  const planId = request.planId as ListingSubscriptionPlanId;
+  if (!request.acceptedPolicies) {
     throw new Error("Terms and Privacy Policy acceptance is required before payment.");
   }
 
-  const quote = quoteListingSubscription(planId, Number(input.photoCount ?? 0));
+  const plan = await fetchSubscriptionPlan(request.planId);
+  if (!plan) throw new Error("Unknown plan");
+  const quote = quoteListingSubscription(plan, request.photoCount);
   const now = new Date();
   const policyVersion = "2026-06-11";
   const gateway = listingPaymentGateway();
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
 
   if (hasDatabase) {
     const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
     if (!rows[0]) throw new Error("Listing not found.");
 
-    const [subscription] = await db.insert(listingSubscriptions).values({
-      id: `sub-${randomUUID()}`,
-      userId,
-      listingId,
-      planId,
-      status: "pending_payment",
-      autoRenew: true,
-      createdAt: now,
-      updatedAt: now
-    }).returning();
+    if (normalizedIdempotencyKey) {
+      const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+    }
 
-    const intentId = `pay-${randomUUID()}`;
+    const subscriptionId = normalizedIdempotencyKey ? stableIdFromKey("sub", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `sub-${randomUUID()}`;
+    const intentId = normalizedIdempotencyKey ? stableIdFromKey("pay", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `pay-${randomUUID()}`;
     let intent: PaymentIntent = {
       id: intentId,
       userId,
       listingId,
-      subscriptionId: subscription.id,
+      subscriptionId,
       purpose: "listing_subscription",
       status: "pending",
       planId,
@@ -900,42 +979,62 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
-    intent = await prepareGatewayPayment(userId, intent);
 
-    const [inserted] = await db.insert(paymentIntents).values({
-      id: intent.id,
-      userId,
-      listingId,
-      subscriptionId: subscription.id,
-      purpose: intent.purpose,
-      status: intent.status,
-      planId,
-      quote,
-      amountLkr: intent.amountLkr,
-      currency: intent.currency,
-      gateway: intent.gateway,
-      gatewayReference: intent.gatewayReference,
-      stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
-      stripeSubscriptionId: intent.stripeSubscriptionId,
-      stripeCustomerId: intent.stripeCustomerId,
-      stripeInvoiceId: intent.stripeInvoiceId,
-      paymentUrl: intent.paymentUrl,
-      policyVersion,
-      policyAcceptedAt: now,
-      createdAt: now,
-      updatedAt: now
-    }).returning();
+    let inserted: typeof paymentIntents.$inferSelect;
+    try {
+      const subscription = {
+        id: subscriptionId,
+        userId,
+        listingId,
+        planId,
+        status: "pending_payment" as ListingSubscriptionStatus,
+        autoRenew: true,
+        createdAt: now,
+        updatedAt: now
+      };
+      await db.insert(listingSubscriptions).values(subscription).onConflictDoNothing({ target: listingSubscriptions.id });
 
-    await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscription.id));
-    await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
-    return toPaymentIntent(inserted);
+      [inserted] = await db.insert(paymentIntents).values({
+        id: intent.id,
+        userId,
+        listingId,
+        idempotencyKey: normalizedIdempotencyKey,
+        subscriptionId,
+        purpose: intent.purpose,
+        status: intent.status,
+        planId,
+        quote,
+        amountLkr: intent.amountLkr,
+        currency: intent.currency,
+        gateway: intent.gateway,
+        policyVersion,
+        policyAcceptedAt: now,
+        createdAt: now,
+        updatedAt: now
+      }).returning();
+
+      await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscriptionId));
+      await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
+    } catch (error) {
+      if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
+      const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+      throw error;
+    }
+
+    return ensurePaymentIntentCheckoutUrl(toPaymentIntent(inserted));
   }
 
   const state = await getMemoryState();
   const listing = state.database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
   if (!listing) throw new Error("Listing not found.");
+  const memoryKey = normalizedIdempotencyKey ? `${userId}:${listingId}:${normalizedIdempotencyKey}` : "";
+  const existingIntentId = memoryKey ? state.paymentIntentIdempotencyKeys[memoryKey] : undefined;
+  const existingIntent = existingIntentId ? state.paymentIntents.find((item) => item.id === existingIntentId) : undefined;
+  if (existingIntent) return existingIntent.paymentUrl ? existingIntent : prepareAndUpdateMemoryPaymentIntent(existingIntent);
+
   const subscription: ListingSubscription = {
-    id: `sub-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("sub", memoryKey) : `sub-${randomUUID()}`,
     userId,
     listingId,
     planId,
@@ -946,7 +1045,7 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
     updatedAt: now.toISOString()
   };
   let intent: PaymentIntent = {
-    id: `pay-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("pay", memoryKey) : `pay-${randomUUID()}`,
     userId,
     listingId,
     subscriptionId: subscription.id,
@@ -962,10 +1061,43 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()
   };
-  intent = await prepareGatewayPayment(userId, intent);
   subscription.paymentIntentId = intent.id;
   state.listingSubscriptions.push(subscription);
   state.paymentIntents.push(intent);
+  if (memoryKey) state.paymentIntentIdempotencyKeys[memoryKey] = intent.id;
+  return prepareAndUpdateMemoryPaymentIntent(intent);
+}
+
+async function fetchSubscriptionPlan(planId: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, planId)).limit(1);
+    return rows[0];
+  }
+  return (await getMemoryState()).subscriptionPlans.find((p) => p.id === planId);
+}
+
+async function ensurePaymentIntentCheckoutUrl(intent: PaymentIntent) {
+  if (intent.paymentUrl) return intent;
+  const prepared = await prepareGatewayPayment(intent.userId, intent);
+  if (hasDatabase) {
+    const [updated] = await db.update(paymentIntents).set({
+      gatewayReference: prepared.gatewayReference,
+      stripeCheckoutSessionId: prepared.stripeCheckoutSessionId,
+      stripeSubscriptionId: prepared.stripeSubscriptionId,
+      stripeCustomerId: prepared.stripeCustomerId,
+      stripeInvoiceId: prepared.stripeInvoiceId,
+      paymentUrl: prepared.paymentUrl,
+      updatedAt: new Date()
+    }).where(eq(paymentIntents.id, intent.id)).returning();
+    return toPaymentIntent(updated);
+  }
+  Object.assign(intent, prepared, { updatedAt: new Date().toISOString() });
+  return intent;
+}
+
+async function prepareAndUpdateMemoryPaymentIntent(intent: PaymentIntent) {
+  const prepared = await prepareGatewayPayment(intent.userId, intent);
+  Object.assign(intent, prepared, { updatedAt: new Date().toISOString() });
   return intent;
 }
 
@@ -977,6 +1109,7 @@ export async function confirmPaymentIntent(intentId: string, status: PaymentStat
     const existing = toPaymentIntent(existingRow);
     if (existing.status === "succeeded" && status !== "succeeded") return existing;
     const nextStatus = normalizePaymentStatus(status);
+    if (await shouldIgnoreNonSuccessfulPaymentConfirmation(existing, nextStatus)) return existing;
     const wasSucceeded = existing.status === "succeeded";
     const nextStripeState = mergeStripePaymentState(existing, gatewayReference, stripeState);
     const [updated] = await db.update(paymentIntents).set({
@@ -1001,6 +1134,7 @@ export async function confirmPaymentIntent(intentId: string, status: PaymentStat
   if (!intent) return undefined;
   if (intent.status === "succeeded" && status !== "succeeded") return intent;
   const nextStatus = normalizePaymentStatus(status);
+  if (await shouldIgnoreNonSuccessfulPaymentConfirmation(intent, nextStatus)) return intent;
   const wasSucceeded = intent.status === "succeeded";
   const nextStripeState = mergeStripePaymentState(intent, gatewayReference, stripeState);
   intent.status = wasSucceeded ? "succeeded" : nextStatus;
@@ -1031,14 +1165,14 @@ export async function recordStripeSubscriptionInvoicePayment(input: {
   const paidEventId = `${input.stripeInvoiceId}:paid`;
 
   if (input.billingReason === "subscription_create") {
-    await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "initial_paid", "Initial Stripe subscription invoice paid.");
+    await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "initial_paid", "Initial subscription invoice paid.");
     return confirmPaymentIntent(intent.id, "succeeded", input.stripeSubscriptionId, {
       stripeSubscriptionId: input.stripeSubscriptionId,
       stripeInvoiceId: input.stripeInvoiceId
     });
   }
 
-  const inserted = await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "renewal_paid", "Stripe subscription renewal invoice paid.");
+  const inserted = await recordRenewalEventOnce(intent.subscriptionId, paidEventId, input.stripePaymentIntentId, "renewal_paid", "Subscription renewal invoice paid.");
   if (!inserted) return intent;
   await updatePaymentStripeState(intent.id, { stripeSubscriptionId: input.stripeSubscriptionId, stripeInvoiceId: input.stripeInvoiceId });
   await extendListingSubscription(intent.subscriptionId, intent.id);
@@ -1049,7 +1183,7 @@ export async function markStripeSubscriptionPastDue(
   stripeSubscriptionId: string,
   stripeInvoiceId: string,
   status = "payment_failed",
-  notes = "Stripe subscription invoice payment failed."
+  notes = "Subscription invoice payment failed."
 ) {
   const intent = await getPaymentIntentByStripeSubscription(stripeSubscriptionId);
   if (!intent?.subscriptionId) return undefined;
@@ -1395,7 +1529,14 @@ async function getMemoryState() {
     carts: [],
     orders: [],
     listingSubscriptions: [],
-    paymentIntents: []
+    subscriptionPlans: [
+      { id: "basic", name: "Basic", priceLkr: 500, includedPhotos: 3, extraPhotoPriceLkr: 250, validityMonths: 1, eyebrow: "Starter", summary: "" },
+      { id: "pro", name: "Pro", priceLkr: 1000, includedPhotos: 6, extraPhotoPriceLkr: 500, validityMonths: 2, eyebrow: "Recommended", summary: "" },
+      { id: "plus", name: "Plus", priceLkr: 20000, includedPhotos: 10, extraPhotoPriceLkr: 500, validityMonths: 3, eyebrow: "Premium", summary: "" }
+    ],
+    paymentIntents: [],
+    listingIdempotencyKeys: {},
+    paymentIntentIdempotencyKeys: {}
   };
   return memoryState;
 }
@@ -1425,6 +1566,24 @@ function isSubscriptionInPaidAccess(status: ListingSubscriptionStatus, expiresAt
 function normalizePaymentStatus(status: PaymentStatus): PaymentStatus {
   if (status === "succeeded" || status === "pending" || status === "cancelled" || status === "expired") return status;
   return "failed";
+}
+
+async function shouldIgnoreNonSuccessfulPaymentConfirmation(intent: PaymentIntent, nextStatus: PaymentStatus) {
+  if (nextStatus === "succeeded") return false;
+  if (intent.status === "cancelled") return true;
+  if (!intent.subscriptionId) return false;
+
+  const subscription = await getListingSubscriptionById(intent.subscriptionId);
+  return Boolean(subscription?.paymentIntentId && subscription.paymentIntentId !== intent.id);
+}
+
+async function getListingSubscriptionById(subscriptionId: string) {
+  if (hasDatabase) {
+    const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
+    return rows[0] ? toListingSubscription(rows[0]) : undefined;
+  }
+
+  return (await getMemoryState()).listingSubscriptions.find((item) => item.id === subscriptionId);
 }
 
 function mergeStripePaymentState(intent: PaymentIntent, gatewayReference?: string, stripeState: StripePaymentState = {}) {
@@ -1527,7 +1686,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
     const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
     const subscription = rows[0];
     if (!subscription) return;
-    const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+    const plan = await fetchSubscriptionPlan(subscription.planId);
     if (!plan) return;
     const expiresAt = addMonths(now, plan.validityMonths);
     await db.update(listingSubscriptions).set({
@@ -1549,7 +1708,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
   const state = await getMemoryState();
   const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
   if (!subscription) return;
-  const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+  const plan = await fetchSubscriptionPlan(subscription.planId);
   if (!plan) return;
   const expiresAt = addMonths(now, plan.validityMonths);
   subscription.status = "active";
@@ -1573,7 +1732,7 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
     const rows = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.id, subscriptionId)).limit(1);
     const subscription = rows[0];
     if (!subscription) return;
-    const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+    const plan = await fetchSubscriptionPlan(subscription.planId);
     if (!plan) return;
     const baseDate = subscription.expiresAt && subscription.expiresAt > now ? subscription.expiresAt : now;
     const expiresAt = addMonths(baseDate, plan.validityMonths);
@@ -1591,7 +1750,7 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
   const state = await getMemoryState();
   const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId);
   if (!subscription) return;
-  const plan = listingSubscriptionPlans.find((item) => item.id === subscription.planId);
+  const plan = await fetchSubscriptionPlan(subscription.planId);
   if (!plan) return;
   const currentExpiresAt = subscription.expiresAt ? new Date(subscription.expiresAt) : undefined;
   const baseDate = currentExpiresAt && currentExpiresAt > now ? currentExpiresAt : now;
@@ -1840,7 +1999,7 @@ function toPaymentIntent(row: typeof paymentIntents.$inferSelect): PaymentIntent
   };
 }
 
-function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing, subscription?: ListingSubscription): PaymentReceipt {
+function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing, subscription?: ListingSubscription, invoicePdfUrl?: string): PaymentReceipt {
   const lineItems: PaymentReceipt["lineItems"] = [
     {
       label: `${intent.quote.plan.name} listing subscription`,
@@ -1883,7 +2042,8 @@ function buildPaymentReceipt(intent: PaymentIntent, user: User, listing: Listing
       checkoutSessionId: intent.stripeCheckoutSessionId,
       subscriptionId: intent.stripeSubscriptionId,
       customerId: intent.stripeCustomerId,
-      invoiceId: intent.stripeInvoiceId
+      invoiceId: intent.stripeInvoiceId,
+      invoicePdfUrl
     },
     createdAt: intent.createdAt,
     updatedAt: intent.updatedAt

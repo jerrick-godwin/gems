@@ -8,7 +8,7 @@ const connectionString = process.env.DATABASE_URL;
 export const hasDatabase = Boolean(connectionString);
 
 if (!connectionString) {
-  console.warn("DATABASE_URL is not set. Database operations will fail unless mocked.");
+  console.warn("DATABASE_URL is not set. API requests require PostgreSQL.");
 }
 
 // Disable prefetch as it is not supported for "Transaction" pool mode
@@ -20,14 +20,21 @@ export const db = drizzle(client, { schema });
 
 let compatibilityPromise: Promise<void> | undefined;
 
-export async function ensureDatabaseCompatibility() {
+export function requireDatabase() {
+  if (!hasDatabase) throw new Error("DATABASE_URL is required.");
+}
+
+export async function ensureDatabaseCompatibility(options: { force?: boolean } = {}) {
   if (!hasDatabase) return;
+  if (!options.force && process.env.RUNTIME_DATABASE_COMPATIBILITY !== "true") return;
   compatibilityPromise ??= (async () => {
     await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS address varchar NOT NULL DEFAULT ''`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_checkout_session_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_subscription_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_customer_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_invoice_id varchar`);
+    await db.execute(sql`ALTER TABLE listings ADD COLUMN IF NOT EXISTS idempotency_key varchar`);
+    await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS idempotency_key varchar`);
     await db.execute(sql`
       UPDATE payment_intents
       SET stripe_checkout_session_id = gateway_reference
@@ -44,6 +51,8 @@ export async function ensureDatabaseCompatibility() {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "payment_intents_stripe_checkout_session_id_idx" ON "payment_intents" ("stripe_checkout_session_id")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "payment_intents_stripe_subscription_id_idx" ON "payment_intents" ("stripe_subscription_id")`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "listings_seller_idempotency_unique" ON "listings" ("seller_id", "idempotency_key")`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "payment_intents_user_listing_idempotency_unique" ON "payment_intents" ("user_id", "listing_id", "idempotency_key")`);
     await db.insert(schema.gemTypes)
       .values(worldwideGemTypes)
       .onConflictDoUpdate({
@@ -54,6 +63,17 @@ export async function ensureDatabaseCompatibility() {
           colorHint: sql`excluded.color_hint`
         }
       });
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS "merchant_disclosure" (
+      "id" varchar PRIMARY KEY NOT NULL,
+      "merchant_name" varchar NOT NULL,
+      "email" varchar NOT NULL,
+      "licence_number" varchar NOT NULL
+    )`);
+    await db.execute(sql`
+      INSERT INTO "merchant_disclosure" ("id", "merchant_name", "email", "licence_number")
+      VALUES ('global', 'KRISTIANA MAGRET GEM & JEWELLERY', 'info@gemslanka.lk', '20266DL39394')
+      ON CONFLICT ("id") DO NOTHING
+    `);
   })();
   await compatibilityPromise;
 }

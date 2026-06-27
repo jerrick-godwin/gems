@@ -1,17 +1,21 @@
-import { CreditCard, RefreshCcw, Trash2 } from "lucide-react";
+import { CreditCard, Download, RefreshCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
-import { formatLkr, getListingSubscriptionPlan, type GemType, type Listing, type ListingSubscriptionSummary, type Treatment, type UserDashboard } from "@gems/schemas";
+import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { publicErrorMessage } from "../../shared/helpers";
 
 export function MyListingsView({
   dashboard,
   gemTypes,
+  subscriptionPlans,
   api,
   onDashboardChange
 }: {
   dashboard: UserDashboard | null;
   gemTypes: GemType[];
+  subscriptionPlans: ListingSubscriptionPlan[];
   api: GemsApiClient;
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
@@ -19,8 +23,12 @@ export function MyListingsView({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
   const [payingSubscriptionId, setPayingSubscriptionId] = useState<string | null>(null);
+  const [downloadingPaymentId, setDownloadingPaymentId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCancelSubscriptionId, setConfirmCancelSubscriptionId] = useState<string | null>(null);
+  const cancelAction = useSingleFlightAction();
+  const payAction = useSingleFlightAction();
+  const deleteAction = useSingleFlightAction();
 
   const getStatusLabel = (listing: Listing) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
@@ -39,51 +47,73 @@ export function MyListingsView({
   };
 
   const handleCancelRenewal = async (subscriptionId: string) => {
-    try {
-      setCancellingSubscriptionId(subscriptionId);
-      await api.cancelListingSubscription(subscriptionId);
-      onDashboardChange(await api.dashboard());
-    } catch (error) {
-      alert("Failed to cancel renewal: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setCancellingSubscriptionId(null);
-      setConfirmCancelSubscriptionId(null);
-    }
+    await cancelAction.run(async () => {
+      try {
+        setCancellingSubscriptionId(subscriptionId);
+        await api.cancelListingSubscription(subscriptionId);
+        onDashboardChange(await api.dashboard());
+      } catch (error) {
+        alert(`Failed to cancel renewal: ${publicErrorMessage(error, "Unknown error")}`);
+      } finally {
+        setCancellingSubscriptionId(null);
+        setConfirmCancelSubscriptionId(null);
+      }
+    });
   };
 
   const handlePayNow = async (subscriptionId: string) => {
-    try {
-      setPayingSubscriptionId(subscriptionId);
-      const paymentIntent = await api.getListingSubscriptionPaymentIntent(subscriptionId);
-      if (!paymentIntent.paymentUrl) {
-        alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
-        return;
+    await payAction.run(async () => {
+      try {
+        setPayingSubscriptionId(subscriptionId);
+        const paymentIntent = await api.getListingSubscriptionPaymentIntent(subscriptionId);
+        if (!paymentIntent.paymentUrl) {
+          alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
+          setPayingSubscriptionId(null);
+          payAction.release();
+          return;
+        }
+        window.location.href = paymentIntent.paymentUrl;
+      } catch (error) {
+        alert(`Failed to open checkout: ${publicErrorMessage(error, "Unknown error")}`);
+        setPayingSubscriptionId(null);
+        payAction.release();
       }
-      window.location.href = paymentIntent.paymentUrl;
+    }, { keepLocked: true });
+  };
+
+  const handleDownloadReceipt = async (payment: PaymentIntent) => {
+    try {
+      setDownloadingPaymentId(payment.id);
+      const receiptFile = await api.downloadPaymentReceipt(payment.id);
+      const url = URL.createObjectURL(receiptFile.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = receiptFile.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      alert("Failed to open checkout: " + (error instanceof Error ? error.message : "Unknown error"));
+      alert(`Failed to download receipt: ${publicErrorMessage(error, "Unknown error")}`);
     } finally {
-      setPayingSubscriptionId(null);
+      setDownloadingPaymentId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
-    const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === id);
-    const willRemoveAtExpiry = isSubscriptionInPaidAccess(subscription);
-    try {
-      setDeletingId(id);
-      await api.removeMyListing(id);
-      const newDashboard = await api.dashboard();
-      onDashboardChange(newDashboard);
-      if (willRemoveAtExpiry && subscription?.expiresAt) {
-        alert(`Renewal has been cancelled. This listing will be removed on ${formatDate(subscription.expiresAt)}.`);
+    await deleteAction.run(async () => {
+      try {
+        setDeletingId(id);
+        await api.removeMyListing(id);
+        const newDashboard = await api.dashboard();
+        onDashboardChange(newDashboard);
+      } catch (error) {
+        alert(`Failed to delete listing: ${publicErrorMessage(error, "Unknown error")}`);
+      } finally {
+        setDeletingId(null);
+        setConfirmDeleteId(null);
       }
-    } catch (error) {
-      alert("Failed to delete listing: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setDeletingId(null);
-      setConfirmDeleteId(null);
-    }
+    });
   };
 
   const confirmDeleteListing = confirmDeleteId ? listings.find((listing) => listing.id === confirmDeleteId) : undefined;
@@ -108,7 +138,10 @@ export function MyListingsView({
               const gemTypeName = gemTypes.find((gemType) => gemType.id === listing.gemTypeId)?.name;
               const attributes = getListingAttributes(listing, gemTypeName);
               const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === listing.id);
-              const plan = subscription ? getListingSubscriptionPlan(subscription.planId) : undefined;
+              const plan = subscription ? subscriptionPlans.find(p => p.id === subscription.planId) : undefined;
+              const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
+              const paymentLines = payment ? paymentBreakdown(payment) : [];
+              const canDownloadReceipt = Boolean(payment?.stripeInvoiceId && payment.status === "succeeded");
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -142,6 +175,17 @@ export function MyListingsView({
                               : " · auto-renew cancelled"}
                         </div>
                       )}
+                      {payment && (
+                        <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div>
+                            <strong>Listing payment:</strong> {formatLkr(payment.amountLkr)} · {payment.status.replace("_", " ")}
+                            {payment.stripeInvoiceId ? ` · invoice ${shortRef(payment.stripeInvoiceId)}` : ""}
+                          </div>
+                          {paymentLines.length > 0 && (
+                            <div>{paymentLines.join(" · ")}</div>
+                          )}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
                           {statusInfo.label}
@@ -158,18 +202,28 @@ export function MyListingsView({
                     {subscription && isAwaitingInitialPayment(subscription) && (
                       <button
                         onClick={() => void handlePayNow(subscription.id)}
-                        disabled={payingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "#fff", border: "none", cursor: payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        disabled={payAction.busy || payingSubscriptionId === subscription.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "var(--bg)", border: "none", cursor: payAction.busy || payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                       >
                         <CreditCard size={16} strokeWidth={2.5} />
                         {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
                       </button>
                     )}
+                    {payment && canDownloadReceipt && (
+                      <button
+                        onClick={() => void handleDownloadReceipt(payment)}
+                        disabled={downloadingPaymentId === payment.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: downloadingPaymentId === payment.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                      >
+                        <Download size={16} strokeWidth={2.5} />
+                        {downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}
+                      </button>
+                    )}
                     {subscription?.autoRenew && (
                       <button
                         onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
-                        disabled={cancellingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: "pointer", fontWeight: 600 }}
+                        disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: cancelAction.busy || cancellingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                       >
                         <RefreshCcw size={16} strokeWidth={2.5} />
                         {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
@@ -177,8 +231,8 @@ export function MyListingsView({
                     )}
                     <button 
                       onClick={() => setConfirmDeleteId(listing.id)}
-                      disabled={deletingId === listing.id}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--danger)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}
+                      disabled={deleteAction.busy || deletingId === listing.id}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--danger)", color: "#fff", border: "none", cursor: deleteAction.busy || deletingId === listing.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                     >
                       <Trash2 size={16} strokeWidth={2.5} />
                       {deletingId === listing.id ? "Deleting..." : "Delete"}
@@ -217,8 +271,8 @@ export function MyListingsView({
               </button>
               <button
                 onClick={() => void handleDelete(confirmDeleteId)}
-                disabled={deletingId !== null}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                disabled={deleteAction.busy || deletingId !== null}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deleteAction.busy || deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
               >
                 {deletingId === confirmDeleteId ? "Processing..." : confirmDeleteRemovesAtExpiry ? "Cancel Renewal" : "Proceed to Delete"}
               </button>
@@ -246,8 +300,8 @@ export function MyListingsView({
               </button>
               <button
                 onClick={() => void handleCancelRenewal(confirmCancelSubscriptionId)}
-                disabled={cancellingSubscriptionId !== null}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: cancellingSubscriptionId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                disabled={cancelAction.busy || cancellingSubscriptionId !== null}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: cancelAction.busy || cancellingSubscriptionId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
               >
                 {cancellingSubscriptionId === confirmCancelSubscriptionId ? "Cancelling..." : "Proceed to Cancel"}
               </button>
@@ -286,6 +340,23 @@ function formatTreatment(treatment: Treatment) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-LK", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function findListingPayment(payments: PaymentIntent[], listingId: string, subscription: ListingSubscription | undefined) {
+  const candidates = payments.filter((payment) => payment.listingId === listingId);
+  return candidates.find((payment) => payment.id === subscription?.paymentIntentId) ?? candidates[0];
+}
+
+function paymentBreakdown(payment: PaymentIntent) {
+  const lines = [`Base ${formatLkr(payment.quote.basePriceLkr)}`];
+  if (payment.quote.extraPhotoCount > 0) {
+    lines.push(`${payment.quote.extraPhotoCount} extra photo${payment.quote.extraPhotoCount === 1 ? "" : "s"} ${formatLkr(payment.quote.extraPhotoTotalLkr)}`);
+  }
+  return lines;
+}
+
+function shortRef(value: string) {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
 function isSubscriptionInPaidAccess(subscription: ListingSubscriptionSummary | undefined) {

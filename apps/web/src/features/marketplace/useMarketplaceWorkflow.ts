@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GemsApiClient, MarketplaceSnapshot } from "@gems/api-client";
 import type { CertificateStatus, Listing, Report, Treatment } from "@gems/schemas";
+import { publicErrorMessage } from "../../shared/helpers";
 import type { SortKey, View } from "../../shared/types";
 
 export function useMarketplaceWorkflow({
@@ -60,7 +61,7 @@ export function useMarketplaceWorkflow({
       setFullPhones({});
       setLoadError(null);
     } catch (error: unknown) {
-      setLoadError(error instanceof Error ? error.message : "Unable to load marketplace snapshot");
+      setLoadError(publicErrorMessage(error, "Unable to load marketplace snapshot"));
     }
   }, [api, certificate, gemType, page, query, selectedLocations, sort, treatment]);
 
@@ -71,11 +72,14 @@ export function useMarketplaceWorkflow({
       .then((nextSnapshot) => {
         if (!active) return;
         setSnapshot(nextSnapshot);
+        const publicListings = nextSnapshot.listings.filter((listing) => listing.moderationStatus === "approved");
+        setFilteredListings(publicListings.slice(0, 20));
+        setTotalPages(Math.max(1, Math.ceil(publicListings.length / 20)));
         setLoadError(null);
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setLoadError(error instanceof Error ? error.message : "Unable to load marketplace snapshot");
+        setLoadError(publicErrorMessage(error, "Unable to load marketplace snapshot"));
       });
 
     return () => {

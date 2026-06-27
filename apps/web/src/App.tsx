@@ -17,27 +17,9 @@ import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWor
 import { StatusState } from "./shared/StatusState";
 import { pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
+import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 
-type PaymentNotice = {
-  tone: "success" | "warning" | "error" | "neutral";
-  message: string;
-};
 
-function paymentNoticeFromResult(result: string): PaymentNotice | null {
-  if (result === "success") {
-    return { tone: "success", message: "Payment received. Your listing has moved into moderation." };
-  }
-  if (result === "cancelled") {
-    return { tone: "warning", message: "Checkout was cancelled. Your listing is still saved, and you can restart payment from My Listings." };
-  }
-  if (result === "pending") {
-    return { tone: "neutral", message: "Payment is pending. We will update your listing after Stripe confirms it." };
-  }
-  if (result === "failed" || result === "expired") {
-    return { tone: "error", message: "Payment was not completed. You can restart checkout from My Listings." };
-  }
-  return null;
-}
 
 function App() {
   const [user, setUser] = useState<MarketplaceAuthUser | null>(null);
@@ -129,7 +111,7 @@ function App() {
         if (active) {
           setPaymentNotice({
             tone: "warning",
-            message: "Payment status returned from Stripe. Refresh My Listings if your latest status is not visible yet."
+            message: "Payment status returned. Refresh My Listings if your latest status is not visible yet."
           });
         }
       });
@@ -164,7 +146,7 @@ function App() {
         ? <PrivacyPolicy />
         : view === "refund"
           ? <RefundPolicy />
-          : <ContactUs />;
+          : <ContactUs disclosure={marketplace.snapshot?.content.merchantDisclosure} />;
 
     return (
       <AppFrame {...frameProps}>
@@ -197,7 +179,15 @@ function App() {
     return (
       <AppFrame {...frameProps}>
         {view === "login" && <LoginPage onSignedIn={() => navigateToView("market", { replace: true })} onNavigate={navigateToView} />}
-        {view === "signup" && <SignupPage onSignedIn={() => navigateToView("my_listings", { replace: true })} onNavigate={navigateToView} />}
+        {view === "signup" && (
+          <SignupPage
+            onSignedIn={(dashboard) => {
+              account.setDashboard(dashboard);
+              navigateToView("my_listings", { replace: true });
+            }}
+            onNavigate={navigateToView}
+          />
+        )}
         {view === "forgot_password" && <ForgotPasswordPage onNavigate={navigateToView} />}
       </AppFrame>
     );
@@ -212,12 +202,15 @@ function App() {
   }
 
   if (!marketplace.snapshot) {
+    const isProcessingPaymentReturn = Boolean(paymentNotice);
+
     return (
       <AppFrame {...frameProps} locations={[]}>
         <StatusState
-          title={marketplace.loadError ? "Marketplace unavailable" : "Preparing Gemslanka"}
-          message={marketplace.loadError ?? "Curating live gem listings, seller details, and market filters for you."}
+          title={isProcessingPaymentReturn ? "Processing your payment" : marketplace.loadError ? "Marketplace unavailable" : "Preparing Gemslanka"}
+          message={isProcessingPaymentReturn ? "Please wait while we update your listing and payment status." : marketplace.loadError ?? "Curating live gem listings, seller details, and market filters for you."}
           loading={!marketplace.loadError}
+          variant={isProcessingPaymentReturn && !marketplace.loadError ? "payment" : "marketplace"}
           onRetry={marketplace.refreshSnapshot}
         />
       </AppFrame>
@@ -225,6 +218,7 @@ function App() {
   }
 
   const gemTypes = marketplace.snapshot.gemTypes;
+  const subscriptionPlans = marketplace.snapshot.subscriptionPlans;
   const listings = marketplace.snapshot.listings;
   const locations = marketplace.snapshot.locations;
   const sellers = marketplace.snapshot.sellers;
@@ -266,8 +260,16 @@ function App() {
           onReport={marketplace.handleReportListing}
         />
       )}
-      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} onDashboardChange={account.setDashboard} />}
-      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "my_listings" && paymentNotice && !account.dashboard && (
+        <StatusState
+          title="Processing your payment"
+          message="Please wait while we update your listing and payment status."
+          loading
+          variant="payment"
+        />
+      )}
+      {view === "my_listings" && (!paymentNotice || account.dashboard) && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} onMarketplaceRefresh={marketplace.refreshSnapshot} />}
     </AppFrame>

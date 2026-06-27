@@ -1,11 +1,13 @@
 import { GemsApiClient } from "@gems/api-client";
+import type { UserDashboard } from "@gems/schemas";
 import { UserPlus, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateSignupFields, type AuthFieldErrors } from "./authValidation";
 
-export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; onNavigate: (view: View) => void }) {
+export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: (dashboard: UserDashboard) => void; onNavigate: (view: View) => void }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -13,7 +15,8 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: () => void;
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const submitAction = useSingleFlightAction();
+  const loading = submitAction.busy;
 
   const createAccount = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,28 +35,38 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: () => void;
       return;
     }
 
-    setLoading(true);
-    setFormError(null);
-    try {
-      const createdUser = await authClient.signUp({
-        email: values.email,
-        password: values.password,
-        fullName: values.fullName
-      });
-      const signupApi = new GemsApiClient("/api/v1", {
-        getAccessToken: () => createdUser.getIdToken()
-      });
-      await signupApi.updateMe({
-        name: values.fullName,
-        phone: values.phone,
-        address: values.address
-      });
-      onSignedIn();
-    } catch (error) {
-      setFormError(authErrorMessage(error, "Unable to create your account."));
-    } finally {
-      setLoading(false);
-    }
+    await submitAction.run(async () => {
+      setFormError(null);
+      try {
+        const createdUser = await authClient.signUp({
+          email: values.email,
+          password: values.password,
+          fullName: values.fullName
+        });
+        const signupApi = new GemsApiClient("/api/v1", {
+          getAccessToken: () => createdUser.getIdToken()
+        });
+        try {
+          await signupApi.updateMe({
+            name: values.fullName,
+            phone: values.phone,
+            address: values.address
+          });
+        } catch (profileError) {
+          const details = profileError instanceof Error ? profileError.message : "Unable to save profile details.";
+          throw new Error(`Your account was created, but we could not save your phone number and address. Please sign in and update your profile. ${details}`);
+        }
+
+        try {
+          onSignedIn(await signupApi.dashboard());
+        } catch (dashboardError) {
+          const details = dashboardError instanceof Error ? dashboardError.message : "Unable to load profile details.";
+          throw new Error(`Your account and contact details were saved, but we could not load your profile right away. Please refresh or sign in again. ${details}`);
+        }
+      } catch (error) {
+        setFormError(authErrorMessage(error, "Unable to create your account."));
+      }
+    });
   };
 
   const handleAuthLinkClick = (event: MouseEvent<HTMLAnchorElement>, nextView: View) => {

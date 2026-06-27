@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
 import { clearAdminSession } from "./useAdminSession";
+import { publicErrorMessage } from "../../shared/helpers";
 
 export function useAdminModerationWorkflow({
   api,
@@ -36,7 +37,7 @@ export function useAdminModerationWorkflow({
         if (!active) return;
         clearAdminSession(setToken);
         setSnapshot(null);
-        setLoadError(error instanceof Error ? error.message : "Admin session expired");
+        setLoadError(publicErrorMessage(error, "Admin session expired"));
       })
       .finally(() => {
         if (active) setLoading(false);
