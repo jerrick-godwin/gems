@@ -184,7 +184,7 @@ export function MyListingsView({
                       <button
                         onClick={() => void handlePayNow(subscription.id)}
                         disabled={payAction.busy || payingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "#fff", border: "none", cursor: payAction.busy || payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "var(--bg)", border: "none", cursor: payAction.busy || payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
                       >
                         <CreditCard size={16} strokeWidth={2.5} />
                         {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
