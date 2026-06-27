@@ -1,5 +1,10 @@
 import Stripe from "stripe";
-import { listingSubscriptionPlans, type PaymentIntent } from "@gems/schemas";
+import {
+  type PaymentIntent,
+  type PaymentPurpose,
+  type ListingPaymentQuote,
+  type ListingSubscriptionPlan
+} from "@gems/schemas";
 
 const STRIPE_API_VERSION = "2026-02-25.clover";
 
@@ -84,7 +89,7 @@ export function isStripeConfigured() {
 }
 
 function planIntervalCount(intent: PaymentIntent) {
-  return listingSubscriptionPlans.find((plan) => plan.id === intent.planId)?.validityMonths ?? 1;
+  return intent.quote.plan.validityMonths ?? 1;
 }
 
 function recurringPriceData(intent: PaymentIntent, amountLkr: number, name: string, description: string) {

@@ -233,6 +233,7 @@ function App() {
   }
 
   const gemTypes = marketplace.snapshot.gemTypes;
+  const subscriptionPlans = marketplace.snapshot.subscriptionPlans;
   const listings = marketplace.snapshot.listings;
   const locations = marketplace.snapshot.locations;
   const sellers = marketplace.snapshot.sellers;
@@ -274,8 +275,8 @@ function App() {
           onReport={marketplace.handleReportListing}
         />
       )}
-      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} onDashboardChange={account.setDashboard} />}
-      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "my_listings" && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} onMarketplaceRefresh={marketplace.refreshSnapshot} />}
     </AppFrame>

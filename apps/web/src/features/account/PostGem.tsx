@@ -1,7 +1,7 @@
 import { Camera, Check, ChevronRight, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
-import { formatLkr, listingSubscriptionPlans, quoteListingSubscription, type ListingMedia, type ListingSubscriptionPlanId, type Treatment, type UserDashboard } from "@gems/schemas";
+import { formatLkr, quoteListingSubscription, type ListingMedia, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
 import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 function formatPriceInput(value: string) {
@@ -13,42 +13,32 @@ function parsePriceInput(value: string) {
   return Number(value.replace(/\D/g, "") || 0);
 }
 
-const planHighlights: Record<ListingSubscriptionPlanId, { eyebrow: string; summary: string }> = {
-  basic: {
-    eyebrow: "Starter",
-    summary: "Simple listing for a quick one-month post"
-  },
-  pro: {
-    eyebrow: "Recommended",
-    summary: "Best value for richer gem presentation"
-  },
-  plus: {
-    eyebrow: "Premium",
-    summary: "Longer visibility with the largest photo set"
-  }
-};
+
 
 export function PostGem({
   gemTypes,
   locations,
+  subscriptionPlans,
   api,
   onDashboardChange
 }: {
   gemTypes: MarketplaceSnapshot["gemTypes"];
   locations: string[];
+  subscriptionPlans: ListingSubscriptionPlan[];
   api: GemsApiClient;
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [certificate, setCertificateFile] = useState<File | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<ListingSubscriptionPlanId>("pro");
+  const [selectedPlan, setSelectedPlan] = useState<string>("pro");
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [priceInput, setPriceInput] = useState("");
   const photosInputRef = useRef<HTMLInputElement>(null);
   const certInputRef = useRef<HTMLInputElement>(null);
   const submitAction = useSingleFlightAction();
-  const quote = quoteListingSubscription(selectedPlan, photos.length);
+  const activePlan = subscriptionPlans.find(p => p.id === selectedPlan) || subscriptionPlans[0];
+  const quote = quoteListingSubscription(activePlan, photos.length);
   const isSubmitting = submitAction.busy || status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating payment...";
 
   const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -260,9 +250,8 @@ export function PostGem({
               <h2 id="listing-plan-heading">Listing Subscription</h2>
             </div>
             <div className="plan-grid">
-              {listingSubscriptionPlans.map((plan) => {
+              {subscriptionPlans.map((plan) => {
                 const isSelected = selectedPlan === plan.id;
-                const highlight = planHighlights[plan.id];
 
                 return (
                   <label className={`plan-option plan-option-${plan.id} ${isSelected ? "selected" : ""}`} key={plan.id}>
@@ -270,10 +259,10 @@ export function PostGem({
                     <span className="plan-option-check" aria-hidden="true">
                       <Check size={15} strokeWidth={3} />
                     </span>
-                    <span className="plan-option-eyebrow">{highlight.eyebrow}</span>
+                    <span className="plan-option-eyebrow">{plan.eyebrow}</span>
                     <strong>{plan.name}</strong>
                     <span className="plan-option-price">{formatLkr(plan.priceLkr)}</span>
-                    <small className="plan-option-summary">{highlight.summary}</small>
+                    <small className="plan-option-summary">{plan.summary}</small>
                     <span className="plan-feature">
                       <Check size={15} strokeWidth={2.6} />
                       {plan.includedPhotos} photos included

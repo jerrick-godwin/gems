@@ -5,6 +5,7 @@ import type {
   GemType,
   Listing,
   ListingSubscription,
+  ListingSubscriptionPlan,
   ListingSubscriptionPlanId,
   MarketplaceContent,
   Order,
@@ -31,6 +32,7 @@ export interface MarketplaceSnapshot {
   conversations: Conversation[];
   savedSearches: SavedSearch[];
   content: MarketplaceContent;
+  subscriptionPlans: ListingSubscriptionPlan[];
 }
 
 export interface AdminSession {
