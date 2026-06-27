@@ -9,6 +9,7 @@ import {
   listingMedia as listingMediaTable,
   listings as listingTable,
   locations as locationsTable,
+  merchantDisclosure as merchantDisclosureTable,
   reports as reportTable,
   savedSearches as savedSearchTable,
   sellerProfiles as sellerProfileTable,
@@ -42,14 +43,15 @@ export async function getMutableMarketplaceDatabase() {
 
 export async function getMarketplaceSnapshot() {
   if (hasDatabase) {
-    const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows, subscriptionPlanRows] = await Promise.all([
+    const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows, subscriptionPlanRows, merchantDisclosureRows] = await Promise.all([
       db.select().from(gemTypeTable).orderBy(asc(gemTypeTable.name)),
       db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`)),
       db.select().from(sellerProfileTable),
       db.select().from(conversationTable),
       db.select().from(savedSearchTable),
       db.select().from(locationsTable),
-      db.select().from(subscriptionPlanTable).orderBy(asc(subscriptionPlanTable.priceLkr))
+      db.select().from(subscriptionPlanTable).orderBy(asc(subscriptionPlanTable.priceLkr)),
+      db.select().from(merchantDisclosureTable).limit(1)
     ]);
     return {
       gemTypes: gemTypeRows,
@@ -58,7 +60,12 @@ export async function getMarketplaceSnapshot() {
       sellers: sellerRows.map(toSellerProfile),
       conversations: conversationRows.map(toConversation),
       savedSearches: savedSearchRows.map(toSavedSearch),
-      content: emptyMarketplaceContent(),
+      content: {
+        safetyTips: [],
+        promotions: [],
+        sellerMetrics: [],
+        merchantDisclosure: merchantDisclosureRows[0] || undefined,
+      },
       subscriptionPlans: subscriptionPlanRows
     };
   }

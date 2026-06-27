@@ -63,6 +63,17 @@ export async function ensureDatabaseCompatibility(options: { force?: boolean } =
           colorHint: sql`excluded.color_hint`
         }
       });
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS "merchant_disclosure" (
+      "id" varchar PRIMARY KEY NOT NULL,
+      "merchant_name" varchar NOT NULL,
+      "email" varchar NOT NULL,
+      "licence_number" varchar NOT NULL
+    )`);
+    await db.execute(sql`
+      INSERT INTO "merchant_disclosure" ("id", "merchant_name", "email", "licence_number")
+      VALUES ('global', 'KRISTIANA MAGRET GEM & JEWELLERY', 'info@gemslanka.lk', '20266DL39394')
+      ON CONFLICT ("id") DO NOTHING
+    `);
   })();
   await compatibilityPromise;
 }

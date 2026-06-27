@@ -1047,7 +1047,7 @@ select {
   }
   
   .total-amount::before {
-    content: "Total Amount: ";
+    content: "Total Due: ";
     color: var(--ink-soft);
     font-size: 14px;
     font-weight: 700;

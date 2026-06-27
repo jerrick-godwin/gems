@@ -2,7 +2,7 @@ import "../env.js";
 import { sql } from "drizzle-orm";
 import { db, hasDatabase } from "./index.js";
 import { worldwideGemTypes } from "./gem-catalog.js";
-import { gemTypes, subscriptionPlans } from "./schema.js";
+import { gemTypes, subscriptionPlans, merchantDisclosure } from "./schema.js";
 
 if (!hasDatabase) {
   throw new Error("DATABASE_URL is required to seed PostgreSQL.");
@@ -41,5 +41,20 @@ await db.insert(subscriptionPlans)
   });
 
 console.log("Seeded subscription plans into PostgreSQL.");
+
+await db.insert(merchantDisclosure)
+  .values([
+    { id: "global", merchantName: "KRISTIANA MAGRET GEM & JEWELLERY", email: "info@gemslanka.lk", licenceNumber: "20266DL39394" }
+  ])
+  .onConflictDoUpdate({
+    target: merchantDisclosure.id,
+    set: {
+      merchantName: sql`excluded.merchant_name`,
+      email: sql`excluded.email`,
+      licenceNumber: sql`excluded.licence_number`
+    }
+  });
+
+console.log("Seeded merchant disclosure into PostgreSQL.");
 
 process.exit(0);

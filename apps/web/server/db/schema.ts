@@ -262,3 +262,10 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").notNull().default(1),
   unitPriceLkr: integer("unit_price_lkr").notNull()
 });
+
+export const merchantDisclosure = pgTable("merchant_disclosure", {
+  id: varchar("id").primaryKey(),
+  merchantName: varchar("merchant_name").notNull(),
+  email: varchar("email").notNull(),
+  licenceNumber: varchar("licence_number").notNull()
+});

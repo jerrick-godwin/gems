@@ -17,27 +17,9 @@ import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWor
 import { StatusState } from "./shared/StatusState";
 import { pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
+import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 
-type PaymentNotice = {
-  tone: "success" | "warning" | "error" | "neutral";
-  message: string;
-};
 
-function paymentNoticeFromResult(result: string): PaymentNotice | null {
-  if (result === "success") {
-    return { tone: "success", message: "Payment received. Your listing has moved into moderation." };
-  }
-  if (result === "cancelled") {
-    return { tone: "warning", message: "Checkout was cancelled. Your listing is still saved, and you can restart payment from My Listings." };
-  }
-  if (result === "pending") {
-    return { tone: "neutral", message: "Payment is pending. We will update your listing after Stripe confirms it." };
-  }
-  if (result === "failed" || result === "expired") {
-    return { tone: "error", message: "Payment was not completed. You can restart checkout from My Listings." };
-  }
-  return null;
-}
 
 function App() {
   const [user, setUser] = useState<MarketplaceAuthUser | null>(null);
@@ -164,7 +146,7 @@ function App() {
         ? <PrivacyPolicy />
         : view === "refund"
           ? <RefundPolicy />
-          : <ContactUs />;
+          : <ContactUs disclosure={marketplace.snapshot?.content.merchantDisclosure} />;
 
     return (
       <AppFrame {...frameProps}>
