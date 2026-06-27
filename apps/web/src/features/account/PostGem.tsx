@@ -3,15 +3,9 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, quoteListingSubscription, type ListingMedia, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
 import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { formatPriceInput, parsePriceInput, isUploadableUrl } from "../../shared/helpers";
 
-function formatPriceInput(value: string) {
-  const digits = value.replace(/\D/g, "");
-  return digits ? Number(digits).toLocaleString("en-US") : "";
-}
 
-function parsePriceInput(value: string) {
-  return Number(value.replace(/\D/g, "") || 0);
-}
 
 
 
@@ -512,7 +506,7 @@ export function PostGem({
                   <tr>
                     <td colSpan={2}>
                       <div className="total-row">
-                        <span className="total-label">Total Amount</span>
+                        <span className="total-label">Total Due: </span>
                         <span className="total-amount">{quote.totalLkr.toLocaleString("en-US")}</span>
                       </div>
                     </td>
@@ -573,6 +567,4 @@ export function PostGem({
   );
 }
 
-function isUploadableUrl(uploadUrl: string) {
-  return uploadUrl.startsWith("http") || uploadUrl.startsWith("/");
-}
+

@@ -247,10 +247,17 @@ export interface SellerMetric {
   value: string;
 }
 
+export interface MerchantDisclosure {
+  merchantName: string;
+  email: string;
+  licenceNumber: string;
+}
+
 export interface MarketplaceContent {
   safetyTips: string[];
   promotions: PromotionProduct[];
   sellerMetrics: SellerMetric[];
+  merchantDisclosure?: MerchantDisclosure;
 }
 
 export interface UserSettings {
