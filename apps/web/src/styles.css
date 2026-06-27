@@ -904,88 +904,105 @@ select {
   box-shadow: inset 0 1px 0 rgba(var(--foreground-rgb), 0.08);
 }
 
-.order-summary-plan {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line-subtle);
+.order-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
 }
 
-.order-summary-plan div,
-.order-summary-line span {
-  display: grid;
-  gap: 4px;
-}
-
-.order-summary-plan span,
-.order-summary-total span,
-.order-summary-line > span {
+.order-summary-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(253, 212, 4, 0.24);
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0;
-  text-transform: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.order-summary-plan strong {
+.order-summary-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line-subtle);
+  vertical-align: top;
+}
+
+.order-summary-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.item-title strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.item-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.item-badge.package {
+  background: var(--emerald-subtle);
+  color: var(--emerald-dark);
+}
+
+.item-badge.additional {
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
+.item-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.align-right {
+  text-align: right;
+}
+
+.amount-cell {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  vertical-align: middle !important;
+}
+
+.order-summary-table tfoot td {
+  padding-top: 16px;
+  border-top: 2px solid rgba(253, 212, 4, 0.28);
+}
+
+.total-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 60px;
+}
+
+.total-label {
   color: var(--ink);
   font-size: 15px;
   font-weight: 800;
-  line-height: 1;
 }
 
-.order-summary-plan small,
-.order-summary-line small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-transform: none;
-}
-
-.order-summary-lines {
-  display: grid;
-  gap: 4px;
-}
-
-.order-summary-line,
-.order-summary-total {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-}
-
-.order-summary-line {
-  min-height: 36px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--line-subtle);
-}
-
-.order-summary-line strong {
+.total-amount {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.order-summary-total {
-  padding: 10px 12px;
-  border: 1px solid rgba(253, 212, 4, 0.28);
-  border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, var(--selected-bg), var(--surface-muted));
-}
-
-.order-summary-total strong {
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1;
-  text-align: right;
-  white-space: nowrap;
 }
 
 @media (max-width: 980px) {
@@ -999,27 +1016,42 @@ select {
 }
 
 @media (max-width: 640px) {
-  .order-summary-plan,
-  .order-summary-line,
-  .order-summary-total {
-    grid-template-columns: 1fr;
+  .order-summary-table th {
+    display: none;
   }
-
-  .order-summary-plan {
-    display: grid;
+  
+  .order-summary-table td {
+    display: block;
+    width: 100%;
+    padding: 8px 0;
   }
-
-  .order-summary-line strong,
-  .order-summary-total strong {
+  
+  .order-summary-table td.align-right {
     text-align: left;
   }
-
-  .order-summary-total strong {
-    font-size: 16px;
+  
+  .amount-cell::before {
+    content: "Amount: ";
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
   }
-
-  .order-summary-total {
-    gap: 8px;
+  
+  .total-label {
+    display: none;
+  }
+  
+  .total-amount {
+    text-align: left;
+    font-size: 18px;
+  }
+  
+  .total-amount::before {
+    content: "Total Amount: ";
+    color: var(--ink-soft);
+    font-size: 14px;
+    font-weight: 700;
+    margin-right: 8px;
   }
 }
 
