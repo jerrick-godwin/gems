@@ -35,13 +35,17 @@ cp apps/web/.env.example apps/web/.env
 
 The app requires `DATABASE_URL` for local development and production. Runtime marketplace and user records are read from PostgreSQL through Drizzle.
 
-Password reset emails are sent by Firebase Authentication, so local reset links only work after the public buyer/seller Firebase web config values are set in `apps/web/.env`:
+Password reset emails and admin sign-in are sent through Firebase Authentication, so local reset links and admin login only work after the public buyer/seller and admin Firebase web config values are set in `apps/web/.env`:
 
 ```bash
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=...
 VITE_FIREBASE_APP_ID=...
+VITE_ADMIN_FIREBASE_API_KEY=...
+VITE_ADMIN_FIREBASE_AUTH_DOMAIN=...
+VITE_ADMIN_FIREBASE_PROJECT_ID=...
+VITE_ADMIN_FIREBASE_APP_ID=...
 ```
 
 After changing these values, restart `npm run dev`. In the Firebase console, make sure Email/Password sign-in is enabled and your local or production domain is listed under Authentication authorized domains.
@@ -56,14 +60,13 @@ npm run dev
 
 The monolith runs one Node process with Vite middleware in development. It serves the web app and `/api/v1` endpoints from the same origin.
 
-Run the admin panel in a second terminal after the backend is running:
+Run the admin panel in a second terminal after the backend is running if you want a standalone admin dev server:
 
 ```bash
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=change-me ADMIN_SESSION_SECRET=local-secret npm run dev
 npm run dev:admin
 ```
 
-The public web app and API run on `http://127.0.0.1:4100`. The admin panel runs on `http://127.0.0.1:4200` and calls the protected admin API on `4100`.
+The public web app and API run on `http://127.0.0.1:4100`; the same server also serves `/admin`. The standalone admin panel runs on `http://127.0.0.1:4200` and calls the protected admin API on `4100`.
 
 ## Quality Checks
 
@@ -86,15 +89,19 @@ npm start
 
 ## Admin auth
 
-Admin login is separate from buyer/seller access. Configure these environment variables on the backend process before using `/api/v1/admin/*`:
+Admin login is separate from buyer/seller access and uses the admin Firebase project. Configure the admin Firebase web app values for the browser build:
 
 ```bash
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=change-me
-ADMIN_SESSION_SECRET=replace-with-a-long-random-secret
+VITE_ADMIN_FIREBASE_API_KEY=...
+VITE_ADMIN_FIREBASE_AUTH_DOMAIN=...
+VITE_ADMIN_FIREBASE_PROJECT_ID=...
+VITE_ADMIN_FIREBASE_STORAGE_BUCKET=...
+VITE_ADMIN_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_ADMIN_FIREBASE_APP_ID=...
+VITE_ADMIN_FIREBASE_MEASUREMENT_ID=...
 ```
 
-The admin panel stores the returned bearer token in local storage and sends it to protected admin endpoints. Public marketplace snapshots only include approved listings and do not include reports.
+The admin panel stores the Firebase ID token in local storage and sends it to protected admin endpoints. Public marketplace snapshots only include approved listings and do not include reports.
 
 ## Listing Payments
 
