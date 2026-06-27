@@ -465,41 +465,60 @@ export function PostGem({
               <h2 id="order-summary-heading">Order Summary</h2>
             </div>
             <div className="order-summary-card">
-              <div className="order-summary-plan">
-                <div>
-                  <span>Selected plan</span>
-                  <strong>{quote.plan.name}</strong>
-                </div>
-                <small>
-                  {quote.plan.includedPhotos} photos included · {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
-                </small>
-              </div>
-
-              <div className="order-summary-lines" aria-label="Payment breakdown">
-                <div className="order-summary-line">
-                  <span>Listing subscription</span>
-                  <strong>{formatLkr(quote.basePriceLkr)}</strong>
-                </div>
-                <div className="order-summary-line">
-                  <span>
-                    Photos uploaded
-                    <small>{photos.length} of {quote.plan.includedPhotos} included</small>
-                  </span>
-                  <strong>{quote.extraPhotoCount > 0 ? `${quote.extraPhotoCount} extra` : "Included"}</strong>
-                </div>
-                <div className="order-summary-line">
-                  <span>
-                    Extra-photo fees
-                    <small>{formatLkr(quote.plan.extraPhotoPriceLkr)} each after included photos</small>
-                  </span>
-                  <strong>{quote.extraPhotoTotalLkr > 0 ? formatLkr(quote.extraPhotoTotalLkr) : "None"}</strong>
-                </div>
-              </div>
-
-              <div className="order-summary-total">
-                <span>Payment due</span>
-                <strong>{formatLkr(quote.totalLkr)}</strong>
-              </div>
+              <table className="order-summary-table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th className="align-right">Amount (LKR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div className="item-title">
+                        <span className="item-badge package">Package</span>
+                        <strong>{quote.plan.name} Plan</strong>
+                      </div>
+                      <div className="item-desc">
+                        {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
+                        <br />
+                        Includes up to {quote.plan.includedPhotos} photos
+                      </div>
+                    </td>
+                    <td className="align-right amount-cell">
+                      {quote.basePriceLkr.toLocaleString("en-US")}
+                    </td>
+                  </tr>
+                  
+                  <tr>
+                    <td>
+                      <div className="item-title">
+                        <span className="item-badge additional">Additional</span>
+                        <strong>Extra Photos</strong>
+                      </div>
+                      <div className="item-desc">
+                        {quote.extraPhotoCount > 0 
+                          ? `${quote.extraPhotoCount} extra photo${quote.extraPhotoCount > 1 ? "s" : ""} × ${quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each`
+                          : `${photos.length} of ${quote.plan.includedPhotos} included photos used`
+                        }
+                      </div>
+                    </td>
+                    <td className="align-right amount-cell">
+                      {quote.extraPhotoTotalLkr > 0 ? quote.extraPhotoTotalLkr.toLocaleString("en-US") : "0"}
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={2}>
+                      <div className="total-row">
+                        <span className="total-label">Total Amount</span>
+                        <span className="total-amount">{quote.totalLkr.toLocaleString("en-US")}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </section>
 
