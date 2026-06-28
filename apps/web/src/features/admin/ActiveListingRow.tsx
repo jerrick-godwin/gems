@@ -152,12 +152,12 @@ export function ActiveListingRow({
               <dl className="active-listing-detail-grid">
                 <Detail label="Title" value={listing.title} />
                 <Detail label="Gem type ID" value={listing.gemTypeId} />
-                <Detail label="Description" value={listing.description || "Not provided"} wide />
+                <Detail label="Description" value={listing.description} wide />
                 <Detail label="Location" value={listing.location} />
                 <Detail label="Price" value={formatLkr(listing.priceLkr)} />
                 <Detail label="Carat" value={String(listing.attributes.carat)} />
-                <Detail label="Color" value={listing.attributes.color || "Not provided"} />
-                <Detail label="Origin" value={listing.attributes.origin || "Not provided"} />
+                <Detail label="Color" value={listing.attributes.color} />
+                <Detail label="Origin" value={listing.attributes.origin} />
                 <Detail label="Treatment" value={listing.attributes.treatment.replace("_", " ")} />
                 <Detail label="Certificate status" value={listing.attributes.certificateStatus.replace("_", " ")} />
               </dl>
@@ -166,10 +166,10 @@ export function ActiveListingRow({
             <section className="active-listing-detail-section">
               <h4>Seller Details</h4>
               <dl className="active-listing-detail-grid">
-                <Detail label="Display name" value={seller?.displayName || "Unknown"} />
-                <Detail label="User name" value={sellerUser?.name || "Unknown"} />
-                <Detail label="Email" value={sellerUser?.email || "Unknown"} />
-                <Detail label="Phone" value={sellerUser?.phone || "Unknown"} />
+                <Detail label="Display name" value={seller?.displayName} />
+                <Detail label="User name" value={sellerUser?.name} />
+                <Detail label="Email" value={sellerUser?.email} />
+                <Detail label="Phone" value={sellerUser?.phone} />
               </dl>
             </section>
 
@@ -204,16 +204,14 @@ export function ActiveListingRow({
               {payment ? (
                 <dl className="active-listing-detail-grid">
                   <Detail label="Plan" value={payment.quote.plan.name} />
-                  <Detail label="Amount" value={formatLkr(payment.amountLkr)} />
                   <Detail label="Base price" value={formatLkr(payment.quote.basePriceLkr)} />
                   <Detail label="Extra photos" value={`${payment.quote.extraPhotoCount} (${formatLkr(payment.quote.extraPhotoTotalLkr)})`} />
                   <Detail label="Total" value={formatLkr(payment.quote.totalLkr)} />
-                  <Detail label="Subscription ID" value={payment.subscriptionId ? shortRef(payment.subscriptionId) : "None"} />
-                  <Detail label="Gateway subscription" value={payment.stripeSubscriptionId ? shortRef(payment.stripeSubscriptionId) : "Not available"} />
-                  <Detail label="Invoice ID" value={payment.stripeInvoiceId ? shortRef(payment.stripeInvoiceId) : "Not available"} />
+                  <Detail label="Subscription ID" value={payment.subscriptionId} />
+                  <Detail label="Gateway subscription" value={payment.stripeSubscriptionId} />
                   <Detail label="Policy accepted" value={formatDate(payment.policyAcceptedAt)} />
                   <Detail label="Listing expiry" value={formatOptionalDate(listing.expiresAt)} />
-                  <Detail label="Auto-renew" value={listing.subscription ? (listing.subscription.autoRenew ? "Enabled" : "Disabled") : "Not available"} />
+                  <Detail label="Auto-renew" value={listing.subscription ? (listing.subscription.autoRenew ? "Enabled" : "Disabled") : undefined} />
                 </dl>
               ) : (
                 <p className="active-listing-empty">No subscription payment record found.</p>
@@ -227,13 +225,10 @@ export function ActiveListingRow({
                 <Detail label="Moderation" value={listing.moderationStatus.replace("_", " ")} />
                 <Detail label="Published" value={formatOptionalDate(listing.publishedAt)} />
                 <Detail label="Expires" value={formatOptionalDate(listing.expiresAt)} />
-                <Detail label="Promotions" value={listing.promoted.length > 0 ? listing.promoted.join(", ") : "None"} />
+                <Detail label="Promotions" value={listing.promoted.length > 0 ? listing.promoted.join(", ") : undefined} />
                 <Detail label="Campaigns" value={campaignSummary(listing)} />
                 <Detail label="Views" value={String(listing.stats.views)} />
-                <Detail label="Saves" value={String(listing.stats.saves)} />
                 <Detail label="Phone reveals" value={String(listing.stats.phoneReveals)} />
-                <Detail label="Chats" value={String(listing.stats.chats)} />
-                <Detail label="WhatsApp clicks" value={String(listing.stats.whatsappClicks)} />
               </dl>
             </section>
           </div>
@@ -252,7 +247,8 @@ export function ActiveListingRow({
   );
 }
 
-function Detail({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+function Detail({ label, value, wide = false }: { label: string; value?: string | null; wide?: boolean }) {
+  if (!value) return null;
   return (
     <div className={wide ? "wide" : undefined}>
       <dt>{label}</dt>
@@ -317,7 +313,7 @@ function formatDate(value: string) {
 }
 
 function formatOptionalDate(value?: string) {
-  return value ? formatDate(value) : "Not available";
+  return value ? formatDate(value) : undefined;
 }
 
 function shortRef(value: string) {
@@ -330,7 +326,7 @@ function isPdfMedia(media: ListingMedia) {
 }
 
 function campaignSummary(listing: Listing) {
-  if (!listing.campaigns.length) return "None";
+  if (!listing.campaigns.length) return undefined;
   return listing.campaigns
     .map((campaign) => `${campaign.type} ${campaign.status} until ${formatDate(campaign.endsAt)}`)
     .join(", ");
