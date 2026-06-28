@@ -938,6 +938,22 @@ select {
   line-height: 1.4;
 }
 
+.item-desc-checklist {
+  display: grid;
+  gap: 4px;
+}
+
+.item-desc-checklist span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.item-desc-checklist svg {
+  flex: 0 0 auto;
+  color: var(--brand-gold);
+}
+
 .align-right {
   text-align: right;
 }

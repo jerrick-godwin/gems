@@ -470,10 +470,15 @@ export function PostGem({
                         <span className="item-badge package">Package</span>
                         <strong>{quote.plan.name} Plan</strong>
                       </div>
-                      <div className="item-desc">
-                        {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
-                        <br />
-                        Includes up to {quote.plan.includedPhotos} photos
+                      <div className="item-desc item-desc-checklist">
+                        <span>
+                          <Check size={14} strokeWidth={2.6} />
+                          {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
+                        </span>
+                        <span>
+                          <Check size={14} strokeWidth={2.6} />
+                          Includes up to {quote.plan.includedPhotos} photos
+                        </span>
                       </div>
                     </td>
                     <td className="align-right amount-cell">
