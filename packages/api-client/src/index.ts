@@ -94,6 +94,14 @@ export class GemsApiClient {
     return this.authJson<{ phone: string; remainingReveals: number }>(`/listings/${listingId}/reveal-phone?full=1`, { method: "POST" });
   }
 
+  async recordListingInteraction(listingId: string, type: "view" | "whatsapp_click"): Promise<void> {
+    await fetch(`${this.baseUrl}/listings/${listingId}/interactions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type })
+    });
+  }
+
   async reportListing(listingId: string, reason: string, notes?: string): Promise<void> {
     await this.authJson(`/listings/${listingId}/report`, {
       method: "POST",
@@ -151,6 +159,10 @@ export class GemsApiClient {
 
   async downloadPaymentReceipt(paymentIntentId: string): Promise<{ blob: Blob; fileName: string }> {
     const response = await this.authRequest(`/users/me/payment-intents/${paymentIntentId}/receipt-pdf`);
+    if (!response.ok) {
+      const errorMsg = await readApiError(response);
+      throw new Error(errorMsg);
+    }
     const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "stripe-receipt.pdf";
     return { blob: await response.blob(), fileName };
   }
@@ -226,6 +238,14 @@ export class GemsAdminApiClient {
     });
     if (!response.ok) throw new Error("Admin session expired");
     return response.json() as Promise<AdminSession>;
+  }
+
+  async getPaymentReceipt(token: string, paymentIntentId: string): Promise<PaymentReceipt> {
+    const response = await fetch(`${this.baseUrl}/admin/payment-intents/${paymentIntentId}/receipt`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load receipt");
+    return response.json() as Promise<PaymentReceipt>;
   }
 
   async moderationSnapshot(token: string): Promise<AdminModerationSnapshot> {
@@ -332,7 +352,13 @@ export class GemsAdminApiClient {
     const response = await fetch(`${this.baseUrl}/admin/payment-intents/${paymentIntentId}/receipt-pdf`, {
       headers: adminHeaders(token)
     });
-    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load receipt");
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("Admin session expired");
+      }
+      const errorMsg = await readApiError(response);
+      throw new Error(errorMsg);
+    }
     const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "stripe-receipt.pdf";
     return { blob: await response.blob(), fileName };
   }

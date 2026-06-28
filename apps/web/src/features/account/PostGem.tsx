@@ -501,7 +501,7 @@ export function PostGem({
                   <tr>
                     <td colSpan={2}>
                       <div className="total-row">
-                        <span className="total-label">Total Due: </span>
+                        <span className="total-label">Total Amount: </span>
                         <span className="total-amount">{quote.totalLkr.toLocaleString("en-US")}</span>
                       </div>
                     </td>

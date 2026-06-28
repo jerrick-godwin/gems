@@ -200,8 +200,13 @@ export function constructStripeWebhookEvent(payload: Buffer, signature: string |
 
 export async function retrieveStripeInvoiceUrl(invoiceId: string) {
   try {
-    const invoice = await stripe().invoices.retrieve(invoiceId);
-    return invoice.invoice_pdf ?? undefined;
+    const invoice = await stripe().invoices.retrieve(invoiceId) as any;
+    // Prefer invoice_pdf (available when invoice is finalized)
+    if (invoice.invoice_pdf) return invoice.invoice_pdf as string;
+    // Fall back to the charge's receipt_url
+    const charge = await findStripeInvoiceReceiptCharge(invoice);
+    if (charge?.receipt_url) return charge.receipt_url as string;
+    return undefined;
   } catch (error) {
     console.warn("Failed to retrieve Stripe invoice:", error);
     return undefined;
@@ -212,21 +217,35 @@ export async function retrieveStripeReceiptPdf(invoiceId: string) {
   try {
     const invoice = await stripe().invoices.retrieve(invoiceId) as any;
 
+    // Prefer the invoice PDF URL (available when invoice is finalized)
+    if (invoice.invoice_pdf) {
+      const response = await fetch(invoice.invoice_pdf);
+      if (response.ok) {
+        const fileNameBase = invoice.number ?? invoice.id;
+        return {
+          data: Buffer.from(await response.arrayBuffer()),
+          contentType: response.headers.get("content-type") ?? "application/pdf",
+          fileName: `receipt-${String(fileNameBase).replace(/[^a-z0-9._-]/gi, "-")}.pdf`
+        };
+      }
+    }
+
+    // Fall back to the charge receipt URL
     const charge = await findStripeInvoiceReceiptCharge(invoice);
-    if (!charge?.receipt_url) return undefined;
+    if (charge?.receipt_url) {
+      const receiptUrl = charge.receipt_url as string;
+      const response = await fetch(receiptUrl);
+      if (response.ok) {
+        const fileNameBase = (charge as any).receipt_number ?? invoice.number ?? invoice.id;
+        return {
+          data: Buffer.from(await response.arrayBuffer()),
+          contentType: response.headers.get("content-type") ?? "text/html",
+          fileName: `receipt-${String(fileNameBase).replace(/[^a-z0-9._-]/gi, "-")}.html`
+        };
+      }
+    }
 
-    const receiptUrl = new URL(charge.receipt_url);
-    receiptUrl.pathname = receiptUrl.pathname.replace(/\/$/, "") + "/pdf";
-
-    const response = await fetch(receiptUrl);
-    if (!response.ok) throw new Error(`Receipt PDF download failed with ${response.status}`);
-
-    const fileNameBase = charge.receipt_number ?? invoice.number ?? invoice.id;
-    return {
-      data: Buffer.from(await response.arrayBuffer()),
-      contentType: response.headers.get("content-type") ?? "application/pdf",
-      fileName: `receipt-${String(fileNameBase).replace(/[^a-z0-9._-]/gi, "-")}.pdf`
-    };
+    return undefined;
   } catch (error) {
     console.warn("Failed to retrieve Stripe receipt PDF:", error);
     return undefined;
