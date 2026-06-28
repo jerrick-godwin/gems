@@ -868,6 +868,15 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
+  if (url.pathname === "/admin" || url.pathname === "/admin/") {
+    const adminPath = join(staticRoot, "admin.html");
+    if (existsSync(adminPath)) {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(await readFile(adminPath, "utf8"));
+      return;
+    }
+  }
+
   const indexPath = join(staticRoot, "index.html");
   if (existsSync(indexPath)) {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });

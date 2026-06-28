@@ -179,6 +179,12 @@ function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listi
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const sellerRating = seller?.rating ?? 0;
+  const summarySpecs = compactValues([
+    `${listing.attributes.carat} ct`,
+    listing.attributes.color,
+    listing.attributes.shape,
+    formatTreatment(listing.attributes.treatment)
+  ]);
 
   return (
     <article className={`listing-card ${selected ? "selected" : ""}`} onClick={onSelect} id={`listing-${listing.id}`}>
@@ -195,10 +201,9 @@ function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listi
         <h2>{listing.title}</h2>
         <strong>{formatLkr(listing.priceLkr)}</strong>
         <div className="spec-row">
-          <span>{listing.attributes.carat} ct</span>
-          <span>{listing.attributes.color}</span>
-          <span>{listing.attributes.shape}</span>
-          <span>{formatTreatment(listing.attributes.treatment)}</span>
+          {summarySpecs.map((spec) => (
+            <span key={spec}>{spec}</span>
+          ))}
         </div>
         <div className="seller-line"><MapPin size={14} strokeWidth={2} />Country: {listing.location}</div>
       </div>
@@ -395,7 +400,7 @@ function sellerProfileLabel(status?: SellerProfile["verificationStatus"]) {
 }
 
 function getListingAttributes(listing: Listing, gemTypeName?: string) {
-  const attributes = [
+  const rawAttributes: Array<[string, string | undefined] | undefined> = [
     gemTypeName ? ["Gem type", gemTypeName] : undefined,
     ["Location", listing.location],
     ["Carat", `${listing.attributes.carat} ct`],
@@ -406,12 +411,24 @@ function getListingAttributes(listing: Listing, gemTypeName?: string) {
     ["Clarity", listing.attributes.clarity],
     ["Origin", listing.attributes.origin],
     ["Treatment", formatTreatment(listing.attributes.treatment)]
-  ].filter(Boolean) as [string, string][];
+  ];
 
-  return attributes.map(([label, value]) => ({
+  return rawAttributes.filter(isDisplayAttribute).map(([label, value]) => ({
     label,
     value
   }));
+}
+
+function isDisplayAttribute(attribute: [string, string | undefined] | undefined): attribute is [string, string] {
+  return Boolean(attribute && hasDisplayValue(attribute[1]));
+}
+
+function compactValues(values: Array<string | undefined>) {
+  return values.filter(hasDisplayValue);
+}
+
+function hasDisplayValue(value: string | undefined): value is string {
+  return Boolean(value?.replace(/[\s\u200B-\u200D\uFEFF]/g, ""));
 }
 
 function formatTreatment(treatment: Treatment) {
