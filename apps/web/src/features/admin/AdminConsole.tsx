@@ -135,6 +135,84 @@ export function AdminConsole({
           ))
         )}
       </section>
+      
+      <section className="data-panel" style={{ background: "var(--panel-strong)", marginTop: 24 }}>
+        <h2>Rejected Listings</h2>
+        {(() => {
+          const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map(l => [l.id, l])).values());
+          const rejected = allListings.filter(l => l.status === "rejected" || l.moderationStatus === "rejected");
+          
+          if (rejected.length === 0) {
+            return <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontWeight: 500 }}>No rejected listings.</div>;
+          }
+          
+          return rejected.map((listing) => (
+            <ActiveListingRow 
+              listing={listing} 
+              key={listing.id} 
+              api={api}
+              token={token}
+              payments={snapshot.payments}
+              sellers={snapshot.sellers}
+              users={snapshot.users}
+              onUpdate={(updated) => {
+                setSnapshot({
+                  ...snapshot,
+                  listings: snapshot.listings.map(l => l.id === updated.id ? updated : l)
+                });
+              }}
+              onRemove={(id) => {
+                setSnapshot({
+                  ...snapshot,
+                  listings: snapshot.listings.filter(l => l.id !== id),
+                  liveListings: snapshot.liveListings.filter(l => l.id !== id),
+                  reportedListings: snapshot.reportedListings.filter(l => l.id !== id),
+                  reports: snapshot.reports.map(report => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
+                });
+              }}
+            />
+          ));
+        })()}
+      </section>
+
+      <section className="data-panel" style={{ background: "var(--panel-strong)", marginTop: 24 }}>
+        <h2>Archived Listings</h2>
+        {(() => {
+          const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map(l => [l.id, l])).values());
+          const archived = allListings.filter(l => l.status === "expired" || l.status === "paused");
+          
+          if (archived.length === 0) {
+            return <div style={{ padding: "32px 0", textAlign: "center", color: "var(--muted)", fontWeight: 500 }}>No archived listings.</div>;
+          }
+          
+          return archived.map((listing) => (
+            <ActiveListingRow 
+              listing={listing} 
+              key={listing.id} 
+              api={api}
+              token={token}
+              payments={snapshot.payments}
+              sellers={snapshot.sellers}
+              users={snapshot.users}
+              onUpdate={(updated) => {
+                setSnapshot({
+                  ...snapshot,
+                  listings: snapshot.listings.map(l => l.id === updated.id ? updated : l)
+                });
+              }}
+              onRemove={(id) => {
+                setSnapshot({
+                  ...snapshot,
+                  listings: snapshot.listings.filter(l => l.id !== id),
+                  liveListings: snapshot.liveListings.filter(l => l.id !== id),
+                  reportedListings: snapshot.reportedListings.filter(l => l.id !== id),
+                  reports: snapshot.reports.map(report => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
+                });
+              }}
+            />
+          ));
+        })()}
+      </section>
     </section>
   );
 }

@@ -1274,6 +1274,45 @@ export async function cancelListingSubscription(userId: string, subscriptionId: 
   return subscription;
 }
 
+export async function cancelListingSubscriptionsForListing(listingId: string) {
+  const now = new Date();
+  
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.listingId, listingId));
+    
+    for (const sub of subscriptions) {
+      if (!sub.autoRenew) continue;
+      
+      const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.subscriptionId, sub.id)).orderBy(desc(paymentIntents.createdAt)).limit(1);
+      const stripeSubscriptionId = rows[0]?.stripeSubscriptionId ?? (rows[0]?.gatewayReference?.startsWith("sub_") ? rows[0].gatewayReference : undefined);
+      
+      if (stripeSubscriptionId) {
+        await setStripeSubscriptionCancelAtPeriodEnd(stripeSubscriptionId);
+      }
+    }
+
+    await db.update(listingSubscriptions)
+      .set({ autoRenew: false, cancelledAt: now, updatedAt: now })
+      .where(and(eq(listingSubscriptions.listingId, listingId), eq(listingSubscriptions.autoRenew, true)));
+    return;
+  }
+
+  const state = await getMemoryState();
+  const subscriptions = state.listingSubscriptions.filter((item) => item.listingId === listingId && item.autoRenew);
+  for (const subscription of subscriptions) {
+    const intent = state.paymentIntents.find((item) => item.subscriptionId === subscription.id);
+    const stripeSubscriptionId = intent?.stripeSubscriptionId ?? (intent?.gatewayReference?.startsWith("sub_") ? intent.gatewayReference : undefined);
+    
+    if (stripeSubscriptionId) {
+      await setStripeSubscriptionCancelAtPeriodEnd(stripeSubscriptionId);
+    }
+    
+    subscription.autoRenew = false;
+    subscription.cancelledAt = now.toISOString();
+    subscription.updatedAt = now.toISOString();
+  }
+}
+
 export async function createStorageUpload(userId: string, request: StorageUploadRequest) {
   return createUserUploadTarget(userId, request);
 }

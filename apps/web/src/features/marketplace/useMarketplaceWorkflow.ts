@@ -143,6 +143,10 @@ export function useMarketplaceWorkflow({
     setMyReports(await api.myReports());
   };
 
+  const handleRecordInteraction = async (listingId: string, type: "view" | "whatsapp_click") => {
+    await api.recordListingInteraction(listingId, type).catch(console.error);
+  };
+
   return {
     snapshot,
     loadError,
@@ -172,6 +176,7 @@ export function useMarketplaceWorkflow({
     refreshSnapshot,
     handlePreviewPhone,
     handleRevealPhone,
-    handleReportListing
+    handleReportListing,
+    handleRecordInteraction
   };
 }

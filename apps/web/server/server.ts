@@ -26,7 +26,8 @@ import {
   getAllSellers,
   createReport,
   getUserReports,
-  recordListingInteraction
+  recordListingInteraction,
+  updateListingStatus
 } from "./marketplace-repository.js";
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
@@ -34,6 +35,7 @@ import {
   createListing,
   createStorageUpload,
   cancelListingSubscription,
+  cancelListingSubscriptionsForListing,
   confirmPaymentIntent,
   isStripeCheckoutSessionForPaymentIntent,
   markStripeSubscriptionPastDue,
@@ -366,6 +368,9 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         return true;
       }
       const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
+      if (listing && decision === "reject") {
+        await cancelListingSubscriptionsForListing(listing.id);
+      }
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -378,6 +383,18 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const adminListingMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)$/);
     if (request.method === "DELETE" && adminListingMatch) {
       const listing = await removeListing(adminListingMatch[1]);
+      sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      return true;
+    }
+
+    const adminListingStatusMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)\/status$/);
+    if (request.method === "PATCH" && adminListingStatusMatch) {
+      const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
+      if (body.status !== "live" && body.status !== "paused") {
+        sendJson(response, 400, { error: "Invalid status" });
+        return true;
+      }
+      const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }

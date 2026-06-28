@@ -41,6 +41,7 @@ export interface MarketplaceProps {
   reportedListingIds: string[];
   onRefresh: () => void | Promise<void>;
   onReport: (listingId: string, reason: string, notes: string) => Promise<void>;
+  onRecordInteraction: (listingId: string, type: "view" | "whatsapp_click") => Promise<void>;
 }
 
 export function Marketplace(props: MarketplaceProps) {
@@ -82,7 +83,10 @@ export function Marketplace(props: MarketplaceProps) {
                   gemTypes={props.gemTypes}
                   sellers={props.sellers}
                   selected={props.selectedId === listing.id}
-                  onSelect={() => props.setSelectedId(listing.id)}
+                  onSelect={() => {
+                    props.setSelectedId(listing.id);
+                    props.onRecordInteraction(listing.id, "view");
+                  }}
                 />
               ))}
             </div>

@@ -1,4 +1,4 @@
-import { ReceiptText, XCircle } from "lucide-react";
+import { ReceiptText, XCircle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-client";
@@ -23,6 +23,7 @@ export function ReviewRow({
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
+  const [showApprovePrompt, setShowApprovePrompt] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptError, setReceiptError] = useState("");
@@ -42,6 +43,7 @@ export function ReviewRow({
       try {
         await onModerate(listing.id, decision, reason);
         if (decision === "reject") setShowRejectPrompt(false);
+        if (decision === "approve") setShowApprovePrompt(false);
       } finally {
         setBusy(null);
       }
@@ -101,7 +103,7 @@ export function ReviewRow({
         <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600 }} onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide Details" : "View Details"}
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--emerald-soft)", color: "var(--emerald)" }} disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => void runModeration("approve")}>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--success-soft)", color: "var(--success)" }} disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => setShowApprovePrompt(true)}>
           {busy === "approve" ? "Approving..." : "Approve"}
         </button>
         <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-sm)", border: "none", cursor: moderationAction.busy || busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }} disabled={moderationAction.busy || busy !== null} onClick={() => setShowRejectPrompt(true)}>
@@ -141,6 +143,37 @@ export function ReviewRow({
                 style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null || !rejectReason.trim() ? "not-allowed" : "pointer", fontWeight: 600, opacity: !rejectReason.trim() ? 0.5 : 1 }}
               >
                 {busy === "reject" ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showApprovePrompt && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle2 size={20} className="text-success" style={{ color: "var(--success)" }} /> Approve Listing
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+              Are you sure you want to approve this listing? It will become visible to all buyers immediately.
+              <br />
+              <strong style={{ display: "block", marginTop: 4, marginBottom: 8, color: "var(--ink)" }}>{listing.title}</strong>
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => setShowApprovePrompt(false)}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void runModeration("approve")}
+                disabled={moderationAction.busy || busy !== null}
+                style={{ padding: "8px 16px", background: "var(--success-soft)", color: "var(--success)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+              >
+                {busy === "approve" ? "Approving..." : "Confirm Approval"}
               </button>
             </div>
           </div>

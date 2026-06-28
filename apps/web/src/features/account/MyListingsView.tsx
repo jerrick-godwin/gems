@@ -148,6 +148,9 @@ export function MyListingsView({
                 listing.attributes.shape,
                 listing.attributes.treatment
               ]);
+              const isRejected = listing.status === "rejected" || listing.moderationStatus === "rejected";
+              const isAutoRenewActive = subscription?.autoRenew && !isRejected;
+
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -174,9 +177,9 @@ export function MyListingsView({
                         <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)" }}>
                           <strong>{plan.name} subscription:</strong> {subscription.status.replace("_", " ")}
                           {subscription.expiresAt ? ` · valid until ${formatDate(subscription.expiresAt)}` : ""}
-                          {subscription.autoRenew
+                          {isAutoRenewActive
                             ? " · auto-renew on"
-                            : subscription.expiresAt && isSubscriptionInPaidAccess(subscription)
+                            : subscription.expiresAt && isSubscriptionInPaidAccess(subscription) && !isRejected
                               ? ` · will be removed on ${formatDate(subscription.expiresAt)}`
                               : " · auto-renew cancelled"}
                         </div>
@@ -197,7 +200,7 @@ export function MyListingsView({
                           {statusInfo.label}
                         </span>
                       </div>
-                      {(listing.status === "rejected" || listing.moderationStatus === "rejected") && listing.rejectionReason && (
+                      {isRejected && listing.rejectionReason && (
                         <div style={{ fontSize: 13, color: "var(--danger)", padding: "8px 12px", borderRadius: "6px", border: "1px solid rgba(248,113,113,0.2)" }}>
                           <strong>Reason:</strong> {listing.rejectionReason}
                         </div>
@@ -225,7 +228,7 @@ export function MyListingsView({
                         {downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}
                       </button>
                     )}
-                    {subscription?.autoRenew && (
+                    {isAutoRenewActive && (
                       <button
                         onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
                         disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
