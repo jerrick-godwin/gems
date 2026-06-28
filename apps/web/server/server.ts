@@ -25,7 +25,9 @@ import {
   searchListings,
   getAllSellers,
   createReport,
-  getUserReports
+  getUserReports,
+  recordListingInteraction,
+  updateListingStatus
 } from "./marketplace-repository.js";
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
@@ -33,6 +35,7 @@ import {
   createListing,
   createStorageUpload,
   cancelListingSubscription,
+  cancelListingSubscriptionsForListing,
   confirmPaymentIntent,
   isStripeCheckoutSessionForPaymentIntent,
   markStripeSubscriptionPastDue,
@@ -319,14 +322,17 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "GET" && adminPaymentReceiptPdfMatch) {
       const receiptPdf = await getAdminPaymentReceiptPdf(adminPaymentReceiptPdfMatch[1]);
       if (!receiptPdf) {
-        sendJson(response, 404, { error: "Receipt not found" });
+        sendJson(response, 404, { error: "Receipt PDF not found. Verify your Stripe API key matches the payment environment (Live vs Test)." });
         return true;
       }
 
       response.writeHead(200, {
         "content-type": receiptPdf.contentType,
         "content-length": receiptPdf.data.byteLength,
-        "content-disposition": `inline; filename="${receiptPdf.fileName.replace(/"/g, "")}"`
+        "content-disposition": `inline; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+        "access-control-allow-headers": "authorization,content-type"
       });
       response.end(receiptPdf.data);
       return true;
@@ -362,6 +368,9 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         return true;
       }
       const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
+      if (listing && decision === "reject") {
+        await cancelListingSubscriptionsForListing(listing.id);
+      }
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -374,6 +383,18 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const adminListingMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)$/);
     if (request.method === "DELETE" && adminListingMatch) {
       const listing = await removeListing(adminListingMatch[1]);
+      sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      return true;
+    }
+
+    const adminListingStatusMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)\/status$/);
+    if (request.method === "PATCH" && adminListingStatusMatch) {
+      const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
+      if (body.status !== "live" && body.status !== "paused") {
+        sendJson(response, 400, { error: "Invalid status" });
+        return true;
+      }
+      const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -496,14 +517,17 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "GET" && paymentReceiptPdfMatch) {
       const receiptPdf = await getPaymentReceiptPdf(user.id, paymentReceiptPdfMatch[1]);
       if (!receiptPdf) {
-        sendJson(response, 404, { error: "Receipt not found" });
+        sendJson(response, 404, { error: "Receipt PDF not found. Verify your Stripe API key matches the payment environment (Live vs Test)." });
         return true;
       }
 
       response.writeHead(200, {
         "content-type": receiptPdf.contentType,
         "content-length": receiptPdf.data.byteLength,
-        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`
+        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+        "access-control-allow-headers": "authorization,content-type"
       });
       response.end(receiptPdf.data);
       return true;
@@ -655,6 +679,19 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
     await createReport(user.id, reportMatch[1], reason, notes);
+    sendJson(response, 201, { ok: true });
+    return true;
+  }
+
+  const interactionsMatch = path.match(/^\/api\/v1\/listings\/([^/]+)\/interactions$/);
+  if (request.method === "POST" && interactionsMatch) {
+    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const type = stringBody(body.type);
+    if (type !== "view" && type !== "whatsapp_click") {
+      sendJson(response, 400, { error: "Invalid interaction type" });
+      return true;
+    }
+    await recordListingInteraction(interactionsMatch[1], type);
     sendJson(response, 201, { ok: true });
     return true;
   }
@@ -866,6 +903,15 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
   if (isSafePath && existsSync(candidate) && statSync(candidate).isFile()) {
     sendStaticFile(response, candidate);
     return;
+  }
+
+  if (url.pathname === "/admin" || url.pathname === "/admin/") {
+    const adminPath = join(staticRoot, "admin.html");
+    if (existsSync(adminPath)) {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(await readFile(adminPath, "utf8"));
+      return;
+    }
   }
 
   const indexPath = join(staticRoot, "index.html");

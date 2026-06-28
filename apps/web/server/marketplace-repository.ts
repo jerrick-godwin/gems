@@ -13,7 +13,8 @@ import {
   reports as reportTable,
   savedSearches as savedSearchTable,
   sellerProfiles as sellerProfileTable,
-  subscriptionPlans as subscriptionPlanTable
+  subscriptionPlans as subscriptionPlanTable,
+  listingSubscriptions as listingSubscriptionsTable
 } from "./db/schema.js";
 import { createSignedReadUrl } from "./storage.js";
 
@@ -116,7 +117,7 @@ export async function searchListings(params: {
   const offset = (page - 1) * limit;
 
   if (hasDatabase) {
-    const conditions = [eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`];
+    const conditions = [eq(listingTable.status, "live"), eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`];
 
     if (params.query) {
       const q = `%${params.query}%`;
@@ -238,11 +239,45 @@ export async function getListing(listingId: string) {
 export async function revealListingPhone(listingId: string, options: { full?: boolean } = {}) {
   if (hasDatabase) {
     const rows = await db.select().from(listingContactTable).where(eq(listingContactTable.listingId, listingId)).limit(1);
-    return rows[0] ? { phone: options.full ? rows[0].phone : maskPhoneNumber(rows[0].phone), remainingReveals: rows[0].remainingReveals } : { phone: "", remainingReveals: 0 };
+    const result = rows[0] ? { phone: options.full ? rows[0].phone : maskPhoneNumber(rows[0].phone), remainingReveals: rows[0].remainingReveals } : { phone: "", remainingReveals: 0 };
+    if (result.phone && options.full) {
+      await db.update(listingTable)
+        .set({ stats: sql`jsonb_set(${listingTable.stats}, '{phoneReveals}', (coalesce((${listingTable.stats}->>'phoneReveals')::int, 0) + 1)::text::jsonb)` })
+        .where(eq(listingTable.id, listingId))
+        .execute().catch(() => {});
+    }
+    return result;
   }
   const database = await getMutableMarketplaceDatabase();
   const contact = database.listingContacts[listingId];
+  if (contact && options.full) {
+    const listing = database.listings.find(l => l.id === listingId);
+    if (listing && listing.stats) listing.stats.phoneReveals++;
+  }
   return contact ? { ...contact, phone: options.full ? contact.phone : maskPhoneNumber(contact.phone) } : { phone: "", remainingReveals: 0 };
+}
+
+export async function recordListingInteraction(listingId: string, type: "view" | "whatsapp_click") {
+  if (hasDatabase) {
+    if (type === "view") {
+      await db.update(listingTable)
+        .set({ stats: sql`jsonb_set(${listingTable.stats}, '{views}', (coalesce((${listingTable.stats}->>'views')::int, 0) + 1)::text::jsonb)` })
+        .where(eq(listingTable.id, listingId))
+        .execute().catch(() => {});
+    } else if (type === "whatsapp_click") {
+      await db.update(listingTable)
+        .set({ stats: sql`jsonb_set(${listingTable.stats}, '{whatsappClicks}', (coalesce((${listingTable.stats}->>'whatsappClicks')::int, 0) + 1)::text::jsonb)` })
+        .where(eq(listingTable.id, listingId))
+        .execute().catch(() => {});
+    }
+    return;
+  }
+  const database = await getMutableMarketplaceDatabase();
+  const listing = database.listings.find(l => l.id === listingId);
+  if (listing && listing.stats) {
+    if (type === "view") listing.stats.views++;
+    else if (type === "whatsapp_click") listing.stats.whatsappClicks++;
+  }
 }
 
 function maskPhoneNumber(phone: string) {
@@ -381,12 +416,48 @@ export async function updateListingModeration(listingId: string, decision: "appr
 }
 
 function isPublicListing(listing: Listing) {
-  return listing.moderationStatus === "approved" && (!listing.expiresAt || listing.expiresAt > new Date().toISOString());
+  return listing.moderationStatus === "approved" && listing.status === "live" && (!listing.expiresAt || listing.expiresAt > new Date().toISOString());
 }
 
 export async function getLiveListings() {
-  if (hasDatabase) return (await db.select().from(listingTable).where(eq(listingTable.status, "live"))).map(toListing);
-  return (await getMutableMarketplaceDatabase()).listings.filter((listing) => listing.status === "live");
+  if (hasDatabase) {
+    const listings = (await db.select().from(listingTable).where(inArray(listingTable.status, ["live", "paused"]))).map(toListing);
+    const listingIds = listings.map(l => l.id);
+    if (listingIds.length > 0) {
+      const subscriptions = await db.select().from(listingSubscriptionsTable).where(inArray(listingSubscriptionsTable.listingId, listingIds));
+      for (const listing of listings) {
+        const sub = subscriptions.find(s => s.listingId === listing.id);
+        if (sub) {
+          listing.subscription = {
+            id: sub.id,
+            listingId: sub.listingId,
+            planId: sub.planId as any,
+            status: sub.status as any,
+            autoRenew: sub.autoRenew,
+            startsAt: sub.startsAt?.toISOString(),
+            expiresAt: sub.expiresAt?.toISOString(),
+            cancelledAt: sub.cancelledAt?.toISOString()
+          };
+        }
+      }
+    }
+    return listings;
+  }
+  return (await getMutableMarketplaceDatabase()).listings.filter((listing) => listing.status === "live" || listing.status === "paused");
+}
+
+export async function updateListingStatus(listingId: string, status: "live" | "paused") {
+  if (hasDatabase) {
+    const rows = await db.update(listingTable).set({ status, updatedAt: new Date() }).where(eq(listingTable.id, listingId)).returning();
+    return rows[0] ? toListing(rows[0]) : undefined;
+  }
+  const dbData = await getMutableMarketplaceDatabase();
+  const listing = dbData.listings.find((l) => l.id === listingId);
+  if (listing) {
+    listing.status = status;
+    listing.updatedAt = new Date().toISOString();
+  }
+  return listing;
 }
 
 export async function removeListing(listingId: string) {

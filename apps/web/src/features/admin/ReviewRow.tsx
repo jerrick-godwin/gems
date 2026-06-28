@@ -1,4 +1,4 @@
-import { ReceiptText, XCircle } from "lucide-react";
+import { ReceiptText, XCircle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-client";
@@ -23,6 +23,7 @@ export function ReviewRow({
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
+  const [showApprovePrompt, setShowApprovePrompt] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptError, setReceiptError] = useState("");
@@ -42,6 +43,7 @@ export function ReviewRow({
       try {
         await onModerate(listing.id, decision, reason);
         if (decision === "reject") setShowRejectPrompt(false);
+        if (decision === "approve") setShowApprovePrompt(false);
       } finally {
         setBusy(null);
       }
@@ -61,18 +63,15 @@ export function ReviewRow({
     try {
       const receiptFile = await api.downloadPaymentReceipt(token, payment.id);
       const url = URL.createObjectURL(receiptFile.blob);
-      const receiptWindow = window.open(url, "_blank");
-      if (!receiptWindow) {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = receiptFile.fileName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = receiptFile.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {
-      setReceiptError(publicErrorMessage(error, "Unable to open the receipt right now."));
+      setReceiptError(publicErrorMessage(error, "Unable to load receipt"));
     } finally {
       setReceiptBusy(false);
     }
@@ -86,30 +85,25 @@ export function ReviewRow({
           <strong style={{ fontSize: 16, fontWeight: 700 }}>{listing.title}</strong>
           <span style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
             {listing.attributes.carat} ct ·
-            <span style={{
-              display: "inline-block",
-              padding: "2px 6px",
-              background: listing.attributes.certificateStatus === "admin_verified" ? "var(--mint)" : "var(--soft)",
-              color: listing.attributes.certificateStatus === "admin_verified" ? "var(--emerald-dark)" : "var(--ink)",
-              borderRadius: 4,
-              fontWeight: 700,
-              fontSize: 11,
-              textTransform: "uppercase"
-            }}>
-              {listing.attributes.certificateStatus.replace("_", " ")}
-            </span>
-          </span>
-        </div>
-        <div style={{ minWidth: 150, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          <strong style={{ color: payment ? "var(--emerald)" : "var(--muted)", fontSize: 15 }}>{payment ? formatLkr(payment.amountLkr) : "No payment"}</strong>
-          <span style={{ fontSize: 12, fontWeight: 800, padding: "4px 8px", borderRadius: 999, background: paymentStatusBackground(payment?.status), color: paymentStatusColor(payment?.status), textTransform: "capitalize" }}>
-            {payment ? payment.status.replace("_", " ") : "not found"}
+            {listing.attributes.certificateStatus !== "none" && (
+              <span style={{
+                background: "var(--brand-soft)",
+                color: "var(--brand)",
+                padding: "4px 8px",
+                borderRadius: 999,
+                fontWeight: 700,
+                fontSize: 11,
+                textTransform: "uppercase"
+              }}>
+                {listing.attributes.certificateStatus.replace("_", " ")}
+              </span>
+            )}
           </span>
         </div>
         <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600 }} onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide Details" : "View Details"}
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--emerald-soft)", color: "var(--emerald)" }} disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => void runModeration("approve")}>
+        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--success-soft)", color: "var(--success)" }} disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => setShowApprovePrompt(true)}>
           {busy === "approve" ? "Approving..." : "Approve"}
         </button>
         <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-sm)", border: "none", cursor: moderationAction.busy || busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }} disabled={moderationAction.busy || busy !== null} onClick={() => setShowRejectPrompt(true)}>
@@ -156,13 +150,45 @@ export function ReviewRow({
         document.body
       )}
 
+      {showApprovePrompt && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle2 size={20} className="text-success" style={{ color: "var(--success)" }} /> Approve Listing
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+              Are you sure you want to approve this listing? It will become visible to all buyers immediately.
+              <br />
+              <strong style={{ display: "block", marginTop: 4, marginBottom: 8, color: "var(--ink)" }}>{listing.title}</strong>
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => setShowApprovePrompt(false)}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void runModeration("approve")}
+                disabled={moderationAction.busy || busy !== null}
+                style={{ padding: "8px 16px", background: "var(--success-soft)", color: "var(--success)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+              >
+                {busy === "approve" ? "Approving..." : "Confirm Approval"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {expanded && (
         <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--line)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24, marginBottom: 24 }}>
             <div>
               <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Seller Details</h4>
               <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
-                <div><strong>Name:</strong> {user?.name || seller?.displayName || "Unknown"}</div>
+                <div><strong>Display Name:</strong> {seller?.displayName || "Unknown"}</div>
+                <div><strong>User Name:</strong> {user?.name || "Unknown"}</div>
                 <div><strong>Email:</strong> {user?.email || "Unknown"}</div>
                 <div><strong>Phone:</strong> {user?.phone || "Unknown"}</div>
               </div>
@@ -183,7 +209,7 @@ export function ReviewRow({
                     <div><strong>Status:</strong> <span style={{ color: paymentStatusColor(payment.status), fontWeight: 800, textTransform: "capitalize" }}>{payment.status.replace("_", " ")}</span></div>
                     <div><strong>Amount:</strong> <span style={{ color: "var(--muted)" }}>{formatLkr(payment.amountLkr)}</span></div>
                     <div><strong>Plan:</strong> <span style={{ color: "var(--muted)" }}>{payment.quote.plan.name}</span></div>
-                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <span style={{ color: "var(--muted)" }}>{shortRef(payment.stripeInvoiceId)}</span></div>}
+                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <a href={`https://dashboard.stripe.com/invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>{payment.stripeInvoiceId}</a></div>}
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
                       <button
                         type="button"
@@ -205,18 +231,12 @@ export function ReviewRow({
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Gem Attributes</h4>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", fontSize: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: 14 }}>
                 <div><strong style={{ display: "block", marginBottom: 2 }}>Carat:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.carat}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Dimensions:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.dimensions}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Shape:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.shape}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Cut:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.cut}</span></div>
                 <div><strong style={{ display: "block", marginBottom: 2 }}>Color:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.color}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Clarity:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.clarity}</span></div>
                 <div><strong style={{ display: "block", marginBottom: 2 }}>Origin:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.origin}</span></div>
                 <div><strong style={{ display: "block", marginBottom: 2 }}>Treatment:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.treatment}</span></div>
                 <div><strong style={{ display: "block", marginBottom: 2 }}>Certificate:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.certificateStatus.replace("_", " ")}</span></div>
-                {listing.attributes.labName && <div><strong style={{ display: "block", marginBottom: 2 }}>Lab:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.labName}</span></div>}
-                {listing.attributes.reportNumber && <div><strong style={{ display: "block", marginBottom: 2 }}>Report #:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.reportNumber}</span></div>}
               </div>
             </div>
           </div>
@@ -266,8 +286,4 @@ function paymentStatusColor(status?: PaymentIntent["status"]) {
   if (status === "succeeded") return "var(--emerald)";
   if (status === "failed" || status === "cancelled" || status === "expired") return "var(--danger)";
   return "var(--muted)";
-}
-
-function shortRef(value: string) {
-  return value.length > 18 ? `${value.slice(0, 14)}...` : value;
 }

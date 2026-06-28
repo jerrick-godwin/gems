@@ -91,10 +91,6 @@ export function PostGem({
       setStatus("Please add at least one gem photo.");
       return;
     }
-    if (!acceptedPolicies) {
-      setStatus("Please accept the Terms and Conditions and Privacy Policy before payment.");
-      return;
-    }
 
     await submitAction.run(async () => {
       const submissionKey = createIdempotencyKey("post-gem");
@@ -250,9 +246,6 @@ export function PostGem({
                 return (
                   <label className={`plan-option plan-option-${plan.id} ${isSelected ? "selected" : ""}`} key={plan.id}>
                     <input type="radio" name="listing-plan" value={plan.id} checked={isSelected} onChange={() => setSelectedPlan(plan.id)} disabled={isSubmitting} />
-                    <span className="plan-option-check" aria-hidden="true">
-                      <Check size={15} strokeWidth={3} />
-                    </span>
                     <span className="plan-option-eyebrow">{plan.eyebrow}</span>
                     <strong>{plan.name}</strong>
                     <span className="plan-option-price">{formatLkr(plan.priceLkr)}</span>
@@ -474,39 +467,45 @@ export function PostGem({
                         <strong>{quote.plan.name} Plan</strong>
                       </div>
                       <div className="item-desc">
-                        {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
-                        <br />
-                        Includes up to {quote.plan.includedPhotos} photos
+                        <div className="item-desc-line">
+                          <Check size={14} strokeWidth={2.5} className="item-check" />
+                          <span>{quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity</span>
+                        </div>
+                        <div className="item-desc-line">
+                          <Check size={14} strokeWidth={2.5} className="item-check" />
+                          <span>Includes up to {quote.plan.includedPhotos} photos</span>
+                        </div>
                       </div>
                     </td>
                     <td className="align-right amount-cell">
                       {quote.basePriceLkr.toLocaleString("en-US")}
                     </td>
                   </tr>
-                  
-                  <tr>
-                    <td>
-                      <div className="item-title">
-                        <span className="item-badge additional">Additional</span>
-                        <strong>Extra Photos</strong>
-                      </div>
-                      <div className="item-desc">
-                        {quote.extraPhotoCount > 0 
-                          ? `${quote.extraPhotoCount} extra photo${quote.extraPhotoCount > 1 ? "s" : ""} × ${quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each`
-                          : `${photos.length} of ${quote.plan.includedPhotos} included photos used`
-                        }
-                      </div>
-                    </td>
-                    <td className="align-right amount-cell">
-                      {quote.extraPhotoTotalLkr > 0 ? quote.extraPhotoTotalLkr.toLocaleString("en-US") : "0"}
-                    </td>
-                  </tr>
+                  {quote.extraPhotoCount > 0 && (
+                    <tr>
+                      <td>
+                        <div className="item-title">
+                          <span className="item-badge additional">Additional</span>
+                          <strong>Extra Photos</strong>
+                        </div>
+                        <div className="item-desc">
+                          <div className="item-desc-line">
+                            <Check size={14} strokeWidth={2.5} className="item-check" />
+                            <span>{quote.extraPhotoCount} extra photo{quote.extraPhotoCount > 1 ? "s" : ""} × {quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="align-right amount-cell">
+                        {quote.extraPhotoTotalLkr.toLocaleString("en-US")}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
                 <tfoot>
                   <tr>
                     <td colSpan={2}>
                       <div className="total-row">
-                        <span className="total-label">Total Due: </span>
+                        <span className="total-label">Total Amount: </span>
                         <span className="total-amount">{quote.totalLkr.toLocaleString("en-US")}</span>
                       </div>
                     </td>
@@ -518,7 +517,7 @@ export function PostGem({
 
           {/* ── Actions ── */}
           <label className="policy-acceptance">
-            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} disabled={isSubmitting} />
+            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} disabled={isSubmitting} required />
             <span>
               I accept the{" "}
               <a href="/terms-and-conditions" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
@@ -528,6 +527,7 @@ export function PostGem({
               <a href="/privacy-policy" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
                 Privacy Policy
               </a>
+              <span className="required-marker" aria-hidden="true">*</span>
             </span>
           </label>
           {status && !["Listing submitted for moderation.", "Creating listing draft...", "Uploading media...", "Creating payment..."].includes(status) && (
@@ -566,4 +566,3 @@ export function PostGem({
     </section>
   );
 }
-
