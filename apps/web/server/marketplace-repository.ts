@@ -238,11 +238,33 @@ export async function getListing(listingId: string) {
 export async function revealListingPhone(listingId: string, options: { full?: boolean } = {}) {
   if (hasDatabase) {
     const rows = await db.select().from(listingContactTable).where(eq(listingContactTable.listingId, listingId)).limit(1);
-    return rows[0] ? { phone: options.full ? rows[0].phone : maskPhoneNumber(rows[0].phone), remainingReveals: rows[0].remainingReveals } : { phone: "", remainingReveals: 0 };
+    const result = rows[0] ? { phone: options.full ? rows[0].phone : maskPhoneNumber(rows[0].phone), remainingReveals: rows[0].remainingReveals } : { phone: "", remainingReveals: 0 };
+    if (result.phone) {
+      await db.update(listingStatsTable).set({ phoneReveals: sql`${listingStatsTable.phoneReveals} + 1` }).where(eq(listingStatsTable.listingId, listingId)).execute().catch(() => {});
+    }
+    return result;
   }
   const database = await getMutableMarketplaceDatabase();
   const contact = database.listingContacts[listingId];
+  if (contact) {
+    const stat = database.listingStats[listingId];
+    if (stat) stat.phoneReveals++;
+  }
   return contact ? { ...contact, phone: options.full ? contact.phone : maskPhoneNumber(contact.phone) } : { phone: "", remainingReveals: 0 };
+}
+
+export async function recordListingInteraction(listingId: string, type: "view" | "whatsapp_click") {
+  if (hasDatabase) {
+    const column = type === "view" ? listingStatsTable.views : listingStatsTable.whatsappClicks;
+    await db.update(listingStatsTable).set({ [column.name]: sql`${column} + 1` }).where(eq(listingStatsTable.listingId, listingId)).execute().catch(() => {});
+    return;
+  }
+  const database = await getMutableMarketplaceDatabase();
+  const stat = database.listingStats[listingId];
+  if (stat) {
+    if (type === "view") stat.views++;
+    else if (type === "whatsapp_click") stat.whatsappClicks++;
+  }
 }
 
 function maskPhoneNumber(phone: string) {
