@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronUp, ExternalLink, FileText, ImageIcon, ReceiptText, Star, Trash } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, FileText, ImageIcon, ReceiptText, Star, Trash, Pause, Play, AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import { formatLkr, type Listing, type ListingMedia, type PaymentIntent, type SellerProfile, type User } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
@@ -30,20 +31,36 @@ export function ActiveListingRow({
   const [showCampaigns, setShowCampaigns] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptError, setReceiptError] = useState("");
+  const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const removeAction = useSingleFlightAction();
 
   const handleRemove = async () => {
-    if (!window.confirm(`Are you sure you want to remove "${listing.title}"?`)) return;
     await removeAction.run(async () => {
       setBusy(true);
       try {
         await api.removeListing(token, listing.id);
+        setShowRemoveConfirm(false);
         onRemove(listing.id);
       } catch (error) {
         alert("Failed to remove listing");
         setBusy(false);
       }
     });
+  };
+
+  const handleTogglePause = async () => {
+    const newStatus = listing.status === "paused" ? "live" : "paused";
+    setBusy(true);
+    try {
+      const updated = await api.updateListingStatus(token, listing.id, newStatus);
+      setShowPauseConfirm(false);
+      onUpdate(updated);
+    } catch (error) {
+      alert(`Failed to ${listing.status === "paused" ? "resume" : "pause"} listing`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleViewReceipt = async () => {
@@ -104,10 +121,23 @@ export function ActiveListingRow({
               {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               {expanded ? "Hide Details" : "View Details"}
             </button>
-            <button type="button" className="active-listing-action" disabled={removeAction.busy || busy} onClick={() => setShowCampaigns(true)}>
-              <Star size={16} /> Promotions
-            </button>
-            <button type="button" className="active-listing-action danger" disabled={removeAction.busy || busy} onClick={() => void handleRemove()} aria-label={`Remove ${listing.title}`}>
+            {listing.status !== "rejected" && listing.status !== "expired" && (
+              <>
+                <button type="button" className="active-listing-action" disabled={removeAction.busy || busy} onClick={() => setShowCampaigns(true)}>
+                  <Star size={16} /> Promotions
+                </button>
+                <button
+                  type="button"
+                  className="active-listing-action"
+                  disabled={busy || removeAction.busy}
+                  onClick={() => setShowPauseConfirm(true)}
+                >
+                  {listing.status === "paused" ? <Play size={16} /> : <Pause size={16} />}
+                  {listing.status === "paused" ? "Resume" : "Pause"}
+                </button>
+              </>
+            )}
+            <button type="button" className="active-listing-action danger" disabled={removeAction.busy || busy} onClick={() => setShowRemoveConfirm(true)} aria-label={`Remove ${listing.title}`}>
               <Trash size={16} />
             </button>
           </div>
@@ -134,7 +164,7 @@ export function ActiveListingRow({
             <section className="active-listing-detail-section media">
               <div className="active-listing-section-head">
                 <h4>Certificate</h4>
-                <span>{listing.attributes.certificateStatus.replace("_", " ")}</span>
+                {listing.attributes.certificateStatus !== "none" && <span>{listing.attributes.certificateStatus.replace("_", " ")}</span>}
               </div>
               {certificates.length > 0 ? (
                 <div className="active-listing-media-grid">
@@ -212,6 +242,7 @@ export function ActiveListingRow({
                   <Detail label="Policy accepted" value={formatDate(payment.policyAcceptedAt)} />
                   <Detail label="Listing expiry" value={formatOptionalDate(listing.expiresAt)} />
                   <Detail label="Auto-renew" value={listing.subscription ? (listing.subscription.autoRenew ? "Enabled" : "Disabled") : undefined} />
+                  <Detail label="Renewal status" value={listing.subscription ? (listing.subscription.status.charAt(0).toUpperCase() + listing.subscription.status.slice(1).replace("_", " ")) : undefined} />
                 </dl>
               ) : (
                 <p className="active-listing-empty">No subscription payment record found.</p>
@@ -242,6 +273,66 @@ export function ActiveListingRow({
           onClose={() => setShowCampaigns(false)} 
           onUpdate={onUpdate}
         />
+      )}
+
+      {showPauseConfirm && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              {listing.status === "paused" ? <Play size={20} style={{ color: "var(--gold)" }} /> : <Pause size={20} style={{ color: "var(--gold)" }} />} 
+              {listing.status === "paused" ? "Resume Listing" : "Pause Listing"}
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+              Are you sure you want to {listing.status === "paused" ? "resume" : "pause"} <strong>"{listing.title}"</strong>? 
+              {listing.status === "paused" ? " It will become visible on the public marketplace again." : " It will be temporarily hidden from the public marketplace."}
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => setShowPauseConfirm(false)}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleTogglePause()}
+                disabled={busy}
+                style={{ padding: "8px 16px", background: "var(--gold-soft)", color: "var(--gold-dark)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy ? "not-allowed" : "pointer", fontWeight: 600 }}
+              >
+                {busy ? "Processing..." : `Proceed to ${listing.status === "paused" ? "Resume" : "Pause"}`}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showRemoveConfirm && createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
+              <Trash size={20} style={{ color: "var(--danger)" }} /> Remove Listing
+            </h3>
+            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+              Are you sure you want to completely remove <strong>"{listing.title}"</strong>? This action cannot be undone.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                onClick={() => setShowRemoveConfirm(false)}
+                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleRemove()}
+                disabled={removeAction.busy || busy}
+                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: removeAction.busy || busy ? "not-allowed" : "pointer", fontWeight: 600 }}
+              >
+                {busy || removeAction.busy ? "Removing..." : "Proceed to Remove"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );

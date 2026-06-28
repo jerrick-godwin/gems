@@ -258,6 +258,7 @@ function App() {
           reportedListingIds={marketplace.reportedListingIds}
           onRefresh={marketplace.refreshSnapshot}
           onReport={marketplace.handleReportListing}
+          onRecordInteraction={marketplace.handleRecordInteraction}
         />
       )}
       {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}

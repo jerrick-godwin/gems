@@ -91,10 +91,6 @@ export function PostGem({
       setStatus("Please add at least one gem photo.");
       return;
     }
-    if (!acceptedPolicies) {
-      setStatus("Please accept the Terms and Conditions and Privacy Policy before payment.");
-      return;
-    }
 
     await submitAction.run(async () => {
       const submissionKey = createIdempotencyKey("post-gem");
@@ -471,9 +467,14 @@ export function PostGem({
                         <strong>{quote.plan.name} Plan</strong>
                       </div>
                       <div className="item-desc">
-                        {quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity
-                        <br />
-                        Includes up to {quote.plan.includedPhotos} photos
+                        <div className="item-desc-line">
+                          <Check size={14} strokeWidth={2.5} className="item-check" />
+                          <span>{quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity</span>
+                        </div>
+                        <div className="item-desc-line">
+                          <Check size={14} strokeWidth={2.5} className="item-check" />
+                          <span>Includes up to {quote.plan.includedPhotos} photos</span>
+                        </div>
                       </div>
                     </td>
                     <td className="align-right amount-cell">
@@ -488,7 +489,10 @@ export function PostGem({
                           <strong>Extra Photos</strong>
                         </div>
                         <div className="item-desc">
-                          {quote.extraPhotoCount} extra photo{quote.extraPhotoCount > 1 ? "s" : ""} × {quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each
+                          <div className="item-desc-line">
+                            <Check size={14} strokeWidth={2.5} className="item-check" />
+                            <span>{quote.extraPhotoCount} extra photo{quote.extraPhotoCount > 1 ? "s" : ""} × {quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each</span>
+                          </div>
                         </div>
                       </td>
                       <td className="align-right amount-cell">
@@ -513,7 +517,7 @@ export function PostGem({
 
           {/* ── Actions ── */}
           <label className="policy-acceptance">
-            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} disabled={isSubmitting} />
+            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} disabled={isSubmitting} required />
             <span>
               I accept the{" "}
               <a href="/terms-and-conditions" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
@@ -523,6 +527,7 @@ export function PostGem({
               <a href="/privacy-policy" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
                 Privacy Policy
               </a>
+              <span className="required-marker" aria-hidden="true">*</span>
             </span>
           </label>
           {status && !["Listing submitted for moderation.", "Creating listing draft...", "Uploading media...", "Creating payment..."].includes(status) && (

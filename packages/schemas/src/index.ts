@@ -1,5 +1,5 @@
 export type UserRole = "guest" | "buyer" | "seller" | "verified_seller" | "moderator" | "admin";
-export type ListingStatus = "draft" | "pending_review" | "live" | "rejected" | "expired" | "promoted";
+export type ListingStatus = "draft" | "pending_review" | "live" | "paused" | "rejected" | "expired" | "promoted";
 export type ModerationStatus = "not_submitted" | "queued" | "needs_changes" | "approved" | "rejected";
 export type Treatment = "untreated" | "heated" | "diffused" | "filled";
 export type CertificateStatus = "none" | "seller_provided" | "admin_verified";

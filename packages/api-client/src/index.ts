@@ -324,6 +324,19 @@ export class GemsAdminApiClient {
     return response.json() as Promise<Listing>;
   }
 
+  async updateListingStatus(token: string, listingId: string, status: "live" | "paused"): Promise<Listing> {
+    const response = await fetch(`${this.baseUrl}/admin/listings/${listingId}/status`, {
+      method: "PATCH",
+      headers: {
+        ...adminHeaders(token),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ status })
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to update listing status");
+    return response.json() as Promise<Listing>;
+  }
+
   async liveListings(token: string): Promise<Listing[]> {
     const response = await fetch(`${this.baseUrl}/admin/listings`, {
       headers: adminHeaders(token)
