@@ -250,9 +250,6 @@ export function PostGem({
                 return (
                   <label className={`plan-option plan-option-${plan.id} ${isSelected ? "selected" : ""}`} key={plan.id}>
                     <input type="radio" name="listing-plan" value={plan.id} checked={isSelected} onChange={() => setSelectedPlan(plan.id)} disabled={isSubmitting} />
-                    <span className="plan-option-check" aria-hidden="true">
-                      <Check size={15} strokeWidth={3} />
-                    </span>
                     <span className="plan-option-eyebrow">{plan.eyebrow}</span>
                     <strong>{plan.name}</strong>
                     <span className="plan-option-price">{formatLkr(plan.priceLkr)}</span>
@@ -483,24 +480,22 @@ export function PostGem({
                       {quote.basePriceLkr.toLocaleString("en-US")}
                     </td>
                   </tr>
-                  
-                  <tr>
-                    <td>
-                      <div className="item-title">
-                        <span className="item-badge additional">Additional</span>
-                        <strong>Extra Photos</strong>
-                      </div>
-                      <div className="item-desc">
-                        {quote.extraPhotoCount > 0 
-                          ? `${quote.extraPhotoCount} extra photo${quote.extraPhotoCount > 1 ? "s" : ""} × ${quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each`
-                          : `${photos.length} of ${quote.plan.includedPhotos} included photos used`
-                        }
-                      </div>
-                    </td>
-                    <td className="align-right amount-cell">
-                      {quote.extraPhotoTotalLkr > 0 ? quote.extraPhotoTotalLkr.toLocaleString("en-US") : "0"}
-                    </td>
-                  </tr>
+                  {quote.extraPhotoCount > 0 && (
+                    <tr>
+                      <td>
+                        <div className="item-title">
+                          <span className="item-badge additional">Additional</span>
+                          <strong>Extra Photos</strong>
+                        </div>
+                        <div className="item-desc">
+                          {quote.extraPhotoCount} extra photo{quote.extraPhotoCount > 1 ? "s" : ""} × {quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each
+                        </div>
+                      </td>
+                      <td className="align-right amount-cell">
+                        {quote.extraPhotoTotalLkr.toLocaleString("en-US")}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
                 <tfoot>
                   <tr>
@@ -566,4 +561,3 @@ export function PostGem({
     </section>
   );
 }
-

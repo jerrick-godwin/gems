@@ -142,6 +142,12 @@ export function MyListingsView({
               const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
               const paymentLines = payment ? paymentBreakdown(payment) : [];
               const canDownloadReceipt = Boolean(payment?.stripeInvoiceId && payment.status === "succeeded");
+              const summarySpecs = compactValues([
+                `${listing.attributes.carat} ct`,
+                listing.attributes.color,
+                listing.attributes.shape,
+                listing.attributes.treatment
+              ]);
               return (
                 <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
                   {listing.media[0] && (
@@ -150,7 +156,7 @@ export function MyListingsView({
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <h3 style={{ margin: 0, fontSize: 18, color: 'var(--ink)' }}>{listing.title}</h3>
                     <div style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 600 }}>
-                      {listing.attributes.carat} ct · {listing.attributes.color} · {listing.attributes.shape} · {listing.attributes.treatment}
+                      {summarySpecs.join(" · ")}
                     </div>
                     <strong style={{ fontSize: 16, color: 'var(--emerald)' }}>
                       {formatLkr(listing.priceLkr)}
@@ -315,7 +321,7 @@ export function MyListingsView({
 }
 
 function getListingAttributes(listing: Listing, gemTypeName?: string) {
-  const attributes = [
+  const attributes: Array<[string, string | undefined]> = [
     ["Gem type", gemTypeName ?? listing.gemTypeId],
     ["Location", listing.location],
     ["Carat", `${listing.attributes.carat} ct`],
@@ -328,10 +334,22 @@ function getListingAttributes(listing: Listing, gemTypeName?: string) {
     ["Treatment", formatTreatment(listing.attributes.treatment)]
   ];
 
-  return attributes.map(([label, value]) => ({
+  return attributes.filter(isDisplayAttribute).map(([label, value]) => ({
     label,
     value
   }));
+}
+
+function isDisplayAttribute(attribute: [string, string | undefined]): attribute is [string, string] {
+  return hasDisplayValue(attribute[1]);
+}
+
+function compactValues(values: Array<string | undefined>) {
+  return values.filter(hasDisplayValue);
+}
+
+function hasDisplayValue(value: string | undefined): value is string {
+  return Boolean(value?.replace(/[\s\u200B-\u200D\uFEFF]/g, ""));
 }
 
 function formatTreatment(treatment: Treatment) {

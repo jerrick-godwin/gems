@@ -689,7 +689,7 @@ select {
   align-content: start;
   gap: 6px 12px;
   overflow: hidden;
-  padding: 12px 44px 12px 14px;
+  padding: 12px 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -733,30 +733,10 @@ select {
   pointer-events: none;
 }
 
-.plan-option-check {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-full);
-  background: var(--surface-elevated);
-  color: transparent;
-  box-shadow: inset 0 1px 0 rgba(var(--foreground-rgb), 0.08);
-  transition:
-    background var(--duration-fast) ease,
-    border-color var(--duration-fast) ease,
-    color var(--duration-fast) ease,
-    transform var(--duration-fast) var(--ease-spring);
-}
-
 .plan-option-eyebrow {
   grid-column: 1 / -1;
   justify-self: start;
-  max-width: calc(100% - 34px);
+  max-width: 100%;
   min-height: 20px;
   display: inline-flex;
   align-items: center;
@@ -788,14 +768,6 @@ select {
   opacity: 1;
 }
 
-.plan-option.selected .plan-option-check,
-.plan-option:focus-within .plan-option-check {
-  border-color: var(--brand-yellow);
-  background: var(--brand-yellow);
-  color: var(--bg);
-  transform: none;
-}
-
 .plan-option-pro {
   border-color: rgba(253, 212, 4, 0.36);
 }
@@ -805,10 +777,6 @@ select {
   background: var(--field-bg-hover);
   box-shadow: var(--shadow-xs);
   transform: none;
-}
-
-.plan-option:hover .plan-option-check {
-  border-color: var(--emerald-light);
 }
 
 .plan-option strong {

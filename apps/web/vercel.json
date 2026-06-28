@@ -7,6 +7,14 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/admin/",
+      "destination": "/admin.html"
+    },
+    {
       "source": "/login",
       "destination": "/index.html"
     },

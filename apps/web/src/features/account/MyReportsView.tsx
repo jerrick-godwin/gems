@@ -49,7 +49,7 @@ export function MyReportsView({
             const isExpanded = expandedReportId === report.id;
             const gemType = listing ? gemTypes.find((item) => item.id === listing.gemTypeId) : undefined;
             const seller = listing ? sellers.find((item) => item.id === listing.sellerId) : undefined;
-            const facts = listing
+            const rawFacts: Array<[string, string | undefined]> = listing
               ? [
                   ["Carat", String(listing.attributes.carat)],
                   ["Color", listing.attributes.color],
@@ -61,6 +61,7 @@ export function MyReportsView({
                   ["Location", listing.location]
                 ]
               : [];
+            const facts = rawFacts.filter(isDisplayFact);
             return (
               <article key={report.id} className={`report-card ${isExpanded ? "expanded" : ""}`}>
                 <div className="report-card-header">
@@ -161,4 +162,8 @@ export function MyReportsView({
       </section>
     </section>
   );
+}
+
+function isDisplayFact(fact: [string, string | undefined]): fact is [string, string] {
+  return Boolean(fact[1]?.replace(/[\s\u200B-\u200D\uFEFF]/g, ""));
 }
