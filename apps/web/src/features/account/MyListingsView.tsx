@@ -1,4 +1,4 @@
-import { CreditCard, Download, RefreshCcw, Trash2 } from "lucide-react";
+import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
@@ -172,29 +172,67 @@ export function MyListingsView({
                         </div>
                       ))}
                     </dl>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
-                      {subscription && plan && (
-                        <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)" }}>
-                          <strong>{plan.name} subscription:</strong> {subscription.status.replace("_", " ")}
-                          {subscription.expiresAt ? ` · valid until ${formatDate(subscription.expiresAt)}` : ""}
-                          {isAutoRenewActive
-                            ? " · auto-renew on"
-                            : subscription.expiresAt && isSubscriptionInPaidAccess(subscription) && !isRejected
-                              ? ` · will be removed on ${formatDate(subscription.expiresAt)}`
-                              : " · auto-renew cancelled"}
-                        </div>
-                      )}
-                      {payment && (
-                        <div style={{ fontSize: 13, color: "var(--muted)", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 4 }}>
-                          <div>
-                            <strong>Listing payment:</strong> {formatLkr(payment.amountLkr)} · {payment.status.replace("_", " ")}
-                            {payment.stripeInvoiceId ? ` · invoice ${shortRef(payment.stripeInvoiceId)}` : ""}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                        {subscription && plan && (
+                          <div style={{
+                            padding: '10px 14px',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--line)',
+                            borderLeft: isAutoRenewActive ? '4px solid var(--emerald)' : '4px solid var(--muted)',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+                              <ShieldCheck size={16} style={{ color: isAutoRenewActive ? 'var(--emerald)' : 'var(--muted)' }} />
+                              {plan.name} Subscription
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              Status: <span style={{ textTransform: 'capitalize', fontWeight: 600, color: 'var(--ink)' }}>{subscription.status.replace("_", " ")}</span>
+                            </div>
+                            {subscription.expiresAt && (
+                              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                Valid until {formatDate(subscription.expiresAt)}
+                              </div>
+                            )}
+                            <div style={{ fontSize: 11, fontWeight: 600, color: isAutoRenewActive ? 'var(--emerald)' : 'var(--danger)', marginTop: 2 }}>
+                              {isAutoRenewActive ? "Auto-renew active" : "Auto-renew cancelled"}
+                            </div>
                           </div>
-                          {paymentLines.length > 0 && (
-                            <div>{paymentLines.join(" · ")}</div>
-                          )}
-                        </div>
-                      )}
+                        )}
+                        {payment && (
+                          <div style={{
+                            padding: '10px 14px',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--line)',
+                            borderLeft: payment.status === 'succeeded' ? '4px solid var(--emerald)' : '4px solid var(--gold)',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+                              <Receipt size={16} style={{ color: 'var(--muted)' }} />
+                              Payment details
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              Amount: <strong style={{ color: 'var(--ink)' }}>{formatLkr(payment.amountLkr)}</strong> ({payment.status})
+                            </div>
+                            {payment.stripeInvoiceId && (
+                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                Invoice: <code style={{ fontSize: 10, background: 'var(--soft)', padding: '2px 4px', borderRadius: '4px', border: '1px solid var(--line)' }}>{shortRef(payment.stripeInvoiceId)}</code>
+                              </div>
+                            )}
+                            {paymentLines.length > 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                                {paymentLines.join(" · ")}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
                           {statusInfo.label}
