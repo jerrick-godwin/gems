@@ -1,5 +1,5 @@
-import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt } from "lucide-react";
-import { useState } from "react";
+import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
@@ -19,7 +19,13 @@ export function MyListingsView({
   api: GemsApiClient;
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
-  const listings = dashboard?.sellerListings ?? [];
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [totalListings, setTotalListings] = useState(0);
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [isLoadingListings, setIsLoadingListings] = useState(true);
+
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
   const [payingSubscriptionId, setPayingSubscriptionId] = useState<string | null>(null);
@@ -30,12 +36,44 @@ export function MyListingsView({
   const payAction = useSingleFlightAction();
   const deleteAction = useSingleFlightAction();
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchListings = async () => {
+      setIsLoadingListings(true);
+      try {
+        const response = await api.getMyListings(page, 10, debouncedSearchQuery);
+        if (active) {
+          if (response.items.length === 0 && page > 1) {
+            setPage(page - 1);
+          } else {
+            setListings(response.items);
+            setTotalListings(response.total);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch listings:", error);
+      } finally {
+        if (active) setIsLoadingListings(false);
+      }
+    };
+    fetchListings();
+    return () => { active = false; };
+  }, [api, page, debouncedSearchQuery, dashboard]);
+
   const getStatusLabel = (listing: Listing) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
       return { label: "Rejected", color: "var(--danger)", bg: "var(--danger-soft)" };
     }
     if (listing.moderationStatus === "approved") {
-      return { label: "Approved", color: "var(--emerald)", bg: "var(--emerald-soft)" };
+      return { label: "Approved", color: "var(--success)", bg: "var(--success-soft)" };
     }
     if (listing.moderationStatus === "queued" || listing.moderationStatus === "needs_changes" || listing.status === "pending_review") {
       return { label: "Review in Progress", color: "var(--gold)", bg: "rgba(251,191,36,0.15)" };
@@ -124,12 +162,31 @@ export function MyListingsView({
 
   return (
     <section className="dashboard">
-      <div className="section-heading">
-        <h1>My Listings</h1>
-        <p>Manage your submitted listings and view their approval status.</p>
+      <div className="section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1>My Listings</h1>
+          <p>Manage your submitted listings and view their approval status.</p>
+        </div>
+        <div style={{ position: "relative", width: 280, marginTop: 4 }}>
+          <Search size={18} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--sage)" }} />
+          <input
+            type="text"
+            placeholder="Search listings..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ 
+              width: "100%", padding: "10px 12px 10px 38px", 
+              borderRadius: "8px", border: "1px solid var(--line)", 
+              backgroundColor: "var(--surface)", color: "var(--ink)", outline: "none",
+              fontSize: 14
+            }}
+          />
+        </div>
       </div>
-      <section className="data-panel">
-        {listings.length === 0 ? (
+      <section className="data-panel" style={{ opacity: isLoadingListings ? 0.6 : 1, transition: "opacity 0.2s" }}>
+        {isLoadingListings && listings.length === 0 ? (
+          <p style={{ color: "var(--sage)", fontWeight: 600 }}>Loading listings...</p>
+        ) : listings.length === 0 ? (
           <p style={{ color: "var(--sage)", fontWeight: 600 }}>No listings found.</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -269,14 +326,40 @@ export function MyListingsView({
                     >
                       <Trash2 size={16} strokeWidth={2.5} />
                       {deletingId === listing.id ? "Deleting..." : "Delete"}
-                    </button>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          )}
+          
+          {listings.length > 0 && totalListings > 10 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--line-subtle)" }}>
+              <span style={{ fontSize: 14, color: "var(--sage)", fontWeight: 500 }}>
+                Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, totalListings)} of {totalListings} listings
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button 
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="seller-listing-secondary-button"
+                  style={{ display: "flex", alignItems: "center", gap: 4, opacity: page === 1 ? 0.5 : 1, cursor: page === 1 ? "not-allowed" : "pointer" }}
+                >
+                  <ChevronLeft size={16} /> Prev
+                </button>
+                <button 
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * 10 >= totalListings}
+                  className="seller-listing-secondary-button"
+                  style={{ display: "flex", alignItems: "center", gap: 4, opacity: page * 10 >= totalListings ? 0.5 : 1, cursor: page * 10 >= totalListings ? "not-allowed" : "pointer" }}
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
       {confirmDeleteId && createPortal(
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>

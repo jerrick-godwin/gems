@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
   Cart,
@@ -719,7 +719,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
     return {
       user,
       settings,
-      sellerListings: listingRows.filter((listing) => sellerIds.has(listing.sellerId)).map(toListing),
+      // sellerListings removed in favor of paginated endpoint
       conversations: conversationRows
         .filter((conversation) => sellerIds.has(conversation.sellerId))
         .map((conversation) => ({
@@ -743,13 +743,62 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
   return {
     user,
     settings,
-    sellerListings: state.database.listings.filter((listing) => sellerIds.has(listing.sellerId)),
+    // sellerListings removed in favor of paginated endpoint
     conversations: state.database.conversations.filter((conversation) => sellerIds.has(conversation.sellerId)),
     cartCount: 0,
     recentOrders: [],
     listingSubscriptions: subscriptions,
     recentPayments: payments.slice(0, 10)
   };
+}
+
+export async function getMyListings(userId: string, search: string = "", page: number = 1, limit: number = 10): Promise<{ items: Listing[], total: number, page: number, limit: number, totalPages: number }> {
+  const offset = (page - 1) * limit;
+
+  if (hasDatabase) {
+    const sellerRows = await db.select().from(sellerProfiles).where(eq(sellerProfiles.userId, userId));
+    const sellerIds = sellerRows.map(s => s.id);
+    if (sellerIds.length === 0) {
+      return { items: [], total: 0, page, limit, totalPages: 0 };
+    }
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(inArray(listings.sellerId, sellerIds));
+    if (search) {
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)));
+    }
+    const countResult = await countQuery;
+    const total = Number(countResult[0]?.count || 0);
+
+    const baseQuery = search
+      ? db.select().from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)))
+      : db.select().from(listings).where(inArray(listings.sellerId, sellerIds));
+
+    const rows = await baseQuery.limit(limit).offset(offset).orderBy(desc(listings.createdAt));
+    const totalPages = Math.ceil(total / limit);
+    return { items: rows.map(toListing), total, page, limit, totalPages };
+  }
+
+  const state = await getMemoryState();
+  const sellerIds = state.database.sellers.filter(s => s.userId === userId).map(s => s.id);
+  if (sellerIds.length === 0) {
+    return { items: [], total: 0, page, limit, totalPages: 0 };
+  }
+
+  const sellerIdSet = new Set(sellerIds);
+  let allListings = state.database.listings.filter(l => sellerIdSet.has(l.sellerId));
+  if (search) {
+    const searchLower = search.toLowerCase();
+    allListings = allListings.filter(l => l.title.toLowerCase().includes(searchLower));
+  }
+  allListings.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+  
+  const total = allListings.length;
+  const items = allListings.slice(offset, offset + limit);
+  const totalPages = Math.ceil(total / limit);
+  return { items, total, page, limit, totalPages };
 }
 
 export async function createListing(userId: string, input: ListingInput, idempotencyKey?: string) {
@@ -1088,7 +1137,7 @@ export async function removeUserListing(userId: string, listingId: string) {
       
       const storageKeysToClean = [
         ...mediaRows.map(m => m.storageKey),
-        ...checkoutSessionRows.flatMap(s => s.media.map(m => m.storageKey))
+        ...checkoutSessionRows.flatMap(s => s.media.map((m: any) => m.storageKey))
       ].filter(Boolean) as string[];
       
       await Promise.allSettled(storageKeysToClean.map(key => deleteBlob(key)));
@@ -1127,8 +1176,8 @@ export async function removeUserListing(userId: string, listingId: string) {
     deletedFromJson = state.database.listings[index];
     
     const storageKeysToClean = [
-      ...(deletedFromJson.media?.map((m: ListingMedia) => m.storageKey) || []),
-      ...state.listingCheckoutSessions.filter((s) => s.listingId === listingId).flatMap((s) => s.media.map((m) => m.storageKey))
+      ...(deletedFromJson.media?.map((m: any) => m.storageKey) || []),
+      ...state.listingCheckoutSessions.filter((s) => s.listingId === listingId).flatMap((s) => s.media.map((m: any) => m.storageKey))
     ].filter(Boolean) as string[];
     await Promise.allSettled(storageKeysToClean.map(key => deleteBlob(key)));
 

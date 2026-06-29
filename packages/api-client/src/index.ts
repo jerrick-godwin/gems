@@ -138,6 +138,14 @@ export class GemsApiClient {
     return this.authJson("/users/me/dashboard");
   }
 
+  async getMyListings(page: number, limit: number, search: string = ""): Promise<PaginatedResponse<Listing>> {
+    const params = new URLSearchParams();
+    params.set("page", page.toString());
+    params.set("limit", limit.toString());
+    if (search) params.set("search", search);
+    return this.authJson(`/users/me/listings?${params.toString()}`);
+  }
+
   async createListingCheckoutSession(input: CreateListingCheckoutSessionRequest): Promise<CreateListingCheckoutSessionResponse> {
     const response = await fetch(`${this.baseUrl}/listing-checkout-sessions`, {
       method: "POST",
