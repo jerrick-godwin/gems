@@ -35,7 +35,7 @@ import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
-import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl } from "./storage.js";
+import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob } from "./storage.js";
 import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
@@ -1082,6 +1082,18 @@ export async function removeUserListing(userId: string, listingId: string) {
       if (subscriptionIds.length > 0) {
         await db.delete(renewalEvents).where(inArray(renewalEvents.subscriptionId, subscriptionIds));
       }
+
+      const mediaRows = await db.select().from(listingMedia).where(eq(listingMedia.listingId, listingId));
+      const checkoutSessionRows = await db.select().from(listingCheckoutSessions).where(eq(listingCheckoutSessions.listingId, listingId));
+      
+      const storageKeysToClean = [
+        ...mediaRows.map(m => m.storageKey),
+        ...checkoutSessionRows.flatMap(s => s.media.map(m => m.storageKey))
+      ].filter(Boolean) as string[];
+      
+      await Promise.allSettled(storageKeysToClean.map(key => deleteBlob(key)));
+
+      await db.delete(listingCheckoutSessions).where(eq(listingCheckoutSessions.listingId, listingId));
       await db.delete(policyAcceptances).where(eq(policyAcceptances.listingId, listingId));
       await db.delete(paymentIntents).where(and(eq(paymentIntents.listingId, listingId), eq(paymentIntents.userId, userId)));
       await db.delete(listingSubscriptions).where(and(eq(listingSubscriptions.listingId, listingId), eq(listingSubscriptions.userId, userId)));
@@ -1093,6 +1105,7 @@ export async function removeUserListing(userId: string, listingId: string) {
       const [deleted] = await db.delete(listings).where(eq(listings.id, listingId)).returning();
       if (deleted) deletedFromDb = toListing(deleted);
     }
+    return deletedFromDb;
   }
 
   const state = await getMemoryState();
@@ -1112,10 +1125,18 @@ export async function removeUserListing(userId: string, listingId: string) {
       return state.database.listings[index];
     }
     deletedFromJson = state.database.listings[index];
+    
+    const storageKeysToClean = [
+      ...(deletedFromJson.media?.map((m: ListingMedia) => m.storageKey) || []),
+      ...state.listingCheckoutSessions.filter((s) => s.listingId === listingId).flatMap((s) => s.media.map((m) => m.storageKey))
+    ].filter(Boolean) as string[];
+    await Promise.allSettled(storageKeysToClean.map(key => deleteBlob(key)));
+
     state.database.listings.splice(index, 1);
     delete state.database.listingContacts[listingId];
     state.listingSubscriptions = state.listingSubscriptions.filter((subscription) => !(subscription.listingId === listingId && subscription.userId === userId));
     state.paymentIntents = state.paymentIntents.filter((intent) => !(intent.listingId === listingId && intent.userId === userId));
+    state.listingCheckoutSessions = state.listingCheckoutSessions.filter((session) => session.listingId !== listingId);
   }
   
   return deletedFromDb || deletedFromJson;

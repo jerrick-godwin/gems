@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { IncomingMessage } from "node:http";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -146,6 +146,27 @@ export async function saveLocalUpload(blobKey: string, request: IncomingMessage)
     stream.on("error", rejectUpload);
     stream.on("finish", resolveUpload);
   });
+}
+
+export async function deleteBlob(blobKey: string) {
+  if (blobServiceClient && sharedKeyCredential) {
+    try {
+      const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
+      const blobClient = containerClient.getBlockBlobClient(blobKey);
+      await blobClient.deleteIfExists();
+    } catch (e) {
+      console.warn(`Failed to delete blob ${blobKey} from Azure:`, e);
+    }
+  } else {
+    try {
+      const target = localUploadPath(blobKey);
+      await unlink(target);
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.warn(`Failed to delete local blob ${blobKey}:`, e);
+      }
+    }
+  }
 }
 
 function createLocalUploadUrl(blobKey: string) {
