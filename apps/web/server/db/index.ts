@@ -69,6 +69,22 @@ export async function ensureDatabaseCompatibility(options: { force?: boolean } =
       "email" varchar NOT NULL,
       "licence_number" varchar NOT NULL
     )`);
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS "listing_checkout_sessions" (
+      "id" varchar PRIMARY KEY NOT NULL,
+      "token_hash" varchar NOT NULL,
+      "draft" jsonb NOT NULL,
+      "media" jsonb NOT NULL,
+      "selected_plan_id" varchar,
+      "accepted_policies" boolean DEFAULT false NOT NULL,
+      "status" varchar DEFAULT 'open' NOT NULL,
+      "claimed_user_id" varchar REFERENCES "users"("id"),
+      "listing_id" varchar REFERENCES "listings"("id"),
+      "payment_intent_id" varchar,
+      "expires_at" timestamp NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "listing_checkout_sessions_token_hash_unique" ON "listing_checkout_sessions" ("token_hash")`);
     await db.execute(sql`
       INSERT INTO "merchant_disclosure" ("id", "merchant_name", "email", "licence_number")
       VALUES ('global', 'KRISTIANA MAGRET GEM & JEWELLERY', 'info@gemslanka.lk', '20266DL39394')

@@ -7,6 +7,7 @@ import { LoginPage } from "./features/account/LoginPage";
 import { MyListingsView } from "./features/account/MyListingsView";
 import { MyReportsView } from "./features/account/MyReportsView";
 import { PostGem } from "./features/account/PostGem";
+import { PostGemCheckout } from "./features/account/PostGemCheckout";
 import { ProfileSettings } from "./features/account/ProfileSettings";
 import { ReceiptPage } from "./features/account/ReceiptPage";
 import { SignupPage } from "./features/account/SignupPage";
@@ -15,7 +16,7 @@ import { AppFrame } from "./features/shell/AppFrame";
 import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
-import { pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
+import { listingCheckoutTokenFromPathname, pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 
@@ -44,6 +45,18 @@ function App() {
     }
   }, []);
 
+  const navigateToListingCheckout = useCallback((token: string, checkoutUrl: string) => {
+    setView("post_checkout");
+    const nextPath = `/post/checkout/${encodeURIComponent(token)}`;
+    const nextUrl = checkoutUrl.startsWith(window.location.origin) ? new URL(checkoutUrl).pathname : nextPath;
+    window.history.pushState({}, "", nextUrl);
+  }, []);
+
+  const navigateToPostEditCheckout = useCallback((token: string) => {
+    setView("post");
+    window.history.pushState({}, "", `/post?checkoutToken=${encodeURIComponent(token)}`);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = authClient.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
@@ -58,6 +71,8 @@ function App() {
       const canonicalPath = pathForView(nextView);
       const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
       setView(nextView);
+
+      if (nextView === "post_checkout" && currentPath.startsWith("/post/checkout/")) return;
 
       if (currentPath !== canonicalPath) {
         window.history.replaceState({}, "", `${canonicalPath}${window.location.search}${window.location.hash}`);
@@ -222,6 +237,8 @@ function App() {
   const listings = marketplace.snapshot.listings;
   const locations = marketplace.snapshot.locations;
   const sellers = marketplace.snapshot.sellers;
+  const listingCheckoutToken = view === "post_checkout" ? listingCheckoutTokenFromPathname(window.location.pathname) : "";
+  const editCheckoutToken = view === "post" ? new URLSearchParams(window.location.search).get("checkoutToken") ?? "" : "";
 
   return (
     <AppFrame {...frameProps} locations={locations}>
@@ -261,7 +278,19 @@ function App() {
           onRecordInteraction={marketplace.handleRecordInteraction}
         />
       )}
-      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} editCheckoutToken={editCheckoutToken} onCheckoutCreated={navigateToListingCheckout} />}
+      {view === "post_checkout" && (
+        <PostGemCheckout
+          token={listingCheckoutToken}
+          api={api}
+          subscriptionPlans={subscriptionPlans}
+          isSignedIn={isSignedIn}
+          authResolved={authResolved}
+          onDashboardChange={account.setDashboard}
+          onNavigate={navigateToView}
+          onEditListing={navigateToPostEditCheckout}
+        />
+      )}
       {view === "my_listings" && paymentNotice && !account.dashboard && (
         <StatusState
           title="Processing your payment"
