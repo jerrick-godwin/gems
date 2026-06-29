@@ -415,7 +415,7 @@ export interface Order {
 export interface UserDashboard {
   user: User;
   settings: UserSettings;
-  sellerListings: Listing[];
+    // sellerListings removed in favor of paginated endpoint
   conversations: Conversation[];
   cartCount: number;
   recentOrders: Order[];

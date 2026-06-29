@@ -53,6 +53,7 @@ import {
   getListingSubscriptionPaymentIntent,
   getAdminOrders,
   getDashboard,
+  getMyListings,
   getOrCreateUserFromClaims,
   getSettings,
   getUserProfile,
@@ -577,6 +578,14 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     if (request.method === "GET" && path === "/api/v1/users/me/dashboard") {
       sendJson(response, 200, await getDashboard(user.id));
+      return true;
+    }
+
+    if (request.method === "GET" && path === "/api/v1/users/me/listings") {
+      const page = Number(url.searchParams.get("page")) || 1;
+      const limit = Number(url.searchParams.get("limit")) || 10;
+      const search = url.searchParams.get("search") || "";
+      sendJson(response, 200, await getMyListings(user.id, search, page, limit));
       return true;
     }
 
