@@ -68,6 +68,44 @@ export async function createUserUploadTarget(userId: string, request: StorageUpl
   };
 }
 
+export async function createListingCheckoutUploadTarget(
+  sessionId: string,
+  request: { kind: "photo" | "certificate"; fileName: string; contentType: string }
+): Promise<StorageUploadTarget> {
+  const blobKey = createListingCheckoutBlobKey(sessionId, request);
+  const expiresAt = new Date(Date.now() + uploadUrlTtlMinutes * 60 * 1000);
+
+  if (!blobServiceClient || !sharedKeyCredential) {
+    return {
+      blobKey,
+      uploadUrl: createLocalUploadUrl(blobKey),
+      readUrl: createLocalReadUrl(blobKey),
+      expiresAt: expiresAt.toISOString()
+    };
+  }
+
+  const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
+  await containerClient.createIfNotExists();
+  const blobClient = containerClient.getBlockBlobClient(blobKey);
+  const sas = generateBlobSASQueryParameters(
+    {
+      containerName: CONTAINER_NAME,
+      blobName: blobKey,
+      permissions: BlobSASPermissions.parse("cw"),
+      contentType: request.contentType,
+      expiresOn: expiresAt
+    },
+    sharedKeyCredential
+  ).toString();
+
+  return {
+    blobKey,
+    uploadUrl: `${blobClient.url}?${sas}`,
+    readUrl: createSignedReadUrl(blobKey),
+    expiresAt: expiresAt.toISOString()
+  };
+}
+
 export function createSignedReadUrl(blobKey: string) {
   if (!sharedKeyCredential || !accountName) return createLocalReadUrl(blobKey);
 
@@ -133,4 +171,15 @@ function createUserBlobKey(userId: string, request: StorageUploadRequest) {
 
   const folder = request.scope === "listing-certificate" ? "certificates" : "media";
   return `users/${userId}/listings/${request.listingId}/${folder}/${id}${safeExtension}`;
+}
+
+function createListingCheckoutBlobKey(
+  sessionId: string,
+  request: { kind: "photo" | "certificate"; fileName: string }
+) {
+  const extension = extname(request.fileName).toLowerCase();
+  const safeExtension = extension && extension.length <= 12 ? extension : "";
+  const id = crypto.randomUUID();
+  const folder = request.kind === "certificate" ? "certificates" : "media";
+  return `listing-checkout-sessions/${sessionId}/${folder}/${id}${safeExtension}`;
 }

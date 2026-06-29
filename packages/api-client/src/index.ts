@@ -2,7 +2,10 @@ import type {
   Cart,
   CheckoutRequest,
   Conversation,
+  CreateListingCheckoutSessionRequest,
+  CreateListingCheckoutSessionResponse,
   GemType,
+  ListingCheckoutSession,
   Listing,
   ListingSubscription,
   ListingSubscriptionPlan,
@@ -18,6 +21,8 @@ import type {
   SellerProfile,
   StorageUploadRequest,
   StorageUploadTarget,
+  UpdateListingCheckoutDraftRequest,
+  UpdateListingCheckoutSessionRequest,
   User,
   UserDashboard,
   UserSettings,
@@ -131,6 +136,46 @@ export class GemsApiClient {
 
   async dashboard(): Promise<UserDashboard> {
     return this.authJson("/users/me/dashboard");
+  }
+
+  async createListingCheckoutSession(input: CreateListingCheckoutSessionRequest): Promise<CreateListingCheckoutSessionResponse> {
+    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    return response.json() as Promise<CreateListingCheckoutSessionResponse>;
+  }
+
+  async listingCheckoutSession(token: string): Promise<ListingCheckoutSession> {
+    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions/${encodeURIComponent(token)}`);
+    if (!response.ok) throw new Error(await readApiError(response));
+    return response.json() as Promise<ListingCheckoutSession>;
+  }
+
+  async updateListingCheckoutSession(token: string, input: UpdateListingCheckoutSessionRequest): Promise<ListingCheckoutSession> {
+    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions/${encodeURIComponent(token)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    return response.json() as Promise<ListingCheckoutSession>;
+  }
+
+  async updateListingCheckoutDraft(token: string, input: UpdateListingCheckoutDraftRequest): Promise<CreateListingCheckoutSessionResponse> {
+    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions/${encodeURIComponent(token)}/draft`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    return response.json() as Promise<CreateListingCheckoutSessionResponse>;
+  }
+
+  async completeListingCheckoutSession(token: string, input: UpdateListingCheckoutSessionRequest, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
+    return this.authJson(`/listing-checkout-sessions/${encodeURIComponent(token)}/complete`, { method: "POST", body: JSON.stringify(input) }, options);
   }
 
   async createListing(input: Partial<Listing>, options: IdempotentRequestOptions = {}): Promise<Listing> {

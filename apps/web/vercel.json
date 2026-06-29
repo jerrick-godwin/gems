@@ -31,6 +31,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/post/checkout",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/post/checkout/(.*)",
+      "destination": "/index.html"
+    },
+    {
       "source": "/listings",
       "destination": "/index.html"
     },

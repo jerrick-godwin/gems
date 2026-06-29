@@ -132,7 +132,74 @@ export interface Listing {
     chats: number;
     whatsappClicks: number;
   };
+  createdAt?: string;
+  updatedAt?: string;
   subscription?: ListingSubscriptionSummary;
+}
+
+export type ListingCheckoutSessionStatus = "open" | "claimed" | "used" | "expired";
+
+export interface ListingCheckoutDraft {
+  title: string;
+  gemTypeId: string;
+  description: string;
+  priceLkr: number;
+  location: string;
+  attributes: GemAttributes;
+}
+
+export interface ListingCheckoutMediaInput {
+  kind: "photo" | "certificate";
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+export interface ListingCheckoutMedia extends ListingCheckoutMediaInput {
+  id: string;
+  blobKey: string;
+  readUrl?: string;
+  order: number;
+}
+
+export interface ListingCheckoutSession {
+  token: string;
+  status: ListingCheckoutSessionStatus;
+  draft: ListingCheckoutDraft;
+  media: ListingCheckoutMedia[];
+  selectedPlanId?: ListingSubscriptionPlanId;
+  acceptedPolicies: boolean;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateListingCheckoutSessionRequest {
+  draft: ListingCheckoutDraft;
+  media: ListingCheckoutMediaInput[];
+  selectedPlanId?: ListingSubscriptionPlanId;
+}
+
+export interface ListingCheckoutUploadTarget extends StorageUploadTarget {
+  mediaId: string;
+}
+
+export interface CreateListingCheckoutSessionResponse {
+  token: string;
+  checkoutUrl: string;
+  session: ListingCheckoutSession;
+  uploadTargets: ListingCheckoutUploadTarget[];
+}
+
+export interface UpdateListingCheckoutSessionRequest {
+  selectedPlanId?: ListingSubscriptionPlanId;
+  acceptedPolicies?: boolean;
+}
+
+export interface UpdateListingCheckoutDraftRequest {
+  draft: ListingCheckoutDraft;
+  retainedMediaIds: string[];
+  media: ListingCheckoutMediaInput[];
 }
 
 export interface ListingSubscription extends ListingSubscriptionSummary {

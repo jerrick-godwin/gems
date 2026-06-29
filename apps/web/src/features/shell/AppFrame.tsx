@@ -213,6 +213,16 @@ export function AppFrame({
           </>
           ) : (
             <>
+              <a
+                href={pathForView("post")}
+                className={`primary-action${view === "post" || view === "post_checkout" ? " active" : ""}`}
+                onClick={(event) => handleViewLinkClick(event, "post")}
+                id="nav-post"
+                style={{ padding: "0 16px" }}
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                Post a Gem
+              </a>
               <a className="login-button" href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} id="nav-login">
                 <LogIn size={16} strokeWidth={2.5} />
                 Sign In
@@ -269,7 +279,10 @@ export function AppFrame({
                   <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")}>My Listings</a>
                 </>
               ) : (
-                <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")}>Sign In</a>
+                <>
+                  <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
+                  <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")}>Sign In</a>
+                </>
               )}
             </nav>
           </div>

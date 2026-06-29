@@ -1,8 +1,8 @@
-import { Camera, Check, ChevronRight, Trash2, Upload, X } from "lucide-react";
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Camera, ChevronRight, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
-import { formatLkr, quoteListingSubscription, type ListingMedia, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
-import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import type { ListingCheckoutMedia, ListingCheckoutMediaInput, Treatment } from "@gems/schemas";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { formatPriceInput, parsePriceInput, isUploadableUrl, publicErrorMessage } from "../../shared/helpers";
 
 
@@ -12,28 +12,71 @@ import { formatPriceInput, parsePriceInput, isUploadableUrl, publicErrorMessage 
 export function PostGem({
   gemTypes,
   locations,
-  subscriptionPlans,
   api,
-  onDashboardChange
+  editCheckoutToken,
+  onCheckoutCreated
 }: {
   gemTypes: MarketplaceSnapshot["gemTypes"];
   locations: string[];
-  subscriptionPlans: ListingSubscriptionPlan[];
   api: GemsApiClient;
-  onDashboardChange: (dashboard: UserDashboard) => void;
+  editCheckoutToken?: string;
+  onCheckoutCreated: (token: string, checkoutUrl: string) => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [retainedMedia, setRetainedMedia] = useState<ListingCheckoutMedia[]>([]);
   const [certificate, setCertificateFile] = useState<File | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<string>("pro");
-  const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [priceInput, setPriceInput] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
   const certInputRef = useRef<HTMLInputElement>(null);
   const submitAction = useSingleFlightAction();
-  const activePlan = subscriptionPlans.find(p => p.id === selectedPlan) || subscriptionPlans[0];
-  const quote = quoteListingSubscription(activePlan, photos.length);
-  const isSubmitting = submitAction.busy || status === "Creating listing draft..." || status === "Uploading media..." || status === "Creating payment...";
+  const retainedPhotos = retainedMedia.filter((item) => item.kind === "photo");
+  const retainedCertificate = retainedMedia.find((item) => item.kind === "certificate");
+  const totalPhotoCount = retainedPhotos.length + photos.length;
+  const isEditingCheckout = Boolean(editCheckoutToken);
+  const isSubmitting = submitAction.busy || status === "Loading saved draft..." || status === "Creating secure checkout..." || status === "Updating secure checkout..." || status === "Uploading media...";
+
+  useEffect(() => {
+    let active = true;
+    if (!editCheckoutToken) {
+      setRetainedMedia([]);
+      return;
+    }
+
+    setStatus("Loading saved draft...");
+    api.listingCheckoutSession(editCheckoutToken)
+      .then((session) => {
+        if (!active) return;
+        const form = formRef.current;
+        if (form) {
+          setFieldValue(form, "post-title", session.draft.title);
+          setFieldValue(form, "post-gem-type", session.draft.gemTypeId);
+          setFieldValue(form, "post-description", session.draft.description);
+          setFieldValue(form, "post-location", session.draft.location);
+          setFieldValue(form, "post-carat", String(session.draft.attributes.carat));
+          setFieldValue(form, "post-dimensions", session.draft.attributes.dimensions);
+          setFieldValue(form, "post-shape", session.draft.attributes.shape);
+          setFieldValue(form, "post-cut", session.draft.attributes.cut);
+          setFieldValue(form, "post-color", session.draft.attributes.color);
+          setFieldValue(form, "post-clarity", session.draft.attributes.clarity);
+          setFieldValue(form, "post-origin", session.draft.attributes.origin);
+          setFieldValue(form, "post-treatment", session.draft.attributes.treatment);
+        }
+        setPriceInput(formatPriceInput(String(session.draft.priceLkr)));
+        setPhotos([]);
+        setCertificateFile(null);
+        setRetainedMedia(session.media);
+        setStatus(null);
+      })
+      .catch((error) => {
+        if (active) setStatus(publicErrorMessage(error, "Unable to load saved checkout draft."));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [api, editCheckoutToken]);
 
   const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
     setPriceInput(formatPriceInput(event.target.value));
@@ -44,6 +87,7 @@ export function PostGem({
     
     const MAX_SIZE = 2 * 1024 * 1024;
     const newFiles = Array.from(files);
+    const retainedPhotoCount = retainedMedia.filter((item) => item.kind === "photo").length;
     
     for (const file of newFiles) {
       if (file.size > MAX_SIZE) {
@@ -54,9 +98,9 @@ export function PostGem({
 
     setPhotos((prev) => {
       const combined = [...prev, ...newFiles];
-      if (combined.length > 15) {
+      if (retainedPhotoCount + combined.length > 15) {
         setStatus("You can upload a maximum of 15 gem photos.");
-        return combined.slice(0, 15);
+        return combined.slice(0, Math.max(0, 15 - retainedPhotoCount));
       }
       setStatus(null);
       return combined;
@@ -68,13 +112,19 @@ export function PostGem({
     if (photosInputRef.current) photosInputRef.current.value = "";
   };
 
+  const removeRetainedMedia = (id: string) => {
+    setRetainedMedia((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const removeCertificate = () => {
     setCertificateFile(null);
+    setRetainedMedia((prev) => prev.filter((item) => item.kind !== "certificate"));
     if (certInputRef.current) certInputRef.current.value = "";
   };
 
   const handleClear = () => {
     setPhotos([]);
+    setRetainedMedia([]);
     setCertificateFile(null);
     setPriceInput("");
     setStatus(null);
@@ -87,116 +137,80 @@ export function PostGem({
     const form = event.currentTarget;
     const value = (id: string) => (form.querySelector(`#${id}`) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null)?.value ?? "";
 
-    if (photos.length === 0) {
+    if (totalPhotoCount === 0) {
       setStatus("Please add at least one gem photo.");
       return;
     }
 
     await submitAction.run(async () => {
-      const submissionKey = createIdempotencyKey("post-gem");
       try {
-        setStatus("Creating listing draft...");
-        const listing = await api.createListing({
-          title: value("post-title"),
-          gemTypeId: value("post-gem-type"),
-          description: value("post-description"),
-          priceLkr: parsePriceInput(value("post-price")),
-          location: value("post-location") || "Sri Lanka",
-          attributes: {
-            carat: Number(value("post-carat") || 0),
-            shape: value("post-shape"),
-            color: value("post-color"),
-            treatment: value("post-treatment") as Treatment,
-            dimensions: value("post-dimensions"),
-            cut: value("post-cut"),
-            clarity: value("post-clarity"),
-            origin: value("post-origin"),
-            certificateStatus: certificate ? "seller_provided" : "none"
-          }
-        }, { idempotencyKey: `${submissionKey}:listing` });
-
-        setStatus("Uploading media...");
-        const uploadedMedia: ListingMedia[] = [];
-        let order = 0;
-        for (const file of photos) {
-          const target = await api.createStorageUpload({
-            scope: "listing-media",
-            fileName: file.name,
-            contentType: file.type || "application/octet-stream",
-            listingId: listing.id
-          });
-          
-          if (isUploadableUrl(target.uploadUrl)) {
-            await fetch(target.uploadUrl, {
-              method: "PUT",
-              body: file,
-              headers: {
-                "Content-Type": file.type || "application/octet-stream",
-                "x-ms-blob-type": "BlockBlob"
-              }
-            });
-          }
-          
-          uploadedMedia.push({
-            id: target.blobKey,
-            listingId: listing.id,
-            kind: "photo",
-            url: target.readUrl || target.uploadUrl,
-            alt: file.name,
-            order: order++,
-            moderationStatus: "not_submitted"
-          });
-        }
-
+        setStatus(isEditingCheckout ? "Updating secure checkout..." : "Creating secure checkout...");
+        const media: ListingCheckoutMediaInput[] = photos.map((file) => ({
+          kind: "photo",
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+          size: file.size
+        }));
         if (certificate) {
-          const target = await api.createStorageUpload({
-            scope: "listing-certificate",
+          media.push({
+            kind: "certificate",
             fileName: certificate.name,
             contentType: certificate.type || "application/pdf",
-            listingId: listing.id
-          });
-          
-          if (isUploadableUrl(target.uploadUrl)) {
-            await fetch(target.uploadUrl, {
-              method: "PUT",
-              body: certificate,
-              headers: {
-                "Content-Type": certificate.type || "application/pdf",
-                "x-ms-blob-type": "BlockBlob"
-              }
-            });
-          }
-          
-          uploadedMedia.push({
-            id: target.blobKey,
-            listingId: listing.id,
-            kind: "certificate",
-            url: target.readUrl || target.uploadUrl,
-            alt: certificate.name,
-            order: 0,
-            moderationStatus: "not_submitted"
+            size: certificate.size
           });
         }
+        const certificateStatus = certificate || retainedCertificate ? "seller_provided" as const : "none" as const;
 
-        if (uploadedMedia.length > 0) {
-          await api.updateMyListing(listing.id, { media: uploadedMedia });
+        const checkoutRequest = {
+          draft: {
+            title: value("post-title"),
+            gemTypeId: value("post-gem-type"),
+            description: value("post-description"),
+            priceLkr: parsePriceInput(value("post-price")),
+            location: value("post-location") || "Sri Lanka",
+            attributes: {
+              carat: Number(value("post-carat") || 0),
+              shape: value("post-shape"),
+              color: value("post-color"),
+              treatment: value("post-treatment") as Treatment,
+              dimensions: value("post-dimensions"),
+              cut: value("post-cut"),
+              clarity: value("post-clarity"),
+              origin: value("post-origin"),
+              certificateStatus
+            }
+          },
+          media
+        };
+
+        const checkout = editCheckoutToken
+          ? await api.updateListingCheckoutDraft(editCheckoutToken, {
+              ...checkoutRequest,
+              retainedMediaIds: retainedMedia.map((item) => item.id)
+            })
+          : await api.createListingCheckoutSession(checkoutRequest);
+
+        setStatus("Uploading media...");
+        const filesToUpload = certificate ? [...photos, certificate] : photos;
+        for (const [index, target] of checkout.uploadTargets.entries()) {
+          const file = filesToUpload[index];
+          if (!file || !isUploadableUrl(target.uploadUrl)) continue;
+          const uploadResponse = await fetch(target.uploadUrl, {
+            method: "PUT",
+            body: file,
+            headers: {
+              "Content-Type": file.type || "application/octet-stream",
+              "x-ms-blob-type": "BlockBlob"
+            }
+          });
+          if (!uploadResponse.ok) throw new Error(`Unable to upload ${file.name}.`);
         }
 
-        setStatus("Creating payment...");
-        const paymentIntent = await api.createListingPaymentIntent(listing.id, {
-          planId: selectedPlan,
-          photoCount: photos.length,
-          acceptedPolicies
-        }, { idempotencyKey: `${submissionKey}:payment` });
-
-        onDashboardChange(await api.dashboard());
-        form.reset();
-        handleClear();
-        if (paymentIntent.paymentUrl) {
-          window.location.href = paymentIntent.paymentUrl;
-          return;
+        if (!editCheckoutToken) {
+          form.reset();
+          handleClear();
         }
-        setStatus("Payment intent created. Please contact support if you are not redirected to checkout.");
+        onCheckoutCreated(checkout.token, checkout.checkoutUrl);
         submitAction.release();
       } catch (error) {
         setStatus(publicErrorMessage(error, "Unable to submit listing."));
@@ -212,7 +226,7 @@ export function PostGem({
           <h1>Post a Gem Listing</h1>
           <p>Build a clear listing for moderation. Complete each section for faster approval.</p>
         </div>
-        <form className="post-form" id="post-gem-form" onSubmit={handleSubmit} onReset={handleClear}>
+        <form ref={formRef} className="post-form" id="post-gem-form" onSubmit={handleSubmit} onReset={handleClear}>
           <label>
             Listing title
             <input placeholder="Ceylon Blue Sapphire" id="post-title" required disabled={isSubmitting} />
@@ -234,36 +248,6 @@ export function PostGem({
             Description
             <textarea placeholder="Color, clarity, treatment, inspection notes." id="post-description" required disabled={isSubmitting} />
           </label>
-
-          <section className="form-section" aria-labelledby="listing-plan-heading">
-            <div className="form-section-header">
-              <h2 id="listing-plan-heading">Listing Subscription</h2>
-            </div>
-            <div className="plan-grid">
-              {subscriptionPlans.map((plan) => {
-                const isSelected = selectedPlan === plan.id;
-
-                return (
-                  <label className={`plan-option plan-option-${plan.id} ${isSelected ? "selected" : ""}`} key={plan.id}>
-                    <input type="radio" name="listing-plan" value={plan.id} checked={isSelected} onChange={() => setSelectedPlan(plan.id)} disabled={isSubmitting} />
-                    <span className="plan-option-eyebrow">{plan.eyebrow}</span>
-                    <strong>{plan.name}</strong>
-                    <span className="plan-option-price">{formatLkr(plan.priceLkr)}</span>
-                    <small className="plan-option-summary">{plan.summary}</small>
-                    <span className="plan-feature">
-                      <Check size={15} strokeWidth={2.6} />
-                      {plan.includedPhotos} photos included
-                    </span>
-                    <span className="plan-feature">
-                      <Check size={15} strokeWidth={2.6} />
-                      {plan.validityMonths} month{plan.validityMonths > 1 ? "s" : ""} of advertisement validity
-                    </span>
-                    <span className="plan-extra">Extra photos: {formatLkr(plan.extraPhotoPriceLkr)} each</span>
-                  </label>
-                );
-              })}
-            </div>
-          </section>
 
           {/* ── Media uploads ── */}
           <div className="upload-section">
@@ -288,8 +272,23 @@ export function PostGem({
                 style={{ display: 'none' }}
               />
             </div>
-            {photos.length > 0 ? (
+            {totalPhotoCount > 0 ? (
               <div className="upload-previews">
+                {retainedPhotos.map((item) => (
+                  <div className="upload-preview-item" key={item.id}>
+                    {item.readUrl ? <img src={item.readUrl} alt={item.fileName} /> : <div className="cert-icon"><Camera size={20} strokeWidth={1.5} /></div>}
+                    <button
+                      type="button"
+                      className="upload-remove"
+                      disabled={isSubmitting}
+                      onClick={() => removeRetainedMedia(item.id)}
+                      aria-label={`Remove ${item.fileName}`}
+                    >
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                    <span className="upload-filename">{item.fileName}</span>
+                  </div>
+                ))}
                 {photos.map((file, index) => (
                   <div className="upload-preview-item" key={`${file.name}-${index}`}>
                     <img src={URL.createObjectURL(file)} alt={file.name} />
@@ -321,7 +320,7 @@ export function PostGem({
           <div className="upload-section">
             <div className="upload-section-header">
               <span className="upload-section-title">Certificate</span>
-              {!certificate && (
+              {!certificate && !retainedCertificate && (
                 <button
                   type="button"
                   className="upload-trigger"
@@ -349,10 +348,19 @@ export function PostGem({
                 style={{ display: 'none' }}
               />
             </div>
-            {certificate ? (
+            {certificate || retainedCertificate ? (
               <div className="upload-previews">
                 <div className="upload-preview-item cert">
-                  {certificate.type.startsWith('image/') ? (
+                  {retainedCertificate ? (
+                    retainedCertificate.contentType.startsWith("image/") && retainedCertificate.readUrl ? (
+                      <img src={retainedCertificate.readUrl} alt={retainedCertificate.fileName} />
+                    ) : (
+                      <div className="cert-icon">
+                        <Upload size={20} strokeWidth={1.5} />
+                        <span>PDF</span>
+                      </div>
+                    )
+                  ) : certificate?.type.startsWith('image/') ? (
                     <img src={URL.createObjectURL(certificate)} alt={certificate.name} />
                   ) : (
                     <div className="cert-icon">
@@ -369,7 +377,7 @@ export function PostGem({
                   >
                     <X size={12} strokeWidth={2.5} />
                   </button>
-                  <span className="upload-filename">{certificate.name}</span>
+                  <span className="upload-filename">{retainedCertificate?.fileName ?? certificate?.name}</span>
                 </div>
               </div>
             ) : (
@@ -447,94 +455,7 @@ export function PostGem({
             </div>
           </section>
 
-          <section className="form-section order-summary-section" aria-labelledby="order-summary-heading">
-            <div className="form-section-header">
-              <h2 id="order-summary-heading">Order Summary</h2>
-            </div>
-            <div className="order-summary-card">
-              <table className="order-summary-table">
-                <thead>
-                  <tr>
-                    <th>Description</th>
-                    <th className="align-right">Amount (LKR)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <div className="item-title">
-                        <span className="item-badge package">Package</span>
-                        <strong>{quote.plan.name} Plan</strong>
-                      </div>
-                      <div className="item-desc">
-                        <div className="item-desc-line">
-                          <Check size={14} strokeWidth={2.5} className="item-check" />
-                          <span>{quote.plan.validityMonths} month{quote.plan.validityMonths > 1 ? "s" : ""} of advertisement validity</span>
-                        </div>
-                        <div className="item-desc-line">
-                          <Check size={14} strokeWidth={2.5} className="item-check" />
-                          <span>Includes up to {quote.plan.includedPhotos} photos</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="align-right amount-cell">
-                      {quote.basePriceLkr.toLocaleString("en-US")}
-                    </td>
-                  </tr>
-                  {quote.extraPhotoCount > 0 && (
-                    <tr>
-                      <td>
-                        <div className="item-title">
-                          <span className="item-badge additional">Additional</span>
-                          <strong>Extra Photos</strong>
-                        </div>
-                        <div className="item-desc">
-                          <div className="item-desc-line">
-                            <Check size={14} strokeWidth={2.5} className="item-check" />
-                            <span>{quote.extraPhotoCount} extra photo{quote.extraPhotoCount > 1 ? "s" : ""} × {quote.plan.extraPhotoPriceLkr.toLocaleString("en-US")} each</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="align-right amount-cell">
-                        {quote.extraPhotoTotalLkr.toLocaleString("en-US")}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={2}>
-                      <div className="total-row">
-                        <span className="total-label">Total Amount: </span>
-                        <span className="total-amount">{quote.totalLkr.toLocaleString("en-US")}</span>
-                      </div>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </section>
-
           {/* ── Actions ── */}
-          <label className="policy-acceptance">
-            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} disabled={isSubmitting} required />
-            <span>
-              I accept the{" "}
-              <a href="/terms-and-conditions" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
-                Terms and Conditions
-              </a>
-              {" "}and{" "}
-              <a href="/privacy-policy" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
-                Privacy Policy
-              </a>
-              <span className="required-marker" aria-hidden="true">*</span>
-            </span>
-          </label>
-          {status && !["Listing submitted for moderation.", "Creating listing draft...", "Uploading media...", "Creating payment..."].includes(status) && (
-            <p style={{ color: "var(--danger)", fontWeight: 600, marginTop: 16, marginBottom: 16, textAlign: "center" }}>
-              {status}
-            </p>
-          )}
           <div className="post-actions">
             <button 
               type="submit" 
@@ -542,16 +463,14 @@ export function PostGem({
               id="submit-listing"
               disabled={isSubmitting}
             >
-              {status === "Listing submitted for moderation." ? (
-                <Check size={18} strokeWidth={2.5} />
-              ) : isSubmitting ? (
+              {isSubmitting ? (
                 <>
                   <span className="button-spinner" aria-hidden="true" />
                   <span>{status}</span>
                 </>
               ) : (
                 <>
-                  Proceed to Payment
+                  {isEditingCheckout ? "Update Checkout" : "Continue to Checkout"}
                   <ChevronRight size={17} strokeWidth={2.2} />
                 </>
               )}
@@ -565,4 +484,9 @@ export function PostGem({
       </div>
     </section>
   );
+}
+
+function setFieldValue(form: HTMLFormElement, id: string, value: string) {
+  const field = form.querySelector(`#${id}`) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+  if (field) field.value = value;
 }

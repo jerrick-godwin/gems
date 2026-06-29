@@ -2,6 +2,9 @@ import { boolean, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex
 import type {
   CheckoutDetails,
   GemAttributes,
+  ListingCheckoutDraft,
+  ListingCheckoutMedia,
+  ListingCheckoutSessionStatus,
   ListingMedia,
   ListingStatus,
   ListingSubscriptionPlanId,
@@ -109,6 +112,24 @@ export const listings = pgTable("listings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 }, (table) => ({
   listingsSellerIdempotencyUnique: uniqueIndex("listings_seller_idempotency_unique").on(table.sellerId, table.idempotencyKey)
+}));
+
+export const listingCheckoutSessions = pgTable("listing_checkout_sessions", {
+  id: varchar("id").primaryKey(),
+  tokenHash: varchar("token_hash").notNull().unique(),
+  draft: jsonb("draft").$type<ListingCheckoutDraft>().notNull(),
+  media: jsonb("media").$type<ListingCheckoutMedia[]>().notNull(),
+  selectedPlanId: varchar("selected_plan_id"),
+  acceptedPolicies: boolean("accepted_policies").notNull().default(false),
+  status: varchar("status").$type<ListingCheckoutSessionStatus>().notNull().default("open"),
+  claimedUserId: varchar("claimed_user_id").references(() => users.id),
+  listingId: varchar("listing_id").references(() => listings.id),
+  paymentIntentId: varchar("payment_intent_id"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => ({
+  listingCheckoutSessionsTokenHashUnique: uniqueIndex("listing_checkout_sessions_token_hash_unique").on(table.tokenHash)
 }));
 
 export const listingSubscriptions = pgTable("listing_subscriptions", {

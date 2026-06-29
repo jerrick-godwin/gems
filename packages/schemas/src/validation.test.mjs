@@ -47,12 +47,15 @@ test("admin order statuses match the supported workflow", () => {
 });
 
 test("listing subscription pricing follows plan photo allowances", () => {
-  assert.equal(quoteListingSubscription("basic", 3).totalLkr, 500);
-  assert.equal(quoteListingSubscription("basic", 4).totalLkr, 750);
-  assert.equal(quoteListingSubscription("pro", 6).totalLkr, 1000);
-  assert.equal(quoteListingSubscription("pro", 7).totalLkr, 1500);
-  assert.equal(quoteListingSubscription("plus", 10).totalLkr, 20000);
-  assert.equal(quoteListingSubscription("plus", 11).totalLkr, 20500);
+  const basic = { id: "basic", name: "Basic", priceLkr: 500, includedPhotos: 3, extraPhotoPriceLkr: 250, validityMonths: 1, eyebrow: "Starter", summary: "" };
+  const pro = { id: "pro", name: "Pro", priceLkr: 1000, includedPhotos: 6, extraPhotoPriceLkr: 500, validityMonths: 2, eyebrow: "Recommended", summary: "" };
+  const plus = { id: "plus", name: "Plus", priceLkr: 20000, includedPhotos: 10, extraPhotoPriceLkr: 500, validityMonths: 3, eyebrow: "Premium", summary: "" };
+  assert.equal(quoteListingSubscription(basic, 3).totalLkr, 500);
+  assert.equal(quoteListingSubscription(basic, 4).totalLkr, 750);
+  assert.equal(quoteListingSubscription(pro, 6).totalLkr, 1000);
+  assert.equal(quoteListingSubscription(pro, 7).totalLkr, 1500);
+  assert.equal(quoteListingSubscription(plus, 10).totalLkr, 20000);
+  assert.equal(quoteListingSubscription(plus, 11).totalLkr, 20500);
 });
 
 test("gem listing validation allows optional dimensions, shape, and cut", () => {
