@@ -1,5 +1,5 @@
-import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt } from "lucide-react";
-import { useState } from "react";
+import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
@@ -19,7 +19,13 @@ export function MyListingsView({
   api: GemsApiClient;
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
-  const listings = dashboard?.sellerListings ?? [];
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [totalListings, setTotalListings] = useState(0);
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [isLoadingListings, setIsLoadingListings] = useState(true);
+
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
   const [payingSubscriptionId, setPayingSubscriptionId] = useState<string | null>(null);
@@ -30,12 +36,44 @@ export function MyListingsView({
   const payAction = useSingleFlightAction();
   const deleteAction = useSingleFlightAction();
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchListings = async () => {
+      setIsLoadingListings(true);
+      try {
+        const response = await api.getMyListings(page, 10, debouncedSearchQuery);
+        if (active) {
+          if (response.items.length === 0 && page > 1) {
+            setPage(page - 1);
+          } else {
+            setListings(response.items);
+            setTotalListings(response.total);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch listings:", error);
+      } finally {
+        if (active) setIsLoadingListings(false);
+      }
+    };
+    fetchListings();
+    return () => { active = false; };
+  }, [api, page, debouncedSearchQuery, dashboard]);
+
   const getStatusLabel = (listing: Listing) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
       return { label: "Rejected", color: "var(--danger)", bg: "var(--danger-soft)" };
     }
     if (listing.moderationStatus === "approved") {
-      return { label: "Approved", color: "var(--emerald)", bg: "var(--emerald-soft)" };
+      return { label: "Approved", color: "var(--success)", bg: "var(--success-soft)" };
     }
     if (listing.moderationStatus === "queued" || listing.moderationStatus === "needs_changes" || listing.status === "pending_review") {
       return { label: "Review in Progress", color: "var(--gold)", bg: "rgba(251,191,36,0.15)" };
@@ -124,12 +162,31 @@ export function MyListingsView({
 
   return (
     <section className="dashboard">
-      <div className="section-heading">
-        <h1>My Listings</h1>
-        <p>Manage your submitted listings and view their approval status.</p>
+      <div className="section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1>My Listings</h1>
+          <p>Manage your submitted listings and view their approval status.</p>
+        </div>
+        <div style={{ position: "relative", width: 280, marginTop: 4 }}>
+          <Search size={18} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--sage)" }} />
+          <input
+            type="text"
+            placeholder="Search listings..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ 
+              width: "100%", padding: "10px 12px 10px 38px", 
+              borderRadius: "8px", border: "1px solid var(--line)", 
+              backgroundColor: "var(--surface)", color: "var(--ink)", outline: "none",
+              fontSize: 14
+            }}
+          />
+        </div>
       </div>
-      <section className="data-panel">
-        {listings.length === 0 ? (
+      <section className="data-panel" style={{ opacity: isLoadingListings ? 0.6 : 1, transition: "opacity 0.2s" }}>
+        {isLoadingListings && listings.length === 0 ? (
+          <p style={{ color: "var(--sage)", fontWeight: 600 }}>Loading listings...</p>
+        ) : listings.length === 0 ? (
           <p style={{ color: "var(--sage)", fontWeight: 600 }}>No listings found.</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -149,19 +206,21 @@ export function MyListingsView({
                 listing.attributes.treatment
               ]);
               const isRejected = listing.status === "rejected" || listing.moderationStatus === "rejected";
-              const isAutoRenewActive = subscription?.autoRenew && !isRejected;
+              const hasPaidSubscriptionAccess = isSubscriptionInPaidAccess(subscription);
+              const canCancelRenewal = Boolean(subscription?.autoRenew && hasPaidSubscriptionAccess && !isRejected);
+              const renewalStatus = getSubscriptionRenewalStatus(subscription);
 
               return (
-                <div key={listing.id} className="cart-item-card" style={{ display: 'flex', gap: 16, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'var(--panel-strong)' }}>
+                <div key={listing.id} className="seller-listing-card">
                   {listing.media[0] && (
-                    <img src={listing.media[0].url} alt={listing.title} style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} />
+                    <img src={listing.media[0].url} alt={listing.title} className="seller-listing-image" />
                   )}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <h3 style={{ margin: 0, fontSize: 18, color: 'var(--ink)' }}>{listing.title}</h3>
-                    <div style={{ fontSize: 14, color: 'var(--muted)', fontWeight: 600 }}>
+                  <div className="seller-listing-body">
+                    <h3 className="seller-listing-title">{listing.title}</h3>
+                    <div className="seller-listing-summary">
                       {summarySpecs.join(" · ")}
                     </div>
-                    <strong style={{ fontSize: 16, color: 'var(--emerald)' }}>
+                    <strong className="seller-listing-price">
                       {formatLkr(listing.priceLkr)}
                     </strong>
                     <dl className="seller-listing-attributes">
@@ -172,68 +231,52 @@ export function MyListingsView({
                         </div>
                       ))}
                     </dl>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                    <div className="seller-listing-meta-panel">
+                      <div className="seller-listing-finance-grid">
                         {subscription && plan && (
-                          <div style={{
-                            padding: '10px 14px',
-                            background: 'var(--panel)',
-                            border: '1px solid var(--line)',
-                            borderLeft: isAutoRenewActive ? '4px solid var(--emerald)' : '4px solid var(--muted)',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 4
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
-                              <ShieldCheck size={16} style={{ color: isAutoRenewActive ? 'var(--emerald)' : 'var(--muted)' }} />
+                          <div className={`seller-listing-finance-card ${canCancelRenewal ? "is-renewing" : "is-muted"}`}>
+                            <div className="seller-listing-finance-title">
+                              <ShieldCheck size={16} style={{ color: canCancelRenewal ? 'var(--emerald)' : 'var(--muted)' }} />
                               {plan.name} Subscription
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            <div className="seller-listing-finance-line">
                               Status: <span style={{ textTransform: 'capitalize', fontWeight: 600, color: 'var(--ink)' }}>{subscription.status.replace("_", " ")}</span>
                             </div>
                             {subscription.expiresAt && (
-                              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                              <div className="seller-listing-finance-line">
                                 Valid until {formatDate(subscription.expiresAt)}
                               </div>
                             )}
-                            <div style={{ fontSize: 11, fontWeight: 600, color: isAutoRenewActive ? 'var(--emerald)' : 'var(--danger)', marginTop: 2 }}>
-                              {isAutoRenewActive ? "Auto-renew active" : "Auto-renew cancelled"}
-                            </div>
+                            {renewalStatus && (
+                              <div className="seller-listing-finance-note" style={{ color: renewalStatus.color }}>
+                                {renewalStatus.label}
+                              </div>
+                            )}
                           </div>
                         )}
                         {payment && (
-                          <div style={{
-                            padding: '10px 14px',
-                            background: 'var(--panel)',
-                            border: '1px solid var(--line)',
-                            borderLeft: payment.status === 'succeeded' ? '4px solid var(--emerald)' : '4px solid var(--gold)',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 4
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+                          <div className={`seller-listing-finance-card ${payment.status === "succeeded" ? "is-paid" : "is-pending"}`}>
+                            <div className="seller-listing-finance-title">
                               <Receipt size={16} style={{ color: 'var(--muted)' }} />
                               Payment details
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            <div className="seller-listing-finance-line">
                               Amount: <strong style={{ color: 'var(--ink)' }}>{formatLkr(payment.amountLkr)}</strong> ({payment.status})
                             </div>
                             {payment.stripeInvoiceId && (
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                                Invoice: <code style={{ fontSize: 10, background: 'var(--soft)', padding: '2px 4px', borderRadius: '4px', border: '1px solid var(--line)' }}>{shortRef(payment.stripeInvoiceId)}</code>
+                              <div className="seller-listing-finance-line is-small">
+                                Invoice: <code>{shortRef(payment.stripeInvoiceId)}</code>
                               </div>
                             )}
                             {paymentLines.length > 0 && (
-                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                              <div className="seller-listing-finance-note">
                                 {paymentLines.join(" · ")}
                               </div>
                             )}
                           </div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="seller-listing-status-row">
                         <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
                           {statusInfo.label}
                         </span>
@@ -245,12 +288,12 @@ export function MyListingsView({
                       )}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center' }}>
+                  <div className="seller-listing-actions">
                     {subscription && isAwaitingInitialPayment(subscription) && (
                       <button
                         onClick={() => void handlePayNow(subscription.id)}
                         disabled={payAction.busy || payingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--emerald)", color: "var(--bg)", border: "none", cursor: payAction.busy || payingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        className="seller-listing-action-button seller-listing-pay-button"
                       >
                         <CreditCard size={16} strokeWidth={2.5} />
                         {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
@@ -260,17 +303,17 @@ export function MyListingsView({
                       <button
                         onClick={() => void handleDownloadReceipt(payment)}
                         disabled={downloadingPaymentId === payment.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: downloadingPaymentId === payment.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        className="seller-listing-action-button seller-listing-secondary-button"
                       >
                         <Download size={16} strokeWidth={2.5} />
                         {downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}
                       </button>
                     )}
-                    {isAutoRenewActive && (
+                    {canCancelRenewal && subscription && (
                       <button
                         onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
                         disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--soft)", color: "var(--ink)", border: "1px solid var(--line)", cursor: cancelAction.busy || cancellingSubscriptionId === subscription.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        className="seller-listing-action-button seller-listing-secondary-button"
                       >
                         <RefreshCcw size={16} strokeWidth={2.5} />
                         {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
@@ -279,18 +322,44 @@ export function MyListingsView({
                     <button 
                       onClick={() => setConfirmDeleteId(listing.id)}
                       disabled={deleteAction.busy || deletingId === listing.id}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "8px 16px", borderRadius: "var(--radius)", background: "var(--danger)", color: "#fff", border: "none", cursor: deleteAction.busy || deletingId === listing.id ? "not-allowed" : "pointer", fontWeight: 600 }}
+                      className="seller-listing-action-button seller-listing-danger-button"
                     >
                       <Trash2 size={16} strokeWidth={2.5} />
                       {deletingId === listing.id ? "Deleting..." : "Delete"}
-                    </button>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          )}
+          
+          {listings.length > 0 && totalListings > 10 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--line-subtle)" }}>
+              <span style={{ fontSize: 14, color: "var(--sage)", fontWeight: 500 }}>
+                Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, totalListings)} of {totalListings} listings
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button 
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="seller-listing-secondary-button"
+                  style={{ display: "flex", alignItems: "center", gap: 4, opacity: page === 1 ? 0.5 : 1, cursor: page === 1 ? "not-allowed" : "pointer" }}
+                >
+                  <ChevronLeft size={16} /> Prev
+                </button>
+                <button 
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * 10 >= totalListings}
+                  className="seller-listing-secondary-button"
+                  style={{ display: "flex", alignItems: "center", gap: 4, opacity: page * 10 >= totalListings ? 0.5 : 1, cursor: page * 10 >= totalListings ? "not-allowed" : "pointer" }}
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
       {confirmDeleteId && createPortal(
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
@@ -432,4 +501,24 @@ function isAwaitingInitialPayment(subscription: ListingSubscriptionSummary | und
     subscription &&
     (subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt))
   );
+}
+
+function getSubscriptionRenewalStatus(subscription: ListingSubscriptionSummary | undefined) {
+  if (!subscription) return undefined;
+
+  if (subscription.status === "pending_payment") {
+    return { label: "Payment required", color: "var(--gold)" };
+  }
+
+  if (subscription.status === "active" || subscription.status === "past_due") {
+    return subscription.autoRenew
+      ? { label: "Auto-renew active", color: "var(--emerald)" }
+      : { label: "Auto-renew off", color: "var(--muted)" };
+  }
+
+  if (subscription.status === "expired") {
+    return { label: "Subscription expired", color: "var(--muted)" };
+  }
+
+  return { label: "Subscription cancelled", color: "var(--danger)" };
 }

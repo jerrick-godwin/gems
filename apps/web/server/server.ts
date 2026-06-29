@@ -32,6 +32,8 @@ import {
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
   createListingPaymentIntent,
+  completeListingCheckoutSession,
+  createListingCheckoutSession,
   createListing,
   createStorageUpload,
   cancelListingSubscription,
@@ -47,14 +49,18 @@ import {
   getPaymentIntent,
   getPaymentReceipt,
   getPaymentReceiptPdf,
+  getListingCheckoutSession,
   getListingSubscriptionPaymentIntent,
   getAdminOrders,
   getDashboard,
+  getMyListings,
   getOrCreateUserFromClaims,
   getSettings,
   getUserProfile,
   updateOrderStatus,
   updateSettings,
+  updateListingCheckoutDraft,
+  updateListingCheckoutSession,
   updateUserProfile,
   DuplicatePhoneNumberError,
   getAllUsers,
@@ -106,7 +112,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
     "content-type": "application/json; charset=utf-8",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
-    "access-control-allow-headers": "authorization,content-type"
+    "access-control-allow-headers": "authorization,content-type,idempotency-key"
   });
   response.end(JSON.stringify(body));
 }
@@ -247,12 +253,81 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   if (request.method === "PUT" && path === "/api/v1/storage/local-upload") {
     const blobKey = url.searchParams.get("key") ?? "";
-    if (!blobKey.startsWith("users/")) {
+    if (!blobKey.startsWith("users/") && !blobKey.startsWith("listing-checkout-sessions/")) {
       sendJson(response, 400, { error: "Invalid upload key" });
       return true;
     }
     await saveLocalUpload(blobKey, request);
     sendJson(response, 201, { ok: true });
+    return true;
+  }
+
+  if (request.method === "POST" && path === "/api/v1/listing-checkout-sessions") {
+    try {
+      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      sendJson(response, 201, await createListingCheckoutSession(body as any, getPublicSiteUrl(request)));
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to create checkout session." });
+    }
+    return true;
+  }
+
+  const listingCheckoutSessionMatch = path.match(/^\/api\/v1\/listing-checkout-sessions\/([^/]+)$/);
+  if (request.method === "GET" && listingCheckoutSessionMatch) {
+    const session = await getListingCheckoutSession(decodeURIComponent(listingCheckoutSessionMatch[1]));
+    sendJson(response, session ? 200 : 404, session ?? { error: "Checkout session not found or expired." });
+    return true;
+  }
+
+  if (request.method === "PATCH" && listingCheckoutSessionMatch) {
+    try {
+      const session = await updateListingCheckoutSession(decodeURIComponent(listingCheckoutSessionMatch[1]), parseObject(await readJsonBody(request).catch(() => ({}))));
+      sendJson(response, session ? 200 : 404, session ?? { error: "Checkout session not found or expired." });
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to update checkout session." });
+    }
+    return true;
+  }
+
+  const listingCheckoutDraftMatch = path.match(/^\/api\/v1\/listing-checkout-sessions\/([^/]+)\/draft$/);
+  if (request.method === "PUT" && listingCheckoutDraftMatch) {
+    try {
+      const result = await updateListingCheckoutDraft(
+        decodeURIComponent(listingCheckoutDraftMatch[1]),
+        parseObject(await readJsonBody(request).catch(() => ({}))) as any,
+        getPublicSiteUrl(request)
+      );
+      sendJson(response, result ? 200 : 404, result ?? { error: "Checkout session not found or expired." });
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to update checkout draft." });
+    }
+    return true;
+  }
+
+  const listingCheckoutCompleteMatch = path.match(/^\/api\/v1\/listing-checkout-sessions\/([^/]+)\/complete$/);
+  if (request.method === "POST" && listingCheckoutCompleteMatch) {
+    const user = await authenticateUser(request);
+    if (!user) {
+      sendJson(response, 401, { error: "User authorization required" });
+      return true;
+    }
+    try {
+      const intent = await completeListingCheckoutSession(
+        user.id,
+        decodeURIComponent(listingCheckoutCompleteMatch[1]),
+        parseObject(await readJsonBody(request).catch(() => ({}))),
+        idempotencyKey(request)
+      );
+      sendJson(response, intent ? 201 : 404, intent ?? { error: "Checkout session not found or expired." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to start checkout right now. Please try again in a moment.";
+      if (paymentIntentValidationErrors.has(message) || message.includes("Checkout session")) {
+        sendJson(response, 400, { error: message });
+      } else {
+        console.error("Unable to complete listing checkout session", error);
+        sendJson(response, 500, { error: "Unable to start checkout right now. Please try again in a moment." });
+      }
+    }
     return true;
   }
 
@@ -503,6 +578,14 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     if (request.method === "GET" && path === "/api/v1/users/me/dashboard") {
       sendJson(response, 200, await getDashboard(user.id));
+      return true;
+    }
+
+    if (request.method === "GET" && path === "/api/v1/users/me/listings") {
+      const page = Number(url.searchParams.get("page")) || 1;
+      const limit = Number(url.searchParams.get("limit")) || 10;
+      const search = url.searchParams.get("search") || "";
+      sendJson(response, 200, await getMyListings(user.id, search, page, limit));
       return true;
     }
 

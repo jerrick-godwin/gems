@@ -1,11 +1,16 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { createHash, randomUUID } from "node:crypto";
+import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
   Cart,
   CartItem,
   CheckoutDetails,
+  CreateListingCheckoutSessionRequest,
+  CreateListingCheckoutSessionResponse,
   CheckoutRequest,
   GemAttributes,
+  ListingCheckoutDraft,
+  ListingCheckoutMedia,
+  ListingCheckoutSession,
   Listing,
   ListingMedia,
   ListingSubscription,
@@ -18,6 +23,8 @@ import type {
   PaymentReceipt,
   PaymentStatus,
   StorageUploadRequest,
+  UpdateListingCheckoutDraftRequest,
+  UpdateListingCheckoutSessionRequest,
   User,
   UserDashboard,
   UserRole,
@@ -26,9 +33,9 @@ import type {
 import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type ListingSubscriptionPlan } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
-import { cartItems, carts, conversations, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
+import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
-import { createUserUploadTarget, createSignedReadUrl } from "./storage.js";
+import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob } from "./storage.js";
 import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
@@ -58,6 +65,7 @@ interface MemoryState {
   settings: UserSettings[];
   carts: Cart[];
   orders: Order[];
+  listingCheckoutSessions: ListingCheckoutSessionRecord[];
   listingSubscriptions: ListingSubscription[];
   subscriptionPlans: ListingSubscriptionPlan[];
   paymentIntents: PaymentIntent[];
@@ -65,9 +73,28 @@ interface MemoryState {
   paymentIntentIdempotencyKeys: Record<string, string>;
 }
 
+interface ListingCheckoutSessionRecord {
+  id: string;
+  tokenHash: string;
+  draft: ListingCheckoutDraft;
+  media: ListingCheckoutMedia[];
+  selectedPlanId?: string;
+  acceptedPolicies: boolean;
+  status: "open" | "claimed" | "used" | "expired";
+  claimedUserId?: string;
+  listingId?: string;
+  paymentIntentId?: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 let memoryState: MemoryState | undefined;
 let checkoutOrderSchemaPromise: Promise<void> | undefined;
 const processedMemoryRenewalEventIds = new Set<string>();
+const listingCheckoutSessionTtlHours = Number(process.env.LISTING_CHECKOUT_SESSION_TTL_HOURS ?? 24);
+const maxListingCheckoutPhotoCount = 15;
+const maxListingCheckoutFileSize = 2 * 1024 * 1024;
 
 interface StripePaymentState {
   stripeCheckoutSessionId?: string;
@@ -692,7 +719,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
     return {
       user,
       settings,
-      sellerListings: listingRows.filter((listing) => sellerIds.has(listing.sellerId)).map(toListing),
+      // sellerListings removed in favor of paginated endpoint
       conversations: conversationRows
         .filter((conversation) => sellerIds.has(conversation.sellerId))
         .map((conversation) => ({
@@ -716,13 +743,62 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
   return {
     user,
     settings,
-    sellerListings: state.database.listings.filter((listing) => sellerIds.has(listing.sellerId)),
+    // sellerListings removed in favor of paginated endpoint
     conversations: state.database.conversations.filter((conversation) => sellerIds.has(conversation.sellerId)),
     cartCount: 0,
     recentOrders: [],
     listingSubscriptions: subscriptions,
     recentPayments: payments.slice(0, 10)
   };
+}
+
+export async function getMyListings(userId: string, search: string = "", page: number = 1, limit: number = 10): Promise<{ items: Listing[], total: number, page: number, limit: number, totalPages: number }> {
+  const offset = (page - 1) * limit;
+
+  if (hasDatabase) {
+    const sellerRows = await db.select().from(sellerProfiles).where(eq(sellerProfiles.userId, userId));
+    const sellerIds = sellerRows.map(s => s.id);
+    if (sellerIds.length === 0) {
+      return { items: [], total: 0, page, limit, totalPages: 0 };
+    }
+    let countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(inArray(listings.sellerId, sellerIds));
+    if (search) {
+      countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)));
+    }
+    const countResult = await countQuery;
+    const total = Number(countResult[0]?.count || 0);
+
+    const baseQuery = search
+      ? db.select().from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)))
+      : db.select().from(listings).where(inArray(listings.sellerId, sellerIds));
+
+    const rows = await baseQuery.limit(limit).offset(offset).orderBy(desc(listings.createdAt));
+    const totalPages = Math.ceil(total / limit);
+    return { items: rows.map(toListing), total, page, limit, totalPages };
+  }
+
+  const state = await getMemoryState();
+  const sellerIds = state.database.sellers.filter(s => s.userId === userId).map(s => s.id);
+  if (sellerIds.length === 0) {
+    return { items: [], total: 0, page, limit, totalPages: 0 };
+  }
+
+  const sellerIdSet = new Set(sellerIds);
+  let allListings = state.database.listings.filter(l => sellerIdSet.has(l.sellerId));
+  if (search) {
+    const searchLower = search.toLowerCase();
+    allListings = allListings.filter(l => l.title.toLowerCase().includes(searchLower));
+  }
+  allListings.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+  
+  const total = allListings.length;
+  const items = allListings.slice(offset, offset + limit);
+  const totalPages = Math.ceil(total / limit);
+  return { items, total, page, limit, totalPages };
 }
 
 export async function createListing(userId: string, input: ListingInput, idempotencyKey?: string) {
@@ -815,6 +891,211 @@ export async function createListing(userId: string, input: ListingInput, idempot
   return listing;
 }
 
+export async function createListingCheckoutSession(
+  request: CreateListingCheckoutSessionRequest,
+  siteUrl: string
+): Promise<CreateListingCheckoutSessionResponse> {
+  const draft = normalizeListingCheckoutDraft(request.draft);
+  const mediaInputs = normalizeListingCheckoutMediaInputs(request.media);
+  const selectedPlanId = normalizeOptionalString(request.selectedPlanId) ?? "pro";
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashListingCheckoutToken(token);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + Math.max(1, listingCheckoutSessionTtlHours) * 60 * 60 * 1000);
+  const id = `listing-checkout-${randomUUID()}`;
+  const uploadTargets = [];
+  const media: ListingCheckoutMedia[] = [];
+
+  for (const [index, item] of mediaInputs.entries()) {
+    const target = await createListingCheckoutUploadTarget(id, item);
+    const mediaId = `checkout-media-${randomUUID()}`;
+    media.push({
+      id: mediaId,
+      kind: item.kind,
+      fileName: item.fileName,
+      contentType: item.contentType,
+      size: item.size,
+      blobKey: target.blobKey,
+      readUrl: target.readUrl,
+      order: item.kind === "photo" ? index : 0
+    });
+    uploadTargets.push({ mediaId, ...target });
+  }
+
+  const record: ListingCheckoutSessionRecord = {
+    id,
+    tokenHash,
+    draft,
+    media,
+    selectedPlanId,
+    acceptedPolicies: false,
+    status: "open",
+    expiresAt: expiresAt.toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+
+  if (hasDatabase) {
+    await db.insert(listingCheckoutSessions).values({
+      id: record.id,
+      tokenHash: record.tokenHash,
+      draft: record.draft,
+      media: record.media,
+      selectedPlanId: record.selectedPlanId,
+      acceptedPolicies: record.acceptedPolicies,
+      status: record.status,
+      expiresAt,
+      createdAt: now,
+      updatedAt: now
+    });
+  } else {
+    (await getMemoryState()).listingCheckoutSessions.push(record);
+  }
+
+  const checkoutUrl = `${siteUrl.replace(/\/+$/, "")}/post/checkout/${encodeURIComponent(token)}`;
+  return {
+    token,
+    checkoutUrl,
+    session: publicListingCheckoutSession(token, record),
+    uploadTargets
+  };
+}
+
+export async function getListingCheckoutSession(token: string): Promise<ListingCheckoutSession | undefined> {
+  const record = await getListingCheckoutSessionRecord(token);
+  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+  return publicListingCheckoutSession(token, record);
+}
+
+export async function updateListingCheckoutSession(token: string, request: UpdateListingCheckoutSessionRequest) {
+  const record = await getListingCheckoutSessionRecord(token);
+  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+
+  const updates: Partial<ListingCheckoutSessionRecord> = {
+    updatedAt: new Date().toISOString()
+  };
+  if (request.selectedPlanId !== undefined) updates.selectedPlanId = normalizeOptionalString(request.selectedPlanId);
+  if (request.acceptedPolicies !== undefined) updates.acceptedPolicies = request.acceptedPolicies === true;
+
+  const next = await updateListingCheckoutSessionRecord(record.id, updates);
+  return publicListingCheckoutSession(token, next);
+}
+
+export async function updateListingCheckoutDraft(
+  token: string,
+  request: UpdateListingCheckoutDraftRequest,
+  siteUrl: string
+): Promise<CreateListingCheckoutSessionResponse | undefined> {
+  const record = await getListingCheckoutSessionRecord(token);
+  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+
+  const draft = normalizeListingCheckoutDraft(request.draft);
+  const retainedIds = new Set(Array.isArray(request.retainedMediaIds) ? request.retainedMediaIds.filter((id): id is string => typeof id === "string") : []);
+  const retainedMedia = record.media.filter((item) => retainedIds.has(item.id));
+  const mediaInputs = normalizeListingCheckoutMediaInputs([...retainedMedia.map((item) => ({
+    kind: item.kind,
+    fileName: item.fileName,
+    contentType: item.contentType,
+    size: item.size
+  })), ...(Array.isArray(request.media) ? request.media : [])]);
+  const newMediaInputs = mediaInputs.slice(retainedMedia.length);
+  const uploadTargets = [];
+  const newMedia: ListingCheckoutMedia[] = [];
+  const photoOffset = retainedMedia.filter((item) => item.kind === "photo").length;
+
+  for (const [index, item] of newMediaInputs.entries()) {
+    const target = await createListingCheckoutUploadTarget(record.id, item);
+    const mediaId = `checkout-media-${randomUUID()}`;
+    newMedia.push({
+      id: mediaId,
+      kind: item.kind,
+      fileName: item.fileName,
+      contentType: item.contentType,
+      size: item.size,
+      blobKey: target.blobKey,
+      readUrl: target.readUrl,
+      order: item.kind === "photo" ? photoOffset + index : 0
+    });
+    uploadTargets.push({ mediaId, ...target });
+  }
+
+  let nextPhotoOrder = 0;
+  const nextMedia = [...retainedMedia, ...newMedia].map((item) => ({
+    ...item,
+    order: item.kind === "photo" ? nextPhotoOrder++ : 0
+  }));
+
+  const next = await updateListingCheckoutSessionRecord(record.id, {
+    draft,
+    media: nextMedia,
+    updatedAt: new Date().toISOString()
+  });
+  return {
+    token,
+    checkoutUrl: `${siteUrl.replace(/\/+$/, "")}/post/checkout/${encodeURIComponent(token)}`,
+    session: publicListingCheckoutSession(token, next),
+    uploadTargets
+  };
+}
+
+export async function completeListingCheckoutSession(
+  userId: string,
+  token: string,
+  request: UpdateListingCheckoutSessionRequest,
+  idempotencyKey?: string
+): Promise<PaymentIntent | undefined> {
+  const record = await getListingCheckoutSessionRecord(token);
+  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+  if (record.claimedUserId && record.claimedUserId !== userId) {
+    throw new Error("Checkout session is already linked to another account.");
+  }
+
+  const selectedPlanId = normalizeOptionalString(request.selectedPlanId) ?? record.selectedPlanId ?? "pro";
+  const acceptedPolicies = request.acceptedPolicies === true || record.acceptedPolicies;
+  const now = new Date().toISOString();
+
+  await updateListingCheckoutSessionRecord(record.id, {
+    status: "claimed",
+    claimedUserId: userId,
+    selectedPlanId,
+    acceptedPolicies,
+    updatedAt: now
+  });
+
+  const listingKey = idempotencyKey ? `${idempotencyKey}:listing` : `listing-checkout:${record.id}:listing`;
+  const paymentKey = idempotencyKey ? `${idempotencyKey}:payment` : `listing-checkout:${record.id}:payment`;
+  const listing = await createListing(userId, record.draft, listingKey);
+  const listingMediaItems = record.media.map((item): ListingMedia => ({
+    id: item.blobKey,
+    listingId: listing.id,
+    kind: item.kind,
+    url: createSignedReadUrl(item.blobKey),
+    alt: item.fileName,
+    order: item.kind === "photo" ? item.order : 0,
+    moderationStatus: "not_submitted"
+  }));
+
+  if (listingMediaItems.length > 0) {
+    await updateUserListing(userId, listing.id, { media: listingMediaItems });
+  }
+
+  const intent = await createListingPaymentIntent(userId, listing.id, {
+    planId: selectedPlanId,
+    photoCount: record.media.filter((item) => item.kind === "photo").length,
+    acceptedPolicies
+  }, paymentKey);
+
+  await updateListingCheckoutSessionRecord(record.id, {
+    status: "used",
+    claimedUserId: userId,
+    listingId: listing.id,
+    paymentIntentId: intent.id,
+    updatedAt: new Date().toISOString()
+  });
+
+  return intent;
+}
+
 export async function removeUserListing(userId: string, listingId: string) {
   const seller = await ensureSellerProfile(userId);
   let deletedFromDb;
@@ -850,6 +1131,18 @@ export async function removeUserListing(userId: string, listingId: string) {
       if (subscriptionIds.length > 0) {
         await db.delete(renewalEvents).where(inArray(renewalEvents.subscriptionId, subscriptionIds));
       }
+
+      const mediaRows = await db.select().from(listingMedia).where(eq(listingMedia.listingId, listingId));
+      const checkoutSessionRows = await db.select().from(listingCheckoutSessions).where(eq(listingCheckoutSessions.listingId, listingId));
+      
+      const storageKeysToClean = [
+        ...mediaRows.map(m => m.storageKey),
+        ...checkoutSessionRows.flatMap(s => s.media.map((m: any) => m.storageKey))
+      ].filter(Boolean) as string[];
+      
+      await Promise.allSettled(storageKeysToClean.map(key => deleteBlob(key)));
+
+      await db.delete(listingCheckoutSessions).where(eq(listingCheckoutSessions.listingId, listingId));
       await db.delete(policyAcceptances).where(eq(policyAcceptances.listingId, listingId));
       await db.delete(paymentIntents).where(and(eq(paymentIntents.listingId, listingId), eq(paymentIntents.userId, userId)));
       await db.delete(listingSubscriptions).where(and(eq(listingSubscriptions.listingId, listingId), eq(listingSubscriptions.userId, userId)));
@@ -861,6 +1154,7 @@ export async function removeUserListing(userId: string, listingId: string) {
       const [deleted] = await db.delete(listings).where(eq(listings.id, listingId)).returning();
       if (deleted) deletedFromDb = toListing(deleted);
     }
+    return deletedFromDb;
   }
 
   const state = await getMemoryState();
@@ -880,10 +1174,18 @@ export async function removeUserListing(userId: string, listingId: string) {
       return state.database.listings[index];
     }
     deletedFromJson = state.database.listings[index];
+    
+    const storageKeysToClean = [
+      ...(deletedFromJson.media?.map((m: any) => m.storageKey) || []),
+      ...state.listingCheckoutSessions.filter((s) => s.listingId === listingId).flatMap((s) => s.media.map((m: any) => m.storageKey))
+    ].filter(Boolean) as string[];
+    await Promise.allSettled(storageKeysToClean.map(key => deleteBlob(key)));
+
     state.database.listings.splice(index, 1);
     delete state.database.listingContacts[listingId];
     state.listingSubscriptions = state.listingSubscriptions.filter((subscription) => !(subscription.listingId === listingId && subscription.userId === userId));
     state.paymentIntents = state.paymentIntents.filter((intent) => !(intent.listingId === listingId && intent.userId === userId));
+    state.listingCheckoutSessions = state.listingCheckoutSessions.filter((session) => session.listingId !== listingId);
   }
   
   return deletedFromDb || deletedFromJson;
@@ -1502,6 +1804,146 @@ function normalizeOptionalString(value: string | undefined) {
   return normalized ? normalized : undefined;
 }
 
+function normalizeListingCheckoutDraft(input: Partial<ListingCheckoutDraft> | undefined): ListingCheckoutDraft {
+  const attributes: Partial<GemAttributes> = input?.attributes ?? {};
+  const draft: ListingCheckoutDraft = {
+    title: normalizeRequiredString(input?.title, "Listing title is required."),
+    gemTypeId: normalizeRequiredString(input?.gemTypeId, "Gem type is required."),
+    description: normalizeRequiredString(input?.description, "Description is required."),
+    priceLkr: normalizePositiveNumber(input?.priceLkr, "Price must be greater than zero."),
+    location: normalizeRequiredString(input?.location, "Location is required."),
+    attributes: {
+      carat: normalizePositiveNumber(attributes.carat, "Carat weight is required."),
+      dimensions: String(attributes.dimensions ?? "").trim(),
+      shape: String(attributes.shape ?? "").trim(),
+      cut: String(attributes.cut ?? "").trim(),
+      color: normalizeRequiredString(attributes.color, "Color is required."),
+      clarity: normalizeRequiredString(attributes.clarity, "Clarity is required."),
+      origin: normalizeRequiredString(attributes.origin, "Origin is required."),
+      treatment: attributes.treatment === "heated" || attributes.treatment === "untreated" || attributes.treatment === "diffused" || attributes.treatment === "filled" ? attributes.treatment : "untreated",
+      certificateStatus: attributes.certificateStatus === "seller_provided" ? "seller_provided" : "none",
+      labName: normalizeOptionalString(attributes.labName),
+      reportNumber: normalizeOptionalString(attributes.reportNumber)
+    }
+  };
+  return draft;
+}
+
+function normalizeListingCheckoutMediaInputs(input: unknown): Array<{ kind: "photo" | "certificate"; fileName: string; contentType: string; size: number }> {
+  if (!Array.isArray(input)) throw new Error("At least one gem photo is required.");
+  const media = input.map((item) => {
+    const value = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const kind: "photo" | "certificate" = value.kind === "certificate" ? "certificate" : "photo";
+    const fileName = normalizeRequiredString(value.fileName, "File name is required.");
+    const contentType = normalizeRequiredString(value.contentType, "File type is required.").toLowerCase();
+    const size = normalizePositiveNumber(value.size, "File size is required.");
+    if (size > maxListingCheckoutFileSize) throw new Error(`${fileName} exceeds the 2MB limit.`);
+    if (kind === "photo" && !contentType.startsWith("image/")) throw new Error("Gem photos must be image files.");
+    if (kind === "certificate" && contentType !== "application/pdf" && !contentType.startsWith("image/")) {
+      throw new Error("Certificate must be a PDF or image file.");
+    }
+    return { kind, fileName, contentType, size };
+  });
+  const photoCount = media.filter((item) => item.kind === "photo").length;
+  const certificateCount = media.filter((item) => item.kind === "certificate").length;
+  if (photoCount === 0) throw new Error("At least one gem photo is required.");
+  if (photoCount > maxListingCheckoutPhotoCount) throw new Error("You can upload a maximum of 15 gem photos.");
+  if (certificateCount > 1) throw new Error("You can upload only one certificate.");
+  return media;
+}
+
+function normalizeRequiredString(value: unknown, message: string) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) throw new Error(message);
+  return normalized;
+}
+
+function normalizePositiveNumber(value: unknown, message: string) {
+  const normalized = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(normalized) || normalized <= 0) throw new Error(message);
+  return normalized;
+}
+
+function hashListingCheckoutToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function isListingCheckoutSessionExpired(record: ListingCheckoutSessionRecord) {
+  return record.status === "expired" || new Date(record.expiresAt).getTime() <= Date.now();
+}
+
+function publicListingCheckoutSession(token: string, record: ListingCheckoutSessionRecord): ListingCheckoutSession {
+  return {
+    token,
+    status: isListingCheckoutSessionExpired(record) ? "expired" : record.status,
+    draft: record.draft,
+    media: record.media.map((item) => ({ ...item, readUrl: createSignedReadUrl(item.blobKey) })),
+    selectedPlanId: record.selectedPlanId,
+    acceptedPolicies: record.acceptedPolicies,
+    expiresAt: record.expiresAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
+async function getListingCheckoutSessionRecord(token: string): Promise<ListingCheckoutSessionRecord | undefined> {
+  const normalizedToken = token.trim();
+  if (!normalizedToken) return undefined;
+  const tokenHash = hashListingCheckoutToken(normalizedToken);
+
+  if (hasDatabase) {
+    const rows = await db.select().from(listingCheckoutSessions).where(eq(listingCheckoutSessions.tokenHash, tokenHash)).limit(1);
+    return rows[0] ? toListingCheckoutSessionRecord(rows[0]) : undefined;
+  }
+
+  return (await getMemoryState()).listingCheckoutSessions.find((item) => item.tokenHash === tokenHash);
+}
+
+async function updateListingCheckoutSessionRecord(id: string, updates: Partial<ListingCheckoutSessionRecord>) {
+  if (hasDatabase) {
+    const [updated] = await db
+      .update(listingCheckoutSessions)
+      .set(withoutUndefined({
+        draft: updates.draft,
+        media: updates.media,
+        selectedPlanId: updates.selectedPlanId,
+        acceptedPolicies: updates.acceptedPolicies,
+        status: updates.status,
+        claimedUserId: updates.claimedUserId,
+        listingId: updates.listingId,
+        paymentIntentId: updates.paymentIntentId,
+        updatedAt: updates.updatedAt ? new Date(updates.updatedAt) : new Date()
+      }))
+      .where(eq(listingCheckoutSessions.id, id))
+      .returning();
+    if (!updated) throw new Error("Checkout session not found.");
+    return toListingCheckoutSessionRecord(updated);
+  }
+
+  const session = (await getMemoryState()).listingCheckoutSessions.find((item) => item.id === id);
+  if (!session) throw new Error("Checkout session not found.");
+  Object.assign(session, updates);
+  return session;
+}
+
+function toListingCheckoutSessionRecord(row: typeof listingCheckoutSessions.$inferSelect): ListingCheckoutSessionRecord {
+  return {
+    id: row.id,
+    tokenHash: row.tokenHash,
+    draft: row.draft,
+    media: row.media,
+    selectedPlanId: row.selectedPlanId ?? undefined,
+    acceptedPolicies: row.acceptedPolicies,
+    status: row.status,
+    claimedUserId: row.claimedUserId ?? undefined,
+    listingId: row.listingId ?? undefined,
+    paymentIntentId: row.paymentIntentId ?? undefined,
+    expiresAt: row.expiresAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
 function generateInvoiceNumber(date = new Date()) {
   const stamp = [
     date.getFullYear(),
@@ -1567,6 +2009,7 @@ async function getMemoryState() {
     settings: [],
     carts: [],
     orders: [],
+    listingCheckoutSessions: [],
     listingSubscriptions: [],
     subscriptionPlans: [
       { id: "basic", name: "Basic", priceLkr: 500, includedPhotos: 3, extraPhotoPriceLkr: 250, validityMonths: 1, eyebrow: "Starter", summary: "" },

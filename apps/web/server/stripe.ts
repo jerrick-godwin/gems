@@ -92,7 +92,11 @@ function planIntervalCount(intent: PaymentIntent) {
   return intent.quote.plan.validityMonths ?? 1;
 }
 
-function recurringPriceData(intent: PaymentIntent, amountLkr: number, name: string, description: string) {
+function recurringPriceData(intent: PaymentIntent, amountLkr: number, name: string, description?: string) {
+  const product_data: any = { name };
+  if (description) {
+    product_data.description = description;
+  }
   return {
     currency: stripeCurrency().toLowerCase(),
     unit_amount: stripeAmount(amountLkr),
@@ -100,10 +104,7 @@ function recurringPriceData(intent: PaymentIntent, amountLkr: number, name: stri
       interval: "month" as const,
       interval_count: planIntervalCount(intent)
     },
-    product_data: {
-      name,
-      description
-    }
+    product_data
   };
 }
 
@@ -114,8 +115,7 @@ function checkoutLineItems(intent: PaymentIntent) {
       price_data: recurringPriceData(
         intent,
         intent.quote.basePriceLkr,
-        `${intent.quote.plan.name} listing subscription`,
-        `gemslanka.lk listing subscription base plan (${lkrAmount(intent.quote.basePriceLkr)} LKR)`
+        `${intent.quote.plan.name} Plan`
       )
     }
   ];
@@ -126,8 +126,7 @@ function checkoutLineItems(intent: PaymentIntent) {
       price_data: recurringPriceData(
         intent,
         intent.quote.extraPhotoTotalLkr,
-        `${intent.quote.extraPhotoCount} extra listing ${intent.quote.extraPhotoCount === 1 ? "photo" : "photos"}`,
-        `Recurring extra listing photo allowance (${lkrAmount(intent.quote.extraPhotoTotalLkr)} LKR)`
+        `Extra Photos (${intent.quote.extraPhotoCount})`
       )
     });
   }
