@@ -1,6 +1,6 @@
 import { GemsApiClient } from "@gems/api-client";
 import type { UserDashboard } from "@gems/schemas";
-import { UserPlus, X } from "lucide-react";
+import { Eye, EyeOff, UserPlus, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
@@ -13,6 +13,7 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: (dashboard:
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const submitAction = useSingleFlightAction();
@@ -153,20 +154,30 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: (dashboard:
           </label>
           <label>
             <span className="auth-label-text">Password <span className="required-marker" aria-hidden="true">*</span></span>
-            <input
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setFieldErrors((current) => ({ ...current, password: undefined }));
-              }}
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={6}
-              aria-invalid={Boolean(fieldErrors.password)}
-              aria-describedby={fieldErrors.password ? "signup-password-error" : undefined}
-              placeholder="At least 6 characters"
-            />
+            <div className="password-field">
+              <input
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setFieldErrors((current) => ({ ...current, password: undefined }));
+                }}
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                minLength={6}
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? "signup-password-error" : undefined}
+                placeholder="At least 6 characters"
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} strokeWidth={2.2} /> : <Eye size={18} strokeWidth={2.2} />}
+              </button>
+            </div>
             {fieldErrors.password && <span className="field-error" id="signup-password-error">{fieldErrors.password}</span>}
           </label>
           <label className="auth-field-wide">

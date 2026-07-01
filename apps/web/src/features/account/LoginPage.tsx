@@ -1,4 +1,4 @@
-import { LogIn, X } from "lucide-react";
+import { Eye, EyeOff, LogIn, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
@@ -8,6 +8,7 @@ import { authErrorMessage, hasAuthErrors, validateLoginFields, type AuthFieldErr
 export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; onNavigate: (view: View) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const submitAction = useSingleFlightAction();
@@ -45,14 +46,14 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
     <section className="login-screen">
       <div className="login-visual" aria-hidden="true">
         <div className="login-visual-content">
-          <h2>Sri Lanka's Premier Gemstone Marketplace</h2>
-          <p>Connecting trusted sellers with discerning buyers since 2024.</p>
+          <h2>Buy and sell gemstones with confidence.</h2>
+          <p>Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.</p>
         </div>
       </div>
       <div className="login-panel">
         <div>
           <h1 style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 34, letterSpacing: "-0.02em", fontWeight: 800, margin: "0 0 10px", color: "var(--ink)" }}>
-            Sign in to gemslanka.lk
+            Sign in to continue
           </h1>
           <p>Use your secure account to manage listings, subscriptions, renewal settings, and reports.</p>
         </div>
@@ -84,20 +85,30 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
           </label>
           <label>
             <span className="auth-label-text">Password <span className="required-marker" aria-hidden="true">*</span></span>
-            <input
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setFieldErrors((current) => ({ ...current, password: undefined }));
-              }}
-              type="password"
-              autoComplete="current-password"
-              required
-              minLength={6}
-              aria-invalid={Boolean(fieldErrors.password)}
-              aria-describedby={fieldErrors.password ? "login-password-error" : undefined}
-              placeholder="Your password"
-            />
+            <div className="password-field">
+              <input
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setFieldErrors((current) => ({ ...current, password: undefined }));
+                }}
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                minLength={6}
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? "login-password-error" : undefined}
+                placeholder="Your password"
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} strokeWidth={2.2} /> : <Eye size={18} strokeWidth={2.2} />}
+              </button>
+            </div>
             {fieldErrors.password && <span className="field-error" id="login-password-error">{fieldErrors.password}</span>}
           </label>
           <a className="forgot-password-link" href="/forgot-password" onClick={(event) => handleAuthLinkClick(event, "forgot_password")}>Forgot password?</a>

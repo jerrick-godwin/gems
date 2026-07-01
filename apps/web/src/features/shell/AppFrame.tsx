@@ -13,6 +13,18 @@ function nameFromEmail(email?: string | null) {
   return email?.split("@")[0]?.trim() ?? "";
 }
 
+function BrandWordmark() {
+  return (
+    <span className="brand-wordmark" aria-label="gemslanka.lk">
+      <span className="brand-wordmark-main" aria-hidden="true">
+        <span>GEMSLANKA</span>
+        <span className="brand-wordmark-domain">.LK</span>
+      </span>
+      <span className="brand-wordmark-tagline" aria-hidden="true">Gemstone Marketplace</span>
+    </span>
+  );
+}
+
 function ProfileMenu({
   view,
   navigateToView,
@@ -178,7 +190,7 @@ export function AppFrame({
           <span className="brand-mark" style={{ width: 48, height: 48 }}>
             <img src="/assets/gemslanka-logo.png" alt="" />
           </span>
-          <span className="brand-site-name">gemslanka.lk</span>
+          <span className="brand-site-name"><BrandWordmark /></span>
         </a>
 
         <nav className="nav-actions" aria-label="Primary" data-nosnippet>
@@ -257,8 +269,8 @@ export function AppFrame({
                 <img src="/assets/gemslanka-logo.png" alt="gemslanka.lk" />
               </div>
               <div className="footer-brand-text">
-                <strong>gemslanka.lk</strong>
-                <p>Sri Lanka's premier gemstone marketplace — connecting trusted sellers with discerning buyers.</p>
+                <strong><BrandWordmark /></strong>
+                <p>Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.</p>
               </div>
             </div>
           </div>

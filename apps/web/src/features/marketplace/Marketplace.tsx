@@ -209,7 +209,7 @@ function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listi
             <span key={spec}>{spec}</span>
           ))}
         </div>
-        <div className="seller-line"><MapPin size={14} strokeWidth={2} />Country: {listing.location}</div>
+        <div className="seller-line"><MapPin size={14} strokeWidth={2} />{listing.location}</div>
       </div>
     </article>
   );
@@ -246,8 +246,8 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
     return () => clearInterval(interval);
   }, [images.length]);
 
-  const previewPhoneText = isSignedIn ? previewPhone : maskPhoneNumber(previewPhone);
-  const phoneText = isSignedIn && fullPhoneVisible && revealedPhone ? revealedPhone : previewPhoneText ?? "";
+  const previewPhoneText = maskPhoneNumber(previewPhone);
+  const phoneText = fullPhoneVisible && revealedPhone ? revealedPhone : previewPhoneText ?? "";
 
   useEffect(() => {
     requestedPhoneListingId.current = undefined;
@@ -255,12 +255,11 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   }, [listing.id]);
 
   useEffect(() => {
-    if (isSignedIn && revealedPhone) {
+    if (revealedPhone) {
       setFullPhoneVisible(true);
       return;
     }
-    if (!isSignedIn) setFullPhoneVisible(false);
-  }, [isSignedIn, revealedPhone]);
+  }, [revealedPhone]);
 
   useEffect(() => {
     if (previewPhone || requestedPhoneListingId.current === listing.id) return;
@@ -282,7 +281,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   }, [listing.id, onPreviewPhone, previewPhone]);
 
   const handlePhoneToggle = async () => {
-    if (isSignedIn && revealedPhone) {
+    if (revealedPhone) {
       setFullPhoneVisible((current) => !current);
       return;
     }
