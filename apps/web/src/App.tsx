@@ -222,8 +222,6 @@ function App() {
   const account = useAccountWorkflow(api, isSignedIn);
   const marketplace = useMarketplaceWorkflow({
     api,
-    isSignedIn,
-    setView: navigateToView,
     myReports: account.myReports,
     setMyReports: account.setMyReports
   });
@@ -397,7 +395,7 @@ function App() {
           selectedId={marketplace.selectedListing?.id ?? ""}
           setSelectedId={(id) => marketplace.setSelectedId(id)}
           previewPhone={marketplace.selectedListing ? marketplace.previewPhones[marketplace.selectedListing.id] : undefined}
-          revealedPhone={isSignedIn && marketplace.selectedListing ? marketplace.fullPhones[marketplace.selectedListing.id] : undefined}
+          revealedPhone={marketplace.selectedListing ? marketplace.fullPhones[marketplace.selectedListing.id] : undefined}
           previewPhoneNumber={marketplace.handlePreviewPhone}
           revealPhone={marketplace.handleRevealPhone}
           isSignedIn={isSignedIn}

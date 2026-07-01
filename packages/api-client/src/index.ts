@@ -96,7 +96,9 @@ export class GemsApiClient {
   }
 
   async revealPhone(listingId: string) {
-    return this.authJson<{ phone: string; remainingReveals: number }>(`/listings/${listingId}/reveal-phone?full=1`, { method: "POST" });
+    const response = await fetch(`${this.baseUrl}/listings/${listingId}/reveal-phone?full=1`, { method: "POST" });
+    if (!response.ok) throw new Error("Unable to reveal phone");
+    return response.json() as Promise<{ phone: string; remainingReveals: number }>;
   }
 
   async recordListingInteraction(listingId: string, type: "view" | "whatsapp_click"): Promise<void> {

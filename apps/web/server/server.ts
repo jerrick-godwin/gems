@@ -738,13 +738,6 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
     const fullReveal = url.searchParams.get("full") === "1";
-    if (fullReveal) {
-      const user = await authenticateUser(request);
-      if (!user) {
-        sendJson(response, 401, { error: "User authorization required" });
-        return true;
-      }
-    }
     sendJson(response, 200, await revealListingPhone(revealMatch[1], { full: fullReveal }));
     return true;
   }

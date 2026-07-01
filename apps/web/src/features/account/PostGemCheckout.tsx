@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CreditCard, LogIn, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, CreditCard, Eye, EyeOff, LogIn, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
 import { GemsApiClient } from "@gems/api-client";
 import { formatLkr, quoteListingSubscription, type ListingCheckoutSession, type ListingSubscriptionPlan, type UserDashboard } from "@gems/schemas";
@@ -319,6 +319,7 @@ function InlineCheckoutAuth({
 function InlineLoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const submitAction = useSingleFlightAction();
@@ -354,7 +355,17 @@ function InlineLoginForm() {
         </label>
         <label>
           <span className="auth-label-text">Password <span className="required-marker" aria-hidden="true">*</span></span>
-          <input value={password} onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => ({ ...current, password: undefined })); }} type="password" autoComplete="current-password" required minLength={6} aria-invalid={Boolean(fieldErrors.password)} placeholder="Your password" />
+          <div className="password-field">
+            <input value={password} onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => ({ ...current, password: undefined })); }} type={showPassword ? "text" : "password"} autoComplete="current-password" required minLength={6} aria-invalid={Boolean(fieldErrors.password)} placeholder="Your password" />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={18} strokeWidth={2.2} /> : <Eye size={18} strokeWidth={2.2} />}
+            </button>
+          </div>
           {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
         </label>
         <button className="primary-action" type="submit" disabled={submitAction.busy}>
@@ -372,6 +383,7 @@ function InlineSignupForm({ onDashboardChange }: { onDashboardChange: (dashboard
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const submitAction = useSingleFlightAction();
@@ -436,7 +448,17 @@ function InlineSignupForm({ onDashboardChange }: { onDashboardChange: (dashboard
         </label>
         <label>
           <span className="auth-label-text">Password <span className="required-marker" aria-hidden="true">*</span></span>
-          <input value={password} onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => ({ ...current, password: undefined })); }} type="password" autoComplete="new-password" required minLength={6} aria-invalid={Boolean(fieldErrors.password)} placeholder="At least 6 characters" />
+          <div className="password-field">
+            <input value={password} onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => ({ ...current, password: undefined })); }} type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={6} aria-invalid={Boolean(fieldErrors.password)} placeholder="At least 6 characters" />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={18} strokeWidth={2.2} /> : <Eye size={18} strokeWidth={2.2} />}
+            </button>
+          </div>
           {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
         </label>
         <label className="auth-field-wide">
