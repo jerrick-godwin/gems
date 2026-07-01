@@ -134,7 +134,9 @@ function sendRobotsTxt(request: IncomingMessage, response: ServerResponse) {
   response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
   response.end(`User-agent: *
 Allow: /
+Disallow: /api/
 
+# Private account and admin pages use noindex,follow in HTML so crawlers can see the directive.
 Sitemap: ${siteUrl}/sitemap.xml
 `);
 }

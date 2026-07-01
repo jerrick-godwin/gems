@@ -20,6 +20,121 @@ import { listingCheckoutTokenFromPathname, pathForView, protectedViews, viewFrom
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 
+const siteOrigin = "https://gemslanka.lk";
+const homepageTitle = "Gemslanka.lk | Sri Lankan Gemstone Marketplace";
+const homepageDescription = "Browse approved gemstone listings in Sri Lanka, including sapphires, rubies, spinels, photos, lab details, treatment, origin, and seller contact options.";
+
+const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
+  market: {
+    title: homepageTitle,
+    description: homepageDescription,
+    robots: "index,follow"
+  },
+  contact: {
+    title: "Contact Gemslanka.lk | Sri Lankan Gemstone Marketplace",
+    description: "Contact Gemslanka.lk for marketplace support, merchant details, and gemstone listing inquiries.",
+    robots: "index,follow"
+  },
+  terms: {
+    title: "Terms and Conditions | Gemslanka.lk",
+    description: "Read the Gemslanka.lk terms for gemstone listing services, seller responsibilities, subscriptions, and marketplace use.",
+    robots: "index,follow"
+  },
+  privacy: {
+    title: "Privacy Policy | Gemslanka.lk",
+    description: "Learn how Gemslanka.lk handles account, listing, payment metadata, moderation, and support information.",
+    robots: "index,follow"
+  },
+  refund: {
+    title: "Refund Policy | Gemslanka.lk",
+    description: "Review the Gemslanka.lk refund policy for listing subscriptions, renewals, and extra-photo fees.",
+    robots: "index,follow"
+  },
+  login: {
+    title: "Sign In | Gemslanka.lk",
+    description: "Sign in to manage gemstone listings on Gemslanka.lk.",
+    robots: "noindex,follow"
+  },
+  signup: {
+    title: "Create Account | Gemslanka.lk",
+    description: "Create a Gemslanka.lk account to post and manage gemstone listings.",
+    robots: "noindex,follow"
+  },
+  forgot_password: {
+    title: "Reset Password | Gemslanka.lk",
+    description: "Reset your Gemslanka.lk account password.",
+    robots: "noindex,follow"
+  },
+  post: {
+    title: "Post a Gem | Gemslanka.lk",
+    description: "Post and manage a gemstone listing on Gemslanka.lk.",
+    robots: "noindex,follow"
+  },
+  post_checkout: {
+    title: "Listing Checkout | Gemslanka.lk",
+    description: "Complete a Gemslanka.lk listing checkout session.",
+    robots: "noindex,follow"
+  },
+  profile: {
+    title: "Profile | Gemslanka.lk",
+    description: "Manage your Gemslanka.lk account profile.",
+    robots: "noindex,follow"
+  },
+  reports: {
+    title: "My Reports | Gemslanka.lk",
+    description: "Review your Gemslanka.lk marketplace reports.",
+    robots: "noindex,follow"
+  },
+  my_listings: {
+    title: "My Listings | Gemslanka.lk",
+    description: "Manage your Gemslanka.lk gemstone listings.",
+    robots: "noindex,follow"
+  },
+  receipt: {
+    title: "Receipt | Gemslanka.lk",
+    description: "View a Gemslanka.lk listing payment receipt.",
+    robots: "noindex,follow"
+  }
+};
+
+function upsertMeta(selector: string, createMeta: () => HTMLMetaElement, content: string) {
+  const existing = document.head.querySelector<HTMLMetaElement>(selector);
+  const meta = existing ?? createMeta();
+  meta.content = content;
+  if (!existing) document.head.appendChild(meta);
+}
+
+function upsertNamedMeta(name: string, content: string) {
+  upsertMeta(`meta[name="${name}"]`, () => {
+    const meta = document.createElement("meta");
+    meta.name = name;
+    return meta;
+  }, content);
+}
+
+function upsertPropertyMeta(property: string, content: string) {
+  upsertMeta(`meta[property="${property}"]`, () => {
+    const meta = document.createElement("meta");
+    meta.setAttribute("property", property);
+    return meta;
+  }, content);
+}
+
+function setCanonicalUrl(url: string) {
+  const existing = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  const link = existing ?? document.createElement("link");
+  link.rel = "canonical";
+  link.href = url;
+  if (!existing) document.head.appendChild(link);
+}
+
+function canonicalPathForView(view: View) {
+  if (view === "post_checkout" && window.location.pathname.startsWith("/post/checkout/")) {
+    return window.location.pathname;
+  }
+  return pathForView(view);
+}
+
 
 
 function App() {
@@ -64,6 +179,20 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const seo = viewSeo[view];
+    const canonicalUrl = `${siteOrigin}${canonicalPathForView(view)}`;
+    document.title = seo.title;
+    upsertNamedMeta("description", seo.description);
+    upsertNamedMeta("robots", seo.robots);
+    upsertPropertyMeta("og:title", seo.title);
+    upsertPropertyMeta("og:description", seo.description);
+    upsertPropertyMeta("og:url", canonicalUrl);
+    upsertNamedMeta("twitter:title", seo.title);
+    upsertNamedMeta("twitter:description", seo.description);
+    setCanonicalUrl(canonicalUrl);
+  }, [view]);
 
   useEffect(() => {
     const syncViewFromLocation = () => {
