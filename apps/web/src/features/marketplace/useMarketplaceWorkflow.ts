@@ -2,18 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GemsApiClient, MarketplaceSnapshot } from "@gems/api-client";
 import type { CertificateStatus, Listing, Report, Treatment } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
-import type { SortKey, View } from "../../shared/types";
+import type { SortKey } from "../../shared/types";
 
 export function useMarketplaceWorkflow({
   api,
-  isSignedIn,
-  setView,
   myReports,
   setMyReports
 }: {
   api: GemsApiClient;
-  isSignedIn: boolean;
-  setView: (view: View) => void;
   myReports: Report[];
   setMyReports: (reports: Report[]) => void;
 }) {
@@ -33,10 +29,6 @@ export function useMarketplaceWorkflow({
   const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
 
   const reportedListingIds = useMemo(() => myReports.map((report) => report.listingId), [myReports]);
-
-  useEffect(() => {
-    if (!isSignedIn) setFullPhones({});
-  }, [isSignedIn]);
 
   const refreshSnapshot = useCallback(async () => {
     setLoadError(null);
@@ -130,10 +122,6 @@ export function useMarketplaceWorkflow({
   };
 
   const handleRevealPhone = async (listingId: string) => {
-    if (!isSignedIn) {
-      setView("login");
-      return;
-    }
     const result = await api.revealPhone(listingId);
     setFullPhones((current) => ({ ...current, [listingId]: result.phone }));
   };
