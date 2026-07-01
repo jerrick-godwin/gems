@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /api/
 
+# Private account and admin pages use noindex,follow in HTML so crawlers can see the directive.
 Sitemap: https://gemslanka.lk/sitemap.xml

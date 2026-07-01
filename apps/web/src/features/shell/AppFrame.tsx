@@ -181,7 +181,7 @@ export function AppFrame({
           <span className="brand-site-name">gemslanka.lk</span>
         </a>
 
-        <nav className="nav-actions" aria-label="Primary">
+        <nav className="nav-actions" aria-label="Primary" data-nosnippet>
           {authResolved && !isSignedIn && <ThemeSwitcher theme={theme} setTheme={setTheme} />}
           <a
             href={pathForView("market")}
@@ -247,7 +247,7 @@ export function AppFrame({
         </div>
       )}
       <main>{children}</main>
-      <footer className="site-footer">
+      <footer className="site-footer" data-nosnippet>
         <div className="footer-accent-bar" aria-hidden="true" />
         <div className="site-footer-inner">
           {/* Brand column */}
