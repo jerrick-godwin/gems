@@ -14,8 +14,22 @@ CREATE TABLE IF NOT EXISTS "listing_checkout_sessions" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "listing_checkout_sessions" ADD CONSTRAINT "listing_checkout_sessions_claimed_user_id_users_id_fk" FOREIGN KEY ("claimed_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'listing_checkout_sessions_claimed_user_id_users_id_fk'
+  ) THEN
+    ALTER TABLE "listing_checkout_sessions" ADD CONSTRAINT "listing_checkout_sessions_claimed_user_id_users_id_fk" FOREIGN KEY ("claimed_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "listing_checkout_sessions" ADD CONSTRAINT "listing_checkout_sessions_listing_id_listings_id_fk" FOREIGN KEY ("listing_id") REFERENCES "public"."listings"("id") ON DELETE no action ON UPDATE no action;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'listing_checkout_sessions_listing_id_listings_id_fk'
+  ) THEN
+    ALTER TABLE "listing_checkout_sessions" ADD CONSTRAINT "listing_checkout_sessions_listing_id_listings_id_fk" FOREIGN KEY ("listing_id") REFERENCES "public"."listings"("id") ON DELETE no action ON UPDATE no action;
+  END IF;
+END $$;
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "listing_checkout_sessions_token_hash_unique" ON "listing_checkout_sessions" USING btree ("token_hash");

@@ -41,11 +41,14 @@ export function TermsAndConditions() {
         <PolicySection title="Verification limits">
           Listing verification is a platform review step and does not guarantee gemstone authenticity, value, ownership, legality, treatment status, certification, seller reliability, or buyer suitability.
         </PolicySection>
+        <PolicySection title="Free trial">
+          New user accounts receive a free listing trial for 14 days from account creation unless gemslanka.lk extends or terminates the trial. During an active trial, eligible sellers may submit listings without payment. Trial listings expire when the trial ends unless converted to a paid subscription. We may terminate trial access immediately for abuse, marketplace risk, or policy violations.
+        </PolicySection>
         <PolicySection title="Subscriptions and renewal">
-          Each listing uses its own subscription plan. Basic is valid for 1 month, Pro for 2 months, and Plus for 3 months. Subscriptions automatically renew unless cancelled before the next renewal. Expired or unpaid listings become inactive and are removed from public browsing until renewed.
+          Each paid listing uses its own subscription plan. Basic is valid for 1 month, Pro for 2 months, and Plus for 3 months. Paid subscriptions automatically renew unless cancelled before the next renewal. Trial access is not a paid subscription and does not renew automatically. Expired trial, unpaid, or expired paid listings become inactive and are removed from public browsing until renewed or converted to paid access.
         </PolicySection>
         <PolicySection title="No refunds">
-          All listing subscriptions, renewals, and extra-photo fees are non-refundable, including rejected listings, cancelled renewals, expired listings, duplicate submissions, or seller withdrawal.
+          All paid listing subscriptions, renewals, and extra-photo fees are non-refundable, including rejected listings, cancelled renewals, expired listings, duplicate submissions, or seller withdrawal. Free trial access has no cash value and cannot be redeemed, transferred, or refunded.
         </PolicySection>
         <PolicySection title="Account actions">
           We may reject, remove, expire, or suspend listings and accounts that violate these terms, create marketplace risk, or misuse the service.
@@ -64,13 +67,13 @@ export function PrivacyPolicy() {
       </div>
       <div className="data-panel policy-content">
         <PolicySection title="Information we collect">
-          We collect account details, contact details, profile settings, listing descriptions, uploaded media, certificates, reports, moderation records, subscription selections, and payment metadata.
+          We collect account details, contact details, profile settings, listing descriptions, uploaded media, certificates, reports, moderation records, trial status and dates, subscription selections, and payment metadata.
         </PolicySection>
         <PolicySection title="Payments">
           Our payment provider processes payment details. gemslanka.lk stores payment references, amount, currency, status, listing, subscription plan, policy acceptance version, and timestamps, but does not store card credentials.
         </PolicySection>
         <PolicySection title="How data is used">
-          We use data to operate accounts, publish listings, moderate content, process listing subscriptions, prevent abuse, respond to reports, provide support, and maintain legal or audit records.
+          We use data to operate accounts, publish listings, moderate content, manage free trials, process listing subscriptions, prevent abuse, respond to reports, provide support, and maintain legal or audit records.
         </PolicySection>
         <PolicySection title="Cookies and local storage">
           The site may use cookies or local storage for authentication, theme preferences, session continuity, security, and marketplace functionality.
@@ -95,7 +98,7 @@ export function RefundPolicy() {
       </div>
       <div className="data-panel policy-content">
         <PolicySection title="No refunds">
-          No refunds. gemslanka.lk listing subscriptions, renewals, and extra-photo fees are non-refundable.
+          No refunds. gemslanka.lk paid listing subscriptions, renewals, and extra-photo fees are non-refundable. Free trial access has no cash value and is not refundable or redeemable.
         </PolicySection>
         <PolicySection title="Covered situations">
           This no-refund policy applies to rejected listings, cancelled renewals, expired listings, duplicate submissions, seller withdrawal, and any buyer/seller transaction outcome outside the platform.

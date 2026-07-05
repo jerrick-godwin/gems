@@ -9,6 +9,7 @@ import type {
   CheckoutRequest,
   GemAttributes,
   ListingCheckoutDraft,
+  ListingCheckoutCompletionResult,
   ListingCheckoutMedia,
   ListingCheckoutSession,
   Listing,
@@ -27,6 +28,7 @@ import type {
   UpdateListingCheckoutSessionRequest,
   User,
   UserDashboard,
+  UserTrialSummary,
   UserRole,
   UserSettings
 } from "@gems/schemas";
@@ -95,6 +97,7 @@ const processedMemoryRenewalEventIds = new Set<string>();
 const listingCheckoutSessionTtlHours = Number(process.env.LISTING_CHECKOUT_SESSION_TTL_HOURS ?? 24);
 const maxListingCheckoutPhotoCount = 15;
 const maxListingCheckoutFileSize = 2 * 1024 * 1024;
+const userTrialDays = 14;
 
 interface StripePaymentState {
   stripeCheckoutSessionId?: string;
@@ -106,6 +109,26 @@ interface StripePaymentState {
 function listingPaymentGateway(): PaymentIntent["gateway"] {
   if (!isStripeConfigured()) throw new Error("Payment collection is not configured.");
   return "stripe";
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function buildUserTrial(startedAt: Date | string | undefined, endsAt: Date | string | undefined, terminatedAt?: Date | string | null): UserTrialSummary {
+  const start = startedAt ? new Date(startedAt) : new Date();
+  const end = endsAt ? new Date(endsAt) : addDays(start, userTrialDays);
+  const terminated = terminatedAt ? new Date(terminatedAt) : undefined;
+  return {
+    status: terminated ? "terminated" : end > new Date() ? "active" : "expired",
+    startsAt: start.toISOString(),
+    endsAt: end.toISOString(),
+    terminatedAt: terminated?.toISOString()
+  };
+}
+
+function isTrialActiveForUser(user: User) {
+  return user.trial?.status === "active" && Boolean(user.trial.endsAt);
 }
 
 async function prepareGatewayPayment(userId: string, intent: PaymentIntent): Promise<PaymentIntent> {
@@ -144,6 +167,7 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
     }
 
     try {
+      const now = new Date();
       const created = await db
         .insert(users)
         .values({
@@ -152,7 +176,9 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
           name: claims.name,
           email: claims.email,
           phone: "",
-          role: "buyer"
+          role: "buyer",
+          trialStartedAt: now,
+          trialEndsAt: addDays(now, userTrialDays)
         })
         .returning();
       await ensureSettings(created[0].id);
@@ -190,6 +216,9 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
     role: "buyer",
     locale: "en",
     status: "active",
+    trialStartedAt: new Date().toISOString(),
+    trialEndsAt: addDays(new Date(), userTrialDays).toISOString(),
+    trial: buildUserTrial(new Date(), addDays(new Date(), userTrialDays)),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -201,6 +230,57 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
 export async function getAllUsers() {
   if (hasDatabase) return (await db.select().from(users)).map(toUser);
   return (await getMemoryState()).users;
+}
+
+export async function extendUserTrial(userId: string, endsAt: Date) {
+  const now = new Date();
+  if (!Number.isFinite(endsAt.getTime())) throw new Error("Valid trial end date is required.");
+
+  if (hasDatabase) {
+    const existing = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!existing[0]) return undefined;
+    if (endsAt <= existing[0].trialEndsAt) {
+      throw new Error("Trial end date must be later than the current trial end date.");
+    }
+    const [updated] = await db.update(users).set({
+      trialEndsAt: endsAt,
+      trialTerminatedAt: null,
+      updatedAt: now
+    }).where(eq(users.id, userId)).returning();
+    await refreshTrialBackedListings(userId, endsAt);
+    return toUser(updated);
+  }
+
+  const user = findMemoryUser(await getMemoryState(), userId);
+  const currentEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt) : new Date(user.trial?.endsAt ?? 0);
+  if (endsAt <= currentEndsAt) throw new Error("Trial end date must be later than the current trial end date.");
+  user.trialEndsAt = endsAt.toISOString();
+  user.trialTerminatedAt = undefined;
+  user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
+  user.updatedAt = now.toISOString();
+  await refreshTrialBackedListings(userId, endsAt);
+  return user;
+}
+
+export async function terminateUserTrial(userId: string) {
+  const now = new Date();
+
+  if (hasDatabase) {
+    const [updated] = await db.update(users).set({
+      trialTerminatedAt: now,
+      updatedAt: now
+    }).where(eq(users.id, userId)).returning();
+    if (!updated) return undefined;
+    await expireTrialBackedListings(userId, now);
+    return toUser(updated);
+  }
+
+  const user = findMemoryUser(await getMemoryState(), userId);
+  user.trialTerminatedAt = now.toISOString();
+  user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
+  user.updatedAt = now.toISOString();
+  await expireTrialBackedListings(userId, now);
+  return user;
 }
 
 export async function getUserProfile(userId: string) {
@@ -687,6 +767,117 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
   return intent;
 }
 
+export async function convertTrialSubscriptionToPaymentIntent(userId: string, subscriptionId: string, idempotencyKey?: string): Promise<PaymentIntent | undefined> {
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.id, subscriptionId), eq(listingSubscriptions.userId, userId))).limit(1);
+    const subscription = subscriptions[0];
+    if (!subscription || subscription.source !== "trial") return undefined;
+
+    if (normalizedIdempotencyKey) {
+      const keyedRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, subscription.listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      if (keyedRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(keyedRows[0]));
+    }
+
+    const rows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.subscriptionId, subscriptionId), eq(paymentIntents.userId, userId))).orderBy(desc(paymentIntents.createdAt)).limit(1);
+    const existing = rows[0] ? toPaymentIntent(rows[0]) : undefined;
+    if (existing?.status === "pending" && existing.paymentUrl) return existing;
+    if (existing?.status === "succeeded") return existing;
+
+    const listingRows = await db.select().from(listings).where(eq(listings.id, subscription.listingId)).limit(1);
+    const listing = listingRows[0];
+    if (!listing) return undefined;
+    const plan = await fetchSubscriptionPlan(subscription.planId);
+    if (!plan) throw new Error("Unknown plan");
+
+    const now = new Date();
+    const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
+    let intent: PaymentIntent = {
+      id: normalizedIdempotencyKey ? stableIdFromKey("pay", `${userId}:${subscription.listingId}:${normalizedIdempotencyKey}`) : `pay-${randomUUID()}`,
+      userId,
+      listingId: subscription.listingId,
+      subscriptionId,
+      purpose: "listing_subscription",
+      status: "pending",
+      planId: subscription.planId,
+      quote,
+      amountLkr: quote.totalLkr,
+      currency: "LKR",
+      gateway: listingPaymentGateway(),
+      policyVersion: "2026-06-11",
+      policyAcceptedAt: now.toISOString(),
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    };
+    intent = await prepareGatewayPayment(userId, intent);
+
+    const [inserted] = await db.insert(paymentIntents).values({
+      id: intent.id,
+      userId,
+      listingId: subscription.listingId,
+      idempotencyKey: normalizedIdempotencyKey,
+      subscriptionId,
+      purpose: intent.purpose,
+      status: intent.status,
+      planId: subscription.planId,
+      quote,
+      amountLkr: intent.amountLkr,
+      currency: intent.currency,
+      gateway: intent.gateway,
+      gatewayReference: intent.gatewayReference,
+      stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
+      stripeSubscriptionId: intent.stripeSubscriptionId,
+      stripeCustomerId: intent.stripeCustomerId,
+      stripeInvoiceId: intent.stripeInvoiceId,
+      paymentUrl: intent.paymentUrl,
+      policyVersion: intent.policyVersion,
+      policyAcceptedAt: now,
+      createdAt: now,
+      updatedAt: now
+    }).returning();
+    await db.update(listingSubscriptions).set({ paymentIntentId: intent.id, updatedAt: now }).where(eq(listingSubscriptions.id, subscriptionId));
+    return toPaymentIntent(inserted);
+  }
+
+  const state = await getMemoryState();
+  const subscription = state.listingSubscriptions.find((item) => item.id === subscriptionId && item.userId === userId);
+  if (!subscription || subscription.source !== "trial") return undefined;
+  const existing = state.paymentIntents
+    .filter((item) => item.subscriptionId === subscriptionId && item.userId === userId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (existing?.status === "pending" || existing?.status === "succeeded") return existing.paymentUrl ? existing : prepareAndUpdateMemoryPaymentIntent(existing);
+
+  const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+  const plan = state.subscriptionPlans.find((item) => item.id === subscription.planId);
+  if (!listing || !plan) return undefined;
+  const now = new Date();
+  const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
+  const memoryKey = normalizedIdempotencyKey ? `${userId}:${subscription.listingId}:${normalizedIdempotencyKey}` : "";
+  let intent: PaymentIntent = {
+    id: normalizedIdempotencyKey ? stableIdFromKey("pay", memoryKey) : `pay-${randomUUID()}`,
+    userId,
+    listingId: subscription.listingId,
+    subscriptionId,
+    purpose: "listing_subscription",
+    status: "pending",
+    planId: subscription.planId,
+    quote,
+    amountLkr: quote.totalLkr,
+    currency: "LKR",
+    gateway: listingPaymentGateway(),
+    policyVersion: "2026-06-11",
+    policyAcceptedAt: now.toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+  intent = await prepareGatewayPayment(userId, intent);
+  subscription.paymentIntentId = intent.id;
+  subscription.updatedAt = now.toISOString();
+  state.paymentIntents.push(intent);
+  return intent;
+}
+
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | undefined> {
   if (!orderStatuses.includes(status)) {
     throw new Error("Invalid order status");
@@ -706,6 +897,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
 }
 
 export async function getDashboard(userId: string): Promise<UserDashboard> {
+  await expireExpiredTrialSubscriptions(userId);
   const [{ user, settings }, subscriptions, payments] = await Promise.all([
     getUserProfile(userId),
     getListingSubscriptions(userId),
@@ -1043,7 +1235,7 @@ export async function completeListingCheckoutSession(
   token: string,
   request: UpdateListingCheckoutSessionRequest,
   idempotencyKey?: string
-): Promise<PaymentIntent | undefined> {
+): Promise<ListingCheckoutCompletionResult | undefined> {
   const record = await getListingCheckoutSessionRecord(token);
   if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
   if (record.claimedUserId && record.claimedUserId !== userId) {
@@ -1079,6 +1271,23 @@ export async function completeListingCheckoutSession(
     await updateUserListing(userId, listing.id, { media: listingMediaItems });
   }
 
+  const user = await getUser(userId);
+  if (isTrialActiveForUser(user)) {
+    const subscription = await createTrialListingSubscription(user, listing.id, selectedPlanId, record.media.filter((item) => item.kind === "photo").length, acceptedPolicies);
+    await updateListingCheckoutSessionRecord(record.id, {
+      status: "used",
+      claimedUserId: userId,
+      listingId: listing.id,
+      updatedAt: new Date().toISOString()
+    });
+    return {
+      mode: "trial",
+      listing: (await getListingForUser(userId, listing.id)) ?? listing,
+      subscription,
+      trial: user.trial!
+    };
+  }
+
   const intent = await createListingPaymentIntent(userId, listing.id, {
     planId: selectedPlanId,
     photoCount: record.media.filter((item) => item.kind === "photo").length,
@@ -1093,7 +1302,80 @@ export async function completeListingCheckoutSession(
     updatedAt: new Date().toISOString()
   });
 
-  return intent;
+  return { mode: "payment", paymentIntent: intent };
+}
+
+async function getListingForUser(userId: string, listingId: string): Promise<Listing | undefined> {
+  const seller = await ensureSellerProfile(userId);
+  if (hasDatabase) {
+    const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+    return rows[0] ? toListing(rows[0]) : undefined;
+  }
+  return (await getMemoryState()).database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
+}
+
+async function createTrialListingSubscription(user: User, listingId: string, planId: string, photoCount: number, acceptedPolicies: boolean): Promise<ListingSubscription> {
+  if (!acceptedPolicies) {
+    throw new Error("Terms and Privacy Policy acceptance is required before payment.");
+  }
+  if (!user.trial || user.trial.status !== "active") {
+    throw new Error("Free trial is not active.");
+  }
+  const seller = await ensureSellerProfile(user.id);
+  const plan = await fetchSubscriptionPlan(planId);
+  if (!plan) throw new Error("Unknown plan");
+  const now = new Date();
+  const expiresAt = new Date(user.trial.endsAt);
+  const subscriptionId = `trial-sub-${randomUUID()}`;
+  const policyVersion = "2026-06-11";
+
+  if (hasDatabase) {
+    const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+    if (!rows[0]) throw new Error("Listing not found.");
+    const [subscription] = await db.insert(listingSubscriptions).values({
+      id: subscriptionId,
+      userId: user.id,
+      listingId,
+      planId,
+      status: "active",
+      source: "trial",
+      autoRenew: false,
+      startsAt: now,
+      expiresAt,
+      createdAt: now,
+      updatedAt: now
+    }).returning();
+    await db.update(listings).set({
+      status: "pending_review",
+      moderationStatus: "queued",
+      expiresAt,
+      updatedAt: now
+    }).where(eq(listings.id, listingId));
+    await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId: user.id, listingId, policyVersion, acceptedAt: now });
+    return toListingSubscription(subscription);
+  }
+
+  const state = await getMemoryState();
+  const listing = state.database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
+  if (!listing) throw new Error("Listing not found.");
+  const subscription: ListingSubscription = {
+    id: subscriptionId,
+    userId: user.id,
+    listingId,
+    planId,
+    status: "active",
+    source: "trial",
+    autoRenew: false,
+    startsAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
+  };
+  state.listingSubscriptions.push(subscription);
+  listing.status = "pending_review";
+  listing.moderationStatus = "queued";
+  listing.expiresAt = expiresAt.toISOString();
+  return subscription;
 }
 
 export async function removeUserListing(userId: string, listingId: string) {
@@ -1290,6 +1572,7 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
         listingId,
         planId,
         status: "pending_payment" as ListingSubscriptionStatus,
+        source: "paid" as const,
         autoRenew: true,
         createdAt: now,
         updatedAt: now
@@ -1341,6 +1624,7 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
     listingId,
     planId,
     status: "pending_payment",
+    source: "paid",
     autoRenew: true,
     paymentIntentId: undefined,
     createdAt: now.toISOString(),
@@ -2039,6 +2323,104 @@ async function getPaymentIntents(userId: string): Promise<PaymentIntent[]> {
   return (await getMemoryState()).paymentIntents.filter((item) => item.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+async function expireExpiredTrialSubscriptions(userId: string) {
+  const now = new Date();
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial"), eq(listingSubscriptions.status, "active")));
+    const expired = subscriptions.filter((subscription) => subscription.expiresAt && subscription.expiresAt <= now);
+    if (expired.length === 0) return;
+    await db.update(listingSubscriptions).set({
+      status: "expired",
+      autoRenew: false,
+      updatedAt: now
+    }).where(inArray(listingSubscriptions.id, expired.map((subscription) => subscription.id)));
+    await db.update(listings).set({
+      status: "expired",
+      updatedAt: now
+    }).where(inArray(listings.id, expired.map((subscription) => subscription.listingId)));
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const subscription of state.listingSubscriptions.filter((item) => item.userId === userId && item.source === "trial" && item.status === "active" && item.expiresAt && new Date(item.expiresAt) <= now)) {
+    subscription.status = "expired";
+    subscription.autoRenew = false;
+    subscription.updatedAt = now.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) listing.status = "expired";
+  }
+}
+
+async function refreshTrialBackedListings(userId: string, expiresAt: Date) {
+  const now = new Date();
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial")));
+    if (subscriptions.length === 0) return;
+    const nextStatus = expiresAt > now ? "active" : "expired";
+    const listingIds = subscriptions.map((subscription) => subscription.listingId);
+    await db.update(listingSubscriptions).set({
+      status: nextStatus,
+      expiresAt,
+      cancelledAt: null,
+      updatedAt: now
+    }).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial")));
+    const listingUpdate = nextStatus === "active"
+      ? { status: "pending_review" as const, moderationStatus: "queued" as const, expiresAt, updatedAt: now }
+      : { status: "expired" as const, expiresAt, updatedAt: now };
+    await db.update(listings).set(listingUpdate).where(inArray(listings.id, listingIds));
+    return;
+  }
+
+  const state = await getMemoryState();
+  const nextStatus = expiresAt > now ? "active" : "expired";
+  for (const subscription of state.listingSubscriptions.filter((item) => item.userId === userId && item.source === "trial")) {
+    subscription.status = nextStatus;
+    subscription.expiresAt = expiresAt.toISOString();
+    subscription.cancelledAt = undefined;
+    subscription.updatedAt = now.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = nextStatus === "active" ? "pending_review" : "expired";
+      if (nextStatus === "active") listing.moderationStatus = "queued";
+      listing.expiresAt = expiresAt.toISOString();
+    }
+  }
+}
+
+async function expireTrialBackedListings(userId: string, expiredAt: Date) {
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial")));
+    if (subscriptions.length === 0) return;
+    await db.update(listingSubscriptions).set({
+      status: "expired",
+      autoRenew: false,
+      expiresAt: expiredAt,
+      cancelledAt: expiredAt,
+      updatedAt: expiredAt
+    }).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial")));
+    await db.update(listings).set({
+      status: "expired",
+      expiresAt: expiredAt,
+      updatedAt: expiredAt
+    }).where(inArray(listings.id, subscriptions.map((subscription) => subscription.listingId)));
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const subscription of state.listingSubscriptions.filter((item) => item.userId === userId && item.source === "trial")) {
+    subscription.status = "expired";
+    subscription.autoRenew = false;
+    subscription.expiresAt = expiredAt.toISOString();
+    subscription.cancelledAt = expiredAt.toISOString();
+    subscription.updatedAt = expiredAt.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = "expired";
+      listing.expiresAt = expiredAt.toISOString();
+    }
+  }
+}
+
 function isSubscriptionInPaidAccess(status: ListingSubscriptionStatus, expiresAt: Date | string | null | undefined, now = new Date()) {
   if (status !== "active" && status !== "past_due") return false;
   if (!expiresAt) return false;
@@ -2173,6 +2555,8 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
     const expiresAt = addMonths(now, plan.validityMonths);
     await db.update(listingSubscriptions).set({
       status: "active",
+      source: "paid",
+      autoRenew: true,
       startsAt: subscription.startsAt ?? now,
       expiresAt,
       paymentIntentId,
@@ -2194,6 +2578,8 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
   if (!plan) return;
   const expiresAt = addMonths(now, plan.validityMonths);
   subscription.status = "active";
+  subscription.source = "paid";
+  subscription.autoRenew = true;
   subscription.startsAt ??= now.toISOString();
   subscription.expiresAt = expiresAt.toISOString();
   subscription.paymentIntentId = paymentIntentId;
@@ -2220,6 +2606,8 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
     const expiresAt = addMonths(baseDate, plan.validityMonths);
     await db.update(listingSubscriptions).set({
       status: "active",
+      source: "paid",
+      autoRenew: true,
       startsAt: subscription.startsAt ?? now,
       expiresAt,
       paymentIntentId,
@@ -2238,6 +2626,8 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
   const baseDate = currentExpiresAt && currentExpiresAt > now ? currentExpiresAt : now;
   const expiresAt = addMonths(baseDate, plan.validityMonths);
   subscription.status = "active";
+  subscription.source = "paid";
+  subscription.autoRenew = true;
   subscription.startsAt ??= now.toISOString();
   subscription.expiresAt = expiresAt.toISOString();
   subscription.paymentIntentId = paymentIntentId;
@@ -2349,6 +2739,7 @@ function defaultSettings(userId: string): UserSettings {
 }
 
 function toUser(row: typeof users.$inferSelect): User {
+  const trial = buildUserTrial(row.trialStartedAt, row.trialEndsAt, row.trialTerminatedAt);
   return {
     id: row.id,
     firebaseUid: row.firebaseUid ?? undefined,
@@ -2361,6 +2752,10 @@ function toUser(row: typeof users.$inferSelect): User {
     status: row.status as User["status"],
     profileImageKey: row.profileImageKey ?? undefined,
     profileImageUrl: row.profileImageUrl ?? undefined,
+    trialStartedAt: trial.startsAt,
+    trialEndsAt: trial.endsAt,
+    trialTerminatedAt: trial.terminatedAt,
+    trial,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
@@ -2371,10 +2766,22 @@ function normalizeOrderImageUrl(value?: string | null) {
   if (value.startsWith("mock-read://")) {
     return createSignedReadUrl(value.slice("mock-read://".length));
   }
-  if (value.startsWith("users/")) {
+  if (value.startsWith("users/") || value.startsWith("listing-checkout-sessions/")) {
     return createSignedReadUrl(value);
   }
   return value;
+}
+
+function normalizeListingMediaUrl(value?: string | null, fallbackKey?: string | null) {
+  const mediaKey = normalizeBlobReadKey(value) ?? normalizeBlobReadKey(fallbackKey);
+  return mediaKey ? createSignedReadUrl(mediaKey) : value ?? "";
+}
+
+function normalizeBlobReadKey(value?: string | null) {
+  if (!value) return undefined;
+  if (value.startsWith("mock-read://")) return value.slice("mock-read://".length);
+  if (value.startsWith("users/") || value.startsWith("listing-checkout-sessions/")) return value;
+  return undefined;
 }
 
 function normalizeMemoryOrderImages(order: Order): Order {
@@ -2409,12 +2816,10 @@ function toListing(row: typeof listings.$inferSelect): Listing {
     }
   }
 
-  const media = Array.isArray(row.media) ? row.media.map((m: any) => {
-    if (m.id && m.id.startsWith("users/")) {
-      return { ...m, url: createSignedReadUrl(m.id) };
-    }
-    return m;
-  }) : [];
+  const media = Array.isArray(row.media) ? row.media.map((m: any) => ({
+    ...m,
+    url: normalizeListingMediaUrl(m.url ?? m.id, m.id)
+  })) : [];
   
   return {
     id: row.id,
@@ -2445,6 +2850,7 @@ function toListingSubscription(row: typeof listingSubscriptions.$inferSelect): L
     listingId: row.listingId,
     planId: row.planId,
     status: row.status,
+    source: row.source,
     autoRenew: row.autoRenew,
     startsAt: row.startsAt?.toISOString(),
     expiresAt: row.expiresAt?.toISOString(),

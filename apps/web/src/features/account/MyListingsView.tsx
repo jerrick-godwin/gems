@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
-import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { publicErrorMessage } from "../../shared/helpers";
+import { TrialStatusPanel } from "./TrialStatusPanel";
 
 export function MyListingsView({
   dashboard,
@@ -103,7 +104,10 @@ export function MyListingsView({
     await payAction.run(async () => {
       try {
         setPayingSubscriptionId(subscriptionId);
-        const paymentIntent = await api.getListingSubscriptionPaymentIntent(subscriptionId);
+        const subscription = dashboard?.listingSubscriptions.find((item) => item.id === subscriptionId);
+        const paymentIntent = subscription?.source === "trial"
+          ? await api.convertTrialSubscription(subscriptionId, { idempotencyKey: createIdempotencyKey("trial-convert") })
+          : await api.getListingSubscriptionPaymentIntent(subscriptionId);
         if (!paymentIntent.paymentUrl) {
           alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
           setPayingSubscriptionId(null);
@@ -183,6 +187,7 @@ export function MyListingsView({
           />
         </div>
       </div>
+      <TrialStatusPanel trial={dashboard?.user.trial} variant="compact" />
       <section className="data-panel" style={{ opacity: isLoadingListings ? 0.6 : 1, transition: "opacity 0.2s" }}>
         {isLoadingListings && listings.length === 0 ? (
           <p style={{ color: "var(--sage)", fontWeight: 600 }}>Loading listings...</p>
@@ -207,7 +212,8 @@ export function MyListingsView({
               ]);
               const isRejected = listing.status === "rejected" || listing.moderationStatus === "rejected";
               const hasPaidSubscriptionAccess = isSubscriptionInPaidAccess(subscription);
-              const canCancelRenewal = Boolean(subscription?.autoRenew && hasPaidSubscriptionAccess && !isRejected);
+              const canCancelRenewal = Boolean(subscription?.source === "paid" && subscription.autoRenew && hasPaidSubscriptionAccess && !isRejected);
+              const canConvertTrial = Boolean(subscription?.source === "trial" && !hasPaidSubscriptionAccess && !isRejected);
               const renewalStatus = getSubscriptionRenewalStatus(subscription);
 
               return (
@@ -237,7 +243,7 @@ export function MyListingsView({
                           <div className={`seller-listing-finance-card ${canCancelRenewal ? "is-renewing" : "is-muted"}`}>
                             <div className="seller-listing-finance-title">
                               <ShieldCheck size={16} style={{ color: canCancelRenewal ? 'var(--emerald)' : 'var(--muted)' }} />
-                              {plan.name} Subscription
+                              {subscription.source === "trial" ? `${plan.name} Trial Access` : `${plan.name} Subscription`}
                             </div>
                             <div className="seller-listing-finance-line">
                               Status: <span style={{ textTransform: 'capitalize', fontWeight: 600, color: 'var(--ink)' }}>{subscription.status.replace("_", " ")}</span>
@@ -289,7 +295,7 @@ export function MyListingsView({
                     </div>
                   </div>
                   <div className="seller-listing-actions">
-                    {subscription && isAwaitingInitialPayment(subscription) && (
+                    {subscription && (isAwaitingInitialPayment(subscription) || canConvertTrial) && (
                       <button
                         onClick={() => void handlePayNow(subscription.id)}
                         disabled={payAction.busy || payingSubscriptionId === subscription.id}
@@ -370,7 +376,7 @@ export function MyListingsView({
             <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
               {confirmDeleteRemovesAtExpiry && confirmDeleteSubscription?.expiresAt ? (
                 <>
-                  This listing has an active subscription. Deleting it will cancel renewal now, keep the current paid access, and remove the listing on <strong>{formatDate(confirmDeleteSubscription.expiresAt)}</strong>.
+                  This listing has active access. Deleting it will cancel renewal when applicable, keep the current access, and remove the listing on <strong>{formatDate(confirmDeleteSubscription.expiresAt)}</strong>.
                 </>
               ) : (
                 <>
@@ -505,6 +511,17 @@ function isAwaitingInitialPayment(subscription: ListingSubscriptionSummary | und
 
 function getSubscriptionRenewalStatus(subscription: ListingSubscriptionSummary | undefined) {
   if (!subscription) return undefined;
+
+  if (subscription.source === "trial") {
+    const activeAccess = Boolean(subscription.expiresAt && new Date(subscription.expiresAt) > new Date() && (subscription.status === "active" || subscription.status === "past_due"));
+    if (activeAccess) {
+      return { label: "Free trial access", color: "var(--emerald)" };
+    }
+    if (subscription.status === "expired") {
+      return { label: "Trial expired", color: "var(--muted)" };
+    }
+    return { label: "Trial ended", color: "var(--danger)" };
+  }
 
   if (subscription.status === "pending_payment") {
     return { label: "Payment required", color: "var(--gold)" };

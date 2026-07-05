@@ -32,6 +32,7 @@ import {
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
   createListingPaymentIntent,
+  convertTrialSubscriptionToPaymentIntent,
   completeListingCheckoutSession,
   createListingCheckoutSession,
   createListing,
@@ -57,6 +58,8 @@ import {
   getOrCreateUserFromClaims,
   getSettings,
   getUserProfile,
+  extendUserTrial,
+  terminateUserTrial,
   updateOrderStatus,
   updateSettings,
   updateListingCheckoutDraft,
@@ -363,6 +366,26 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    const adminUserTrialMatch = path.match(/^\/api\/v1\/admin\/users\/([^/]+)\/trial$/);
+    if (adminUserTrialMatch && request.method === "PATCH") {
+      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const endsAtValue = typeof body.endsAt === "string" ? body.endsAt : "";
+      const endsAt = new Date(endsAtValue);
+      try {
+        const user = await extendUserTrial(adminUserTrialMatch[1], endsAt);
+        sendJson(response, user ? 200 : 404, user ?? { error: "User not found" });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to extend trial" });
+      }
+      return true;
+    }
+
+    if (adminUserTrialMatch && request.method === "DELETE") {
+      const user = await terminateUserTrial(adminUserTrialMatch[1]);
+      sendJson(response, user ? 200 : 404, user ?? { error: "User not found" });
+      return true;
+    }
+
     if (request.method === "GET" && path === "/api/v1/admin/sellers") {
       sendJson(response, 200, await getAllSellers());
       return true;
@@ -634,6 +657,23 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "PATCH" && cancelSubscriptionMatch) {
       const subscription = await cancelListingSubscription(user.id, cancelSubscriptionMatch[1]);
       sendJson(response, subscription ? 200 : 404, subscription ?? { error: "Subscription not found" });
+      return true;
+    }
+
+    const convertTrialSubscriptionMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/convert$/);
+    if (request.method === "POST" && convertTrialSubscriptionMatch) {
+      try {
+        const intent = await convertTrialSubscriptionToPaymentIntent(user.id, convertTrialSubscriptionMatch[1], idempotencyKey(request));
+        sendJson(response, intent ? 201 : 404, intent ?? { error: "Trial subscription not found" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to start checkout right now. Please try again in a moment.";
+        if (paymentIntentValidationErrors.has(message)) {
+          sendJson(response, 400, { error: message });
+        } else {
+          console.error("Unable to convert trial subscription", error);
+          sendJson(response, 500, { error: "Unable to start checkout right now. Please try again in a moment." });
+        }
+      }
       return true;
     }
 

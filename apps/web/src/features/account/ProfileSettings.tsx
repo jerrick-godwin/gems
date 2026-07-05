@@ -4,6 +4,7 @@ import type { GemsApiClient } from "@gems/api-client";
 import type { UserDashboard } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { publicErrorMessage } from "../../shared/helpers";
+import { TrialStatusPanel } from "./TrialStatusPanel";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -111,6 +112,7 @@ export function ProfileSettings({
           </button>
           {profileStatus && saveState !== "saved" && <p className={`profile-status profile-status-${saveState}`}>{profileStatus}</p>}
         </form>
+        <TrialStatusPanel trial={user?.trial} />
       </div>
     </section>
   );
