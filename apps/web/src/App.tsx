@@ -415,6 +415,7 @@ function App() {
           subscriptionPlans={subscriptionPlans}
           isSignedIn={isSignedIn}
           authResolved={authResolved}
+          dashboard={account.dashboard}
           onDashboardChange={account.setDashboard}
           onNavigate={navigateToView}
           onEditListing={navigateToPostEditCheckout}

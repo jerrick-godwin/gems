@@ -8,6 +8,7 @@ import type {
   ListingMedia,
   ListingStatus,
   ListingSubscriptionPlanId,
+  ListingSubscriptionSource,
   ListingSubscriptionStatus,
   ListingPaymentQuote,
   ModerationStatus,
@@ -32,6 +33,9 @@ export const users = pgTable("users", {
   status: varchar("status").notNull().default("active"),
   profileImageKey: text("profile_image_key"),
   profileImageUrl: text("profile_image_url"),
+  trialStartedAt: timestamp("trial_started_at").notNull(),
+  trialEndsAt: timestamp("trial_ends_at").notNull(),
+  trialTerminatedAt: timestamp("trial_terminated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -138,6 +142,7 @@ export const listingSubscriptions = pgTable("listing_subscriptions", {
   listingId: varchar("listing_id").references(() => listings.id).notNull(),
   planId: varchar("plan_id").references(() => subscriptionPlans.id).notNull(),
   status: varchar("status").$type<ListingSubscriptionStatus>().notNull().default("pending_payment"),
+  source: varchar("source").$type<ListingSubscriptionSource>().notNull().default("paid"),
   autoRenew: boolean("auto_renew").notNull().default(true),
   startsAt: timestamp("starts_at"),
   expiresAt: timestamp("expires_at"),

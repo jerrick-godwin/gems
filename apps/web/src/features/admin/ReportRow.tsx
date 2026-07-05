@@ -4,6 +4,7 @@ import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-clie
 import type { Report } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { publicErrorMessage } from "../../shared/helpers";
+import { AdminMediaPreview } from "./AdminMediaPreview";
 
 export function ReportRow({
   report,
@@ -83,7 +84,7 @@ export function ReportRow({
     >
       <div style={{ display: "flex", gap: 16, alignItems: "center", width: "100%", flexWrap: "wrap" }}>
         {listing ? (
-          <img src={listing.media[0]?.url} alt={listing.title} style={{ width: 80, height: 80, borderRadius: "var(--radius-sm)", objectFit: "cover", border: "1px solid var(--line)", background: "var(--panel)" }} />
+          <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} />
         ) : (
           <div style={{ width: 80, height: 80, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
             <Flag size={20} />
@@ -147,7 +148,7 @@ export function ReportRow({
 
           {listing ? (
             <div className="report-listing-detail" style={{ background: "var(--panel)", padding: 14, borderRadius: 6, border: "1px solid var(--line)" }}>
-              <img src={listing.media[0]?.url} alt={listing.title} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, objectFit: "cover", border: "1px solid var(--line)", background: "var(--soft)" }} />
+              <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} variant="detail" />
               <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
                 <div>
                   <strong style={{ fontSize: 16 }}>{listing.title}</strong>

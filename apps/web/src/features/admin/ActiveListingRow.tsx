@@ -1,10 +1,11 @@
-import { ChevronDown, ChevronUp, ExternalLink, FileText, ImageIcon, ReceiptText, Star, Trash, Pause, Play, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronUp, ReceiptText, Star, Trash, Pause, Play, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import { formatLkr, type Listing, type ListingMedia, type PaymentIntent, type SellerProfile, type User } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { AdminMediaPreview } from "./AdminMediaPreview";
 import { CampaignDialog } from "./CampaignDialog";
 
 export function ActiveListingRow({ 
@@ -98,13 +99,7 @@ export function ActiveListingRow({
     <>
       <div className="active-listing-row">
         <div className="active-listing-summary">
-          {photos[0] ? (
-            <img src={photos[0].url} alt={photos[0].alt || listing.title} className="active-listing-thumb" />
-          ) : (
-            <div className="active-listing-thumb active-listing-thumb-empty">
-              <ImageIcon size={22} />
-            </div>
-          )}
+          <AdminMediaPreview media={photos[0]} alt={listing.title} />
           <div className="active-listing-title-block">
             <strong>{listing.title}</strong>
             <span>
@@ -244,6 +239,15 @@ export function ActiveListingRow({
                   <Detail label="Auto-renew" value={listing.subscription ? (listing.subscription.autoRenew ? "Enabled" : "Disabled") : undefined} />
                   <Detail label="Renewal status" value={listing.subscription ? (listing.subscription.status.charAt(0).toUpperCase() + listing.subscription.status.slice(1).replace("_", " ")) : undefined} />
                 </dl>
+              ) : listing.subscription ? (
+                <dl className="active-listing-detail-grid">
+                  <Detail label="Source" value={listing.subscription.source === "trial" ? "Free trial" : "Paid"} />
+                  <Detail label="Subscription ID" value={listing.subscription.id} />
+                  <Detail label="Plan ID" value={listing.subscription.planId} />
+                  <Detail label="Listing expiry" value={formatOptionalDate(listing.subscription.expiresAt ?? listing.expiresAt)} />
+                  <Detail label="Auto-renew" value={listing.subscription.autoRenew ? "Enabled" : "Disabled"} />
+                  <Detail label="Renewal status" value={listing.subscription.status.charAt(0).toUpperCase() + listing.subscription.status.slice(1).replace("_", " ")} />
+                </dl>
               ) : (
                 <p className="active-listing-empty">No subscription payment record found.</p>
               )}
@@ -349,22 +353,7 @@ function Detail({ label, value, wide = false }: { label: string; value?: string 
 }
 
 function MediaTile({ media }: { media: ListingMedia }) {
-  const isPdf = media.kind === "certificate" && isPdfMedia(media);
-
-  return (
-    <a className="active-listing-media-tile" href={media.url} target="_blank" rel="noopener noreferrer">
-      {isPdf ? (
-        <div className="active-listing-file-preview">
-          <FileText size={24} />
-          <span>PDF</span>
-        </div>
-      ) : (
-        <img src={media.url} alt={media.alt} />
-      )}
-      <span>{media.kind === "certificate" ? "View/Download Certificate" : media.alt || "View photo"}</span>
-      <ExternalLink size={13} />
-    </a>
-  );
+  return <AdminMediaPreview media={media} alt={media.kind === "certificate" ? "Certificate" : media.alt || "Listing photo"} variant="tile" />;
 }
 
 function latestPaymentForListing(payments: PaymentIntent[], listingId: string) {
@@ -409,11 +398,6 @@ function formatOptionalDate(value?: string) {
 
 function shortRef(value: string) {
   return value.length > 18 ? `${value.slice(0, 14)}...` : value;
-}
-
-function isPdfMedia(media: ListingMedia) {
-  const name = `${media.alt} ${media.url.split("?")[0]}`.toLowerCase();
-  return name.endsWith(".pdf") || name.includes(".pdf ");
 }
 
 function campaignSummary(listing: Listing) {

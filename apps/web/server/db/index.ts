@@ -29,6 +29,14 @@ export async function ensureDatabaseCompatibility(options: { force?: boolean } =
   if (!options.force && process.env.RUNTIME_DATABASE_COMPATIBILITY !== "true") return;
   compatibilityPromise ??= (async () => {
     await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS address varchar NOT NULL DEFAULT ''`);
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at timestamp`);
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at timestamp`);
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_terminated_at timestamp`);
+    await db.execute(sql`UPDATE users SET trial_started_at = created_at WHERE trial_started_at IS NULL`);
+    await db.execute(sql`UPDATE users SET trial_ends_at = created_at + interval '14 days' WHERE trial_ends_at IS NULL`);
+    await db.execute(sql`ALTER TABLE users ALTER COLUMN trial_started_at SET NOT NULL`);
+    await db.execute(sql`ALTER TABLE users ALTER COLUMN trial_ends_at SET NOT NULL`);
+    await db.execute(sql`ALTER TABLE listing_subscriptions ADD COLUMN IF NOT EXISTS source varchar NOT NULL DEFAULT 'paid'`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_checkout_session_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_subscription_id varchar`);
     await db.execute(sql`ALTER TABLE payment_intents ADD COLUMN IF NOT EXISTS stripe_customer_id varchar`);
