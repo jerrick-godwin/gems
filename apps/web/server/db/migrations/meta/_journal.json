@@ -76,14 +76,14 @@
       "idx": 10,
       "version": "7",
       "when": 1782560829650,
-      "tag": "0010_subscription_plans",
+      "tag": "0011_subscription_plans",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
       "when": 1782563597555,
-      "tag": "0011_quick_iron_patriot",
+      "tag": "0012_quick_iron_patriot",
       "breakpoints": true
     },
     {
@@ -91,6 +91,13 @@
       "version": "7",
       "when": 1782864000000,
       "tag": "0013_listing_checkout_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782867600000,
+      "tag": "0014_user_free_trials",
       "breakpoints": true
     }
   ]

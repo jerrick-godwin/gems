@@ -13,5 +13,20 @@ CREATE TABLE IF NOT EXISTS "subscription_plans" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 
-ALTER TABLE "listing_subscriptions" ADD CONSTRAINT "listing_subscriptions_plan_id_subscription_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "public"."subscription_plans"("id") ON DELETE no action ON UPDATE no action;
-ALTER TABLE "payment_intents" ADD CONSTRAINT "payment_intents_plan_id_subscription_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "public"."subscription_plans"("id") ON DELETE no action ON UPDATE no action;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'listing_subscriptions_plan_id_subscription_plans_id_fk'
+  ) THEN
+    ALTER TABLE "listing_subscriptions" ADD CONSTRAINT "listing_subscriptions_plan_id_subscription_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "public"."subscription_plans"("id") ON DELETE no action ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'payment_intents_plan_id_subscription_plans_id_fk'
+  ) THEN
+    ALTER TABLE "payment_intents" ADD CONSTRAINT "payment_intents_plan_id_subscription_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "public"."subscription_plans"("id") ON DELETE no action ON UPDATE no action;
+  END IF;
+END $$;

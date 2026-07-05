@@ -7,6 +7,7 @@ import { publicErrorMessage } from "../../shared/helpers";
 import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateLoginFields, validateSignupFields, type AuthFieldErrors } from "./authValidation";
+import { TrialStatusPanel } from "./TrialStatusPanel";
 
 type AuthMode = "login" | "signup";
 
@@ -16,6 +17,7 @@ export function PostGemCheckout({
   subscriptionPlans,
   isSignedIn,
   authResolved,
+  dashboard,
   onDashboardChange,
   onNavigate,
   onEditListing
@@ -25,6 +27,7 @@ export function PostGemCheckout({
   subscriptionPlans: ListingSubscriptionPlan[];
   isSignedIn: boolean;
   authResolved: boolean;
+  dashboard: UserDashboard | null;
   onDashboardChange: (dashboard: UserDashboard) => void;
   onNavigate: (view: View) => void;
   onEditListing: (token: string) => void;
@@ -39,6 +42,7 @@ export function PostGemCheckout({
   const activePlan = subscriptionPlans.find((plan) => plan.id === selectedPlanId) ?? subscriptionPlans[0];
   const photoCount = session?.media.filter((item) => item.kind === "photo").length ?? 0;
   const quote = useMemo(() => activePlan ? quoteListingSubscription(activePlan, photoCount) : null, [activePlan, photoCount]);
+  const activeTrial = dashboard?.user.trial?.status === "active" ? dashboard.user.trial : undefined;
 
   useEffect(() => {
     let active = true;
@@ -100,12 +104,19 @@ export function PostGemCheckout({
     await completeAction.run(async () => {
       const checkoutKey = createIdempotencyKey("listing-checkout");
       try {
-        setStatus("Creating payment...");
-        const paymentIntent = await api.completeListingCheckoutSession(token, {
+        setStatus(activeTrial ? "Submitting listing..." : "Creating payment...");
+        const result = await api.completeListingCheckoutSession(token, {
           selectedPlanId,
           acceptedPolicies
         }, { idempotencyKey: checkoutKey });
         onDashboardChange(await api.dashboard());
+        if (result.mode === "trial") {
+          setStatus("Listing submitted with your free trial.");
+          onNavigate("my_listings");
+          completeAction.release();
+          return;
+        }
+        const paymentIntent = result.paymentIntent;
         if (paymentIntent.paymentUrl) {
           window.location.href = paymentIntent.paymentUrl;
           return;
@@ -180,6 +191,8 @@ export function PostGemCheckout({
           ) : !isSignedIn ? (
             <InlineCheckoutAuth mode={authMode} setMode={setAuthMode} onDashboardChange={onDashboardChange} />
           ) : null}
+
+          <TrialStatusPanel trial={activeTrial} variant="checkout" />
 
           <section className="checkout-panel" aria-labelledby="checkout-plan-heading">
             <div className="checkout-panel-title">
@@ -265,7 +278,7 @@ export function PostGemCheckout({
               </div>
               <span className="listing-checkout-total-price">
                 <small>LKR</small>
-                {quote.totalLkr.toLocaleString("en-US")}
+                {(activeTrial ? 0 : quote.totalLkr).toLocaleString("en-US")}
               </span>
             </div>
           </div>
@@ -284,8 +297,8 @@ export function PostGemCheckout({
             </span>
           </label>
           <button className="checkout-submit" type="button" onClick={() => void handlePayment()} disabled={!isSignedIn || !acceptedPolicies || isCompleting}>
-            {isCompleting ? <span className="button-spinner" aria-hidden="true" /> : <CreditCard size={18} strokeWidth={2.4} />}
-            {isCompleting ? "Creating payment..." : "Proceed to Payment"}
+            {isCompleting ? <span className="button-spinner" aria-hidden="true" /> : activeTrial ? <Check size={18} strokeWidth={2.4} /> : <CreditCard size={18} strokeWidth={2.4} />}
+            {isCompleting ? (activeTrial ? "Submitting..." : "Creating payment...") : activeTrial ? "Publish with Free Trial" : "Proceed to Payment"}
           </button>
         </aside>
       </div>

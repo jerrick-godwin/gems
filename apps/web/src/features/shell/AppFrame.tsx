@@ -4,6 +4,7 @@ import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import type { User as AccountUser } from "@gems/schemas";
 import { authClient, type MarketplaceAuthUser } from "../../firebase";
 import { pathForView, type View } from "../../shared/types";
+import { getTrialMenuLabel, getTrialMenuTone } from "../account/TrialStatusPanel";
 
 function isClientNavigationClick(event: MouseEvent<HTMLAnchorElement>) {
   return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.altKey && !event.ctrlKey && !event.shiftKey;
@@ -50,6 +51,7 @@ function ProfileMenu({
   const email = accountUser?.email ?? user?.email ?? "";
   const displayName = accountName && accountName !== email ? accountName : authName || nameFromEmail(email) || "User";
   const avatarLabel = displayName.charAt(0).toUpperCase();
+  const trialMenuLabel = getTrialMenuLabel(accountUser?.trial);
 
   return (
     <div className="profile-menu-container" ref={menuRef} style={{ position: "relative" }}>
@@ -75,6 +77,11 @@ function ProfileMenu({
           <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--line)", marginBottom: 4 }}>
             <div style={{ fontWeight: 800, color: "var(--ink)", fontSize: 15, overflowWrap: "anywhere" }}>{displayName}</div>
             <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 3, overflowWrap: "anywhere" }}>{email}</div>
+            {trialMenuLabel && (
+              <div style={{ color: getTrialMenuTone(accountUser?.trial), fontSize: 12, fontWeight: 800, marginTop: 6, overflowWrap: "anywhere" }}>
+                {trialMenuLabel}
+              </div>
+            )}
           </div>
           <a
             href={pathForView("my_listings")}

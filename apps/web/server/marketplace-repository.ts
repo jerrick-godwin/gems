@@ -433,6 +433,7 @@ export async function getLiveListings() {
             listingId: sub.listingId,
             planId: sub.planId as any,
             status: sub.status as any,
+            source: sub.source as any,
             autoRenew: sub.autoRenew,
             startsAt: sub.startsAt?.toISOString(),
             expiresAt: sub.expiresAt?.toISOString(),
@@ -551,12 +552,10 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
     }
   }
 
-  const media = Array.isArray(row.media) ? row.media.map((m: any) => {
-    if (m.id && m.id.startsWith("users/")) {
-      return { ...m, url: createSignedReadUrl(m.id) };
-    }
-    return m;
-  }) : [];
+  const media = Array.isArray(row.media) ? row.media.map((m: any) => ({
+    ...m,
+    url: normalizeListingMediaUrl(m.url ?? m.id, m.id)
+  })) : [];
 
   return {
     id: row.id,
@@ -592,6 +591,18 @@ function toSellerProfile(row: typeof sellerProfileTable.$inferSelect): SellerPro
     location: row.location,
     rating: row.rating
   };
+}
+
+function normalizeListingMediaUrl(value?: string | null, fallbackKey?: string | null) {
+  const mediaKey = normalizeBlobReadKey(value) ?? normalizeBlobReadKey(fallbackKey);
+  return mediaKey ? createSignedReadUrl(mediaKey) : value ?? "";
+}
+
+function normalizeBlobReadKey(value?: string | null) {
+  if (!value) return undefined;
+  if (value.startsWith("mock-read://")) return value.slice("mock-read://".length);
+  if (value.startsWith("users/") || value.startsWith("listing-checkout-sessions/")) return value;
+  return undefined;
 }
 
 function toConversation(row: typeof conversationTable.$inferSelect): Conversation {

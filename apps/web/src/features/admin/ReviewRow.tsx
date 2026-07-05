@@ -5,6 +5,7 @@ import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-clie
 import { formatLkr, type Listing, type PaymentIntent } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { AdminMediaPreview } from "./AdminMediaPreview";
 
 export function ReviewRow({
   api,
@@ -80,7 +81,7 @@ export function ReviewRow({
   return (
     <div className="review-row" style={{ background: "var(--panel-strong)", padding: 16, borderRadius: "var(--radius)", marginBottom: 12, border: "1px solid var(--line)", boxShadow: "var(--shadow-xs)", display: "block" }}>
       <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-        <img src={listing.media[0]?.url} alt={listing.title} style={{ width: 80, height: 80, borderRadius: "var(--radius-sm)", objectFit: "cover", border: "1px solid var(--line)" }} />
+        <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} />
         <div style={{ flex: 1 }}>
           <strong style={{ fontSize: 16, fontWeight: 700 }}>{listing.title}</strong>
           <span style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
@@ -244,18 +245,10 @@ export function ReviewRow({
           <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Uploaded Files</h4>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", background: "var(--soft)", padding: 16, borderRadius: 8 }}>
             {listing.media.map(m => (
-              <a key={m.id} href={m.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", flexDirection: "column", alignItems: "center", textDecoration: "none", color: "inherit", background: "var(--panel)", padding: 8, borderRadius: 6, border: "1px solid var(--line)", transition: "transform 0.2s" }} onMouseOver={e => e.currentTarget.style.transform = "translateY(-2px)"} onMouseOut={e => e.currentTarget.style.transform = "none"}>
-                {m.url.endsWith(".pdf") ? (
-                  <div style={{ width: 120, height: 120, background: "var(--soft)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>PDF</span>
-                  </div>
-                ) : m.url.match(/\.(mp4|webm|ogg)$/i) ? (
-                  <video src={m.url} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 4 }} muted playsInline />
-                ) : (
-                  <img src={m.url} alt={m.alt} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 4 }} />
-                )}
+              <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", textDecoration: "none", color: "inherit", background: "var(--panel)", padding: 8, borderRadius: 6, border: "1px solid var(--line)" }}>
+                <AdminMediaPreview media={m} alt={m.alt || listing.title} variant="detail" />
                 <div style={{ fontSize: 11, textAlign: "center", color: "var(--ink)", marginTop: 8, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.02em" }}>{m.kind}</div>
-              </a>
+              </div>
             ))}
           </div>
         </div>

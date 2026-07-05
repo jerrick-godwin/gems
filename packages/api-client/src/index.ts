@@ -6,6 +6,7 @@ import type {
   CreateListingCheckoutSessionResponse,
   GemType,
   ListingCheckoutSession,
+  ListingCheckoutCompletionResult,
   Listing,
   ListingSubscription,
   ListingSubscriptionPlan,
@@ -184,7 +185,7 @@ export class GemsApiClient {
     return response.json() as Promise<CreateListingCheckoutSessionResponse>;
   }
 
-  async completeListingCheckoutSession(token: string, input: UpdateListingCheckoutSessionRequest, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
+  async completeListingCheckoutSession(token: string, input: UpdateListingCheckoutSessionRequest, options: IdempotentRequestOptions = {}): Promise<ListingCheckoutCompletionResult> {
     return this.authJson(`/listing-checkout-sessions/${encodeURIComponent(token)}/complete`, { method: "POST", body: JSON.stringify(input) }, options);
   }
 
@@ -206,6 +207,10 @@ export class GemsApiClient {
 
   async getListingSubscriptionPaymentIntent(subscriptionId: string): Promise<PaymentIntent> {
     return this.authJson(`/listing-subscriptions/${subscriptionId}/payment-intent`);
+  }
+
+  async convertTrialSubscription(subscriptionId: string, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
+    return this.authJson(`/listing-subscriptions/${subscriptionId}/convert`, { method: "POST" }, options);
   }
 
   async getPaymentReceipt(paymentIntentId: string): Promise<PaymentReceipt> {
@@ -323,6 +328,28 @@ export class GemsAdminApiClient {
     });
     if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load users");
     return response.json() as Promise<User[]>;
+  }
+
+  async extendUserTrial(token: string, userId: string, endsAt: string): Promise<User> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/trial`, {
+      method: "PATCH",
+      headers: {
+        ...adminHeaders(token),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ endsAt })
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<User>;
+  }
+
+  async terminateUserTrial(token: string, userId: string): Promise<User> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/trial`, {
+      method: "DELETE",
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<User>;
   }
 
   async sellers(token: string): Promise<SellerProfile[]> {

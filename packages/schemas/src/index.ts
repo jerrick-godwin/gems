@@ -6,8 +6,10 @@ export type CertificateStatus = "none" | "seller_provided" | "admin_verified";
 export type PromotionType = "bump" | "top" | "urgent" | "featured" | "scheduled";
 export type ListingSubscriptionPlanId = string;
 export type ListingSubscriptionStatus = "pending_payment" | "active" | "past_due" | "cancelled" | "expired";
+export type ListingSubscriptionSource = "paid" | "trial";
 export type PaymentPurpose = "listing_subscription" | "listing_subscription_renewal";
 export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled" | "expired";
+export type UserTrialStatus = "active" | "expired" | "terminated";
 
 export interface ListingSubscriptionPlan {
   id: string;
@@ -34,6 +36,7 @@ export interface ListingSubscriptionSummary {
   listingId: string;
   planId: ListingSubscriptionPlanId;
   status: ListingSubscriptionStatus;
+  source: ListingSubscriptionSource;
   autoRenew: boolean;
   startsAt?: string;
   expiresAt?: string;
@@ -48,6 +51,13 @@ export interface PromotionCampaign {
   endsAt: string;
 }
 
+export interface UserTrialSummary {
+  status: UserTrialStatus;
+  startsAt: string;
+  endsAt: string;
+  terminatedAt?: string;
+}
+
 export interface User {
   id: string;
   firebaseUid?: string;
@@ -60,6 +70,10 @@ export interface User {
   status: "active" | "suspended";
   profileImageUrl?: string;
   profileImageKey?: string;
+  trialStartedAt?: string;
+  trialEndsAt?: string;
+  trialTerminatedAt?: string;
+  trial?: UserTrialSummary;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -208,6 +222,20 @@ export interface ListingSubscription extends ListingSubscriptionSummary {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface ListingCheckoutPaymentResult {
+  mode: "payment";
+  paymentIntent: PaymentIntent;
+}
+
+export interface ListingCheckoutTrialResult {
+  mode: "trial";
+  listing: Listing;
+  subscription: ListingSubscription;
+  trial: UserTrialSummary;
+}
+
+export type ListingCheckoutCompletionResult = ListingCheckoutPaymentResult | ListingCheckoutTrialResult;
 
 export interface PaymentIntent {
   id: string;
