@@ -46,7 +46,7 @@ export interface MarketplaceProps {
 
 export function Marketplace(props: MarketplaceProps) {
   if (!props.selectedListing && props.sourceListingCount === 0) {
-    return <StatusState title="No listings available" message="Try refreshing once marketplace data has been published." onRetry={props.onRefresh} />;
+    return <StatusState title="No listings available" message="Try refreshing once Ceylon gems and Sri Lankan gemstone listings have been published." onRetry={props.onRefresh} />;
   }
 
   return (
@@ -55,17 +55,8 @@ export function Marketplace(props: MarketplaceProps) {
         <div className="feed-header">
           <div>
             <h1>Explore Gems</h1>
-            <p>{props.filteredListings.length} active listings with seller and lab details.</p>
+            <p>{props.filteredListings.length} active Ceylon gems and Sri Lankan gemstone listings in Sri Lanka with seller and lab details.</p>
           </div>
-          <label className="sort-control">
-            <SlidersHorizontal size={16} strokeWidth={2} />
-            <select value={props.sort} onChange={(event) => props.setSort(event.target.value as SortKey)} id="sort-control">
-              <option value="featured">Featured</option>
-              <option value="newest">Newest</option>
-              <option value="price-low">Price Low to High</option>
-              <option value="price-high">Price High to Low</option>
-            </select>
-          </label>
         </div>
 
         {props.filteredListings.length === 0 ? (
@@ -114,11 +105,21 @@ export function Marketplace(props: MarketplaceProps) {
       </section>
 
       <aside className="filters" aria-label="Gem filters">
-        <div className="global-search" style={{ gridColumn: "1 / -1", marginBottom: 12 }}>
+        <div className="global-search">
           <Search size={17} strokeWidth={2} />
           <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="Search Gems" id="global-search-input" />
         </div>
-        <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: "var(--ink)", marginBottom: 8 }}>
+        <label className="sort-control">
+          <SlidersHorizontal size={16} strokeWidth={2} />
+          Sort
+          <select value={props.sort} onChange={(event) => props.setSort(event.target.value as SortKey)} id="sort-control">
+            <option value="featured">Featured</option>
+            <option value="newest">Newest</option>
+            <option value="price-low">Price Low to High</option>
+            <option value="price-high">Price High to Low</option>
+          </select>
+        </label>
+        <div className="filter-section-title">
           <Filter size={17} strokeWidth={2} />
           Filters
         </div>

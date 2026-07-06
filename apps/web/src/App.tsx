@@ -19,16 +19,18 @@ import { StatusState } from "./shared/StatusState";
 import { listingCheckoutTokenFromPathname, pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
+import { footerDescription, homepageKeywords, siteName } from "./shared/seo";
 
 const siteOrigin = "https://gemslanka.lk";
-const homepageTitle = "Gemslanka.lk | Sri Lankan Gemstone Marketplace";
-const homepageDescription = "Browse approved gemstone listings in Sri Lanka, including sapphires, rubies, spinels, photos, lab details, treatment, origin, and seller contact options.";
+const homepageTitle = siteName;
+const homepageDescription = footerDescription;
 
-const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
+const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow"; keywords?: string }> = {
   market: {
     title: homepageTitle,
     description: homepageDescription,
-    robots: "index,follow"
+    robots: "index,follow",
+    keywords: homepageKeywords
   },
   contact: {
     title: "Contact Gemslanka.lk | Sri Lankan Gemstone Marketplace",
@@ -186,6 +188,11 @@ function App() {
     document.title = seo.title;
     upsertNamedMeta("description", seo.description);
     upsertNamedMeta("robots", seo.robots);
+    if (seo.keywords) {
+      upsertNamedMeta("keywords", seo.keywords);
+    } else {
+      document.head.querySelector<HTMLMetaElement>('meta[name="keywords"]')?.remove();
+    }
     upsertPropertyMeta("og:title", seo.title);
     upsertPropertyMeta("og:description", seo.description);
     upsertPropertyMeta("og:url", canonicalUrl);

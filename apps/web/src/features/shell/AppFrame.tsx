@@ -3,6 +3,7 @@ import { useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import type { User as AccountUser } from "@gems/schemas";
 import { authClient, type MarketplaceAuthUser } from "../../firebase";
+import { footerDescription } from "../../shared/seo";
 import { pathForView, type View } from "../../shared/types";
 import { getTrialMenuLabel, getTrialMenuTone } from "../account/TrialStatusPanel";
 
@@ -21,7 +22,6 @@ function BrandWordmark() {
         <span>GEMSLANKA</span>
         <span className="brand-wordmark-domain">.LK</span>
       </span>
-      <span className="brand-wordmark-tagline" aria-hidden="true">Gemstone Marketplace</span>
     </span>
   );
 }
@@ -277,7 +277,7 @@ export function AppFrame({
               </div>
               <div className="footer-brand-text">
                 <strong><BrandWordmark /></strong>
-                <p>Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.</p>
+                <p>{footerDescription}</p>
               </div>
             </div>
           </div>
