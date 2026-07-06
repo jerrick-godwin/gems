@@ -1,7 +1,7 @@
 {
-  "name": "gemslanka.lk",
-  "short_name": "gemslanka.lk",
-  "description": "A listing-only gemstone marketplace for sellers and buyer inquiries.",
+  "name": "Gemslanka",
+  "short_name": "Gemslanka",
+  "description": "Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#090600",
