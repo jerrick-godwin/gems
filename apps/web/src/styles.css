@@ -2309,35 +2309,18 @@ main {
 /* ── Listing cards ────────────────────────────────────────── */
 
 .listing-list {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 16px;
-  margin-inline: calc(clamp(14px, 2vw, 24px) * -1);
-  padding: 4px clamp(14px, 2vw, 24px) 14px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scroll-padding-inline: clamp(14px, 2vw, 24px);
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
-}
-
-.listing-list::-webkit-scrollbar {
-  height: 8px;
-}
-
-.listing-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.listing-list::-webkit-scrollbar-thumb {
-  border-radius: var(--radius-full);
-  background: var(--line-strong);
+  padding: 4px 0 14px;
 }
 
 .listing-card {
   position: relative;
   display: flex;
-  flex: 0 0 clamp(276px, 30vw, 342px);
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
   min-height: 386px;
   overflow: hidden;
   border: 1px solid var(--line-strong);
@@ -2345,7 +2328,6 @@ main {
   background: var(--panel);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
-  scroll-snap-align: start;
   animation: rise-in var(--duration-slow) var(--ease-out) both;
   transition:
     background-color var(--duration-fast) ease,
@@ -6916,21 +6898,14 @@ main {
   }
 
   .listing-list {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     gap: 12px;
-    margin-inline: 0;
     padding: 4px 0 14px;
-    overflow-x: visible;
-    overscroll-behavior-inline: auto;
-    scroll-padding-inline: 0;
-    scroll-snap-type: none;
   }
 
   .listing-card {
-    flex: 0 0 auto;
     width: 100%;
     min-height: 356px;
-    scroll-snap-align: none;
   }
 
   .phone-reveal {
