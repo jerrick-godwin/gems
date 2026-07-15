@@ -16,7 +16,7 @@ import { AppFrame } from "./features/shell/AppFrame";
 import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
-import { listingCheckoutTokenFromPathname, pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
+import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 import { footerDescription, homepageKeywords, siteName } from "./shared/seo";
@@ -160,7 +160,8 @@ function App() {
   const isSignedIn = user !== null;
   const [theme, setTheme] = useTheme("app-theme");
 
-  const navigateToView = useCallback((nextView: View, options?: { replace?: boolean }) => {
+  const navigateToView = useCallback((requestedView: View, options?: { replace?: boolean }) => {
+    const nextView = viewForAuthState(requestedView, isSignedIn);
     setView(nextView);
 
     const nextPath = pathForView(nextView);
@@ -173,7 +174,7 @@ function App() {
     } else {
       window.history.pushState({}, "", nextUrl);
     }
-  }, []);
+  }, [isSignedIn]);
 
   const navigateToListingCheckout = useCallback((token: string, checkoutUrl: string) => {
     setView("post_checkout");
@@ -194,6 +195,11 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!authResolved || !isSignedIn || !signedOutOnlyViews.has(view)) return;
+    navigateToView("market", { replace: true });
+  }, [authResolved, isSignedIn, navigateToView, view]);
 
   useEffect(() => {
     const seo = viewSeo[view];
@@ -333,6 +339,18 @@ function App() {
         <StatusState
           title="Checking account"
           message="Confirming your sign-in status."
+          loading
+        />
+      </AppFrame>
+    );
+  }
+
+  if (signedOutOnlyViews.has(view) && (!authResolved || isSignedIn)) {
+    return (
+      <AppFrame {...frameProps}>
+        <StatusState
+          title={isSignedIn ? "Opening marketplace" : "Checking account"}
+          message={isSignedIn ? "Taking you back to the main page." : "Confirming your sign-in status."}
           loading
         />
       </AppFrame>
