@@ -70,10 +70,6 @@ export function ProfileSettings({
 
   return (
     <section className="dashboard">
-      <div className="section-heading">
-        <h1>Profile</h1>
-        <p>Manage your account details.</p>
-      </div>
       {accountError && <div className="empty-results"><h2>Account unavailable</h2><p>{accountError}</p></div>}
       <div className="profile-form-shell">
         <form key={`${user?.id ?? "profile"}-${user?.updatedAt ?? "pending"}`} className="data-panel settings-form" onSubmit={saveProfile}>
