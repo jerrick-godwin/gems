@@ -2,6 +2,7 @@ export type View = "market" | "login" | "signup" | "forgot_password" | "post" | 
 export type SortKey = "featured" | "newest" | "price-low" | "price-high";
 
 export const protectedViews = new Set<View>(["profile", "my_listings", "reports", "receipt"]);
+export const signedOutOnlyViews = new Set<View>(["login", "signup", "forgot_password"]);
 
 export const viewPaths: Record<View, string> = {
   market: "/",
@@ -31,6 +32,10 @@ export function viewFromPathname(pathname: string): View {
 
 export function pathForView(view: View) {
   return viewPaths[view];
+}
+
+export function viewForAuthState(view: View, isSignedIn: boolean) {
+  return isSignedIn && signedOutOnlyViews.has(view) ? "market" : view;
 }
 
 export function listingCheckoutTokenFromPathname(pathname: string) {
