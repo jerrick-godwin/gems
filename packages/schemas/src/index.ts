@@ -119,6 +119,10 @@ export interface ListingMedia {
   alt: string;
   order: number;
   moderationStatus: ModerationStatus;
+  thumbnailKey?: string;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface Listing {
@@ -536,4 +540,57 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+export type MarketplaceSort = "featured" | "newest" | "price-low" | "price-high";
+export type MarketplacePageSize = 10 | 20 | 50;
+
+export interface MarketplaceFilters {
+  q: string;
+  gemType: string;
+  locations: string[];
+  treatment: string;
+  certificate: string;
+  sort: MarketplaceSort;
+  page: number;
+  limit: MarketplacePageSize;
+}
+
+export interface ListingSellerSummary {
+  id: string;
+  displayName: string;
+  businessName?: string;
+  verificationStatus: SellerProfile["verificationStatus"];
+  location: string;
+  rating: number;
+}
+
+export interface ListingSearchItem {
+  id: string;
+  title: string;
+  priceLkr: number;
+  negotiable: boolean;
+  location: string;
+  gemTypeId: string;
+  attributes: Pick<GemAttributes, "carat" | "color" | "shape" | "treatment" | "certificateStatus">;
+  promoted: PromotionType[];
+  publishedAt?: string;
+  seller: ListingSellerSummary;
+  image?: {
+    url: string;
+    thumbnailUrl?: string;
+    alt: string;
+    width: number;
+    height: number;
+  };
+}
+
+export interface MarketplaceListingPage extends PaginatedResponse<ListingSearchItem> {}
+
+export interface MarketplacePageData {
+  filters: MarketplaceFilters;
+  gemTypes: GemType[];
+  locations: string[];
+  page: MarketplaceListingPage;
+  generatedAt: string;
 }

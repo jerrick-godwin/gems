@@ -1,4 +1,4 @@
-import type { Conversation, Listing, MarketplaceContent, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
+import type { Conversation, Listing, ListingSearchItem, MarketplaceContent, MarketplaceFilters, MarketplaceListingPage, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
 import { eq, ne, and, or, ilike, desc, asc, sql, inArray } from "drizzle-orm";
 import { db, hasDatabase } from "./db/index.js";
 import {
@@ -46,7 +46,7 @@ export async function getMarketplaceSnapshot() {
   if (hasDatabase) {
     const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows, subscriptionPlanRows, merchantDisclosureRows] = await Promise.all([
       db.select().from(gemTypeTable).orderBy(asc(gemTypeTable.name)),
-      db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`)),
+      db.select().from(listingTable).where(publicListingPredicate()),
       db.select().from(sellerProfileTable),
       db.select().from(conversationTable),
       db.select().from(savedSearchTable),
@@ -90,7 +90,7 @@ export async function getLocations() {
 
 export async function getListings(filters: { gemType?: string; location?: string } = {}) {
   if (hasDatabase) {
-    const rows = await db.select().from(listingTable).where(and(eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`));
+    const rows = await db.select().from(listingTable).where(publicListingPredicate());
     return rows
       .filter((listing) => (!filters.gemType || listing.gemTypeId === filters.gemType) && (!filters.location || listing.location === filters.location))
       .map(toListing);
@@ -100,6 +100,176 @@ export async function getListings(filters: { gemType?: string; location?: string
   return listings.filter((listing) => {
     return (!filters.gemType || listing.gemTypeId === filters.gemType) && (!filters.location || listing.location === filters.location);
   });
+}
+
+export function publicListingPredicate() {
+  return and(
+    eq(listingTable.status, "live"),
+    eq(listingTable.moderationStatus, "approved"),
+    sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`
+  );
+}
+
+function marketplaceConditions(filters: MarketplaceFilters) {
+  const conditions = [publicListingPredicate()];
+  if (filters.q) {
+    const query = `%${filters.q}%`;
+    conditions.push(or(
+      ilike(listingTable.title, query),
+      ilike(listingTable.location, query),
+      sql`${listingTable.attributes}->>'origin' ILIKE ${query}`,
+      sql`${listingTable.gemTypeId} in (
+        select ${gemTypeTable.id} from ${gemTypeTable}
+        where ${gemTypeTable.name} ilike ${query} or ${gemTypeTable.slug} ilike ${query}
+      )`
+    )!);
+  }
+  if (filters.gemType) conditions.push(eq(listingTable.gemTypeId, filters.gemType));
+  if (filters.locations.length === 1) conditions.push(eq(listingTable.location, filters.locations[0]));
+  if (filters.locations.length > 1) conditions.push(inArray(listingTable.location, filters.locations));
+  if (filters.treatment) conditions.push(sql`${listingTable.attributes}->>'treatment' = ${filters.treatment}`);
+  if (filters.certificate) conditions.push(sql`${listingTable.attributes}->>'certificateStatus' = ${filters.certificate}`);
+  return and(...conditions);
+}
+
+function marketplaceOrder(sort: MarketplaceFilters["sort"]) {
+  if (sort === "price-low") return [asc(listingTable.priceLkr), desc(listingTable.publishedAt), asc(listingTable.id)];
+  if (sort === "price-high") return [desc(listingTable.priceLkr), desc(listingTable.publishedAt), asc(listingTable.id)];
+  if (sort === "newest") return [desc(listingTable.publishedAt), asc(listingTable.id)];
+  return [sql`jsonb_array_length(${listingTable.promoted}) DESC`, desc(listingTable.publishedAt), asc(listingTable.id)];
+}
+
+export async function getMarketplaceListingPage(filters: MarketplaceFilters): Promise<MarketplaceListingPage> {
+  requireMarketplaceDatabase();
+  const whereClause = marketplaceConditions(filters);
+  const offset = (filters.page - 1) * filters.limit;
+  const countQuery = db.select({ count: sql<number>`count(*)` }).from(listingTable).where(whereClause);
+  const pageQuery = db
+    .select({
+      id: listingTable.id,
+      title: listingTable.title,
+      priceLkr: listingTable.priceLkr,
+      negotiable: listingTable.negotiable,
+      location: listingTable.location,
+      gemTypeId: listingTable.gemTypeId,
+      attributes: listingTable.attributes,
+      promoted: listingTable.promoted,
+      campaigns: listingTable.campaigns,
+      publishedAt: listingTable.publishedAt,
+      firstMedia: sql<Listing["media"][number] | null>`(
+        select media_item
+        from jsonb_array_elements(${listingTable.media}) as media_item
+        where media_item->>'kind' = 'photo'
+        order by (media_item->>'moderationStatus' = 'approved') desc, coalesce((media_item->>'order')::int, 0)
+        limit 1
+      )`,
+      sellerId: sellerProfileTable.id,
+      sellerDisplayName: sellerProfileTable.displayName,
+      sellerBusinessName: sellerProfileTable.businessName,
+      sellerVerificationStatus: sellerProfileTable.verificationStatus,
+      sellerLocation: sellerProfileTable.location,
+      sellerRating: sellerProfileTable.rating
+    })
+    .from(listingTable)
+    .innerJoin(sellerProfileTable, eq(listingTable.sellerId, sellerProfileTable.id))
+    .where(whereClause)
+    .orderBy(...marketplaceOrder(filters.sort))
+    .limit(filters.limit)
+    .offset(offset);
+
+  const [countRows, rows] = await Promise.all([countQuery, pageQuery]);
+  const total = Number(countRows[0]?.count ?? 0);
+  return {
+    items: rows.map(toListingSearchItem),
+    total,
+    page: filters.page,
+    limit: filters.limit,
+    totalPages: Math.ceil(total / filters.limit)
+  };
+}
+
+export async function getPublicListing(listingId: string) {
+  requireMarketplaceDatabase();
+  const rows = await db
+    .select({ listing: listingTable, seller: sellerProfileTable })
+    .from(listingTable)
+    .innerJoin(sellerProfileTable, eq(listingTable.sellerId, sellerProfileTable.id))
+    .where(and(eq(listingTable.id, listingId), publicListingPredicate()))
+    .limit(1);
+  const row = rows[0];
+  return row ? { listing: toListing(row.listing), seller: toSellerProfile(row.seller) } : undefined;
+}
+
+export async function getPublicListingIds() {
+  requireMarketplaceDatabase();
+  return (await db.select({ id: listingTable.id }).from(listingTable).where(publicListingPredicate())).map((row) => row.id);
+}
+
+function requireMarketplaceDatabase() {
+  if (!hasDatabase) throw new Error("DATABASE_URL is required to load the public marketplace.");
+}
+
+function toListingSearchItem(row: {
+  id: string;
+  title: string;
+  priceLkr: number;
+  negotiable: boolean;
+  location: string;
+  gemTypeId: string;
+  attributes: Listing["attributes"];
+  promoted: PromotionType[];
+  campaigns: PromotionCampaign[];
+  publishedAt: Date | null;
+  firstMedia: Listing["media"][number] | null;
+  sellerId: string;
+  sellerDisplayName: string;
+  sellerBusinessName: string | null;
+  sellerVerificationStatus: string;
+  sellerLocation: string;
+  sellerRating: number;
+}): ListingSearchItem {
+  const now = new Date().toISOString();
+  const promotions = new Set(row.promoted);
+  for (const campaign of row.campaigns) {
+    if (campaign.status === "active" && campaign.startsAt <= now && campaign.endsAt >= now) promotions.add(campaign.type);
+  }
+  const firstPhoto = row.firstMedia ? {
+    ...row.firstMedia,
+    url: normalizeListingMediaUrl(row.firstMedia.url ?? row.firstMedia.id, row.firstMedia.id),
+    thumbnailUrl: row.firstMedia.thumbnailKey ? normalizeListingMediaUrl(row.firstMedia.thumbnailKey, row.firstMedia.thumbnailKey) : row.firstMedia.thumbnailUrl
+  } : undefined;
+  return {
+    id: row.id,
+    title: row.title,
+    priceLkr: row.priceLkr,
+    negotiable: row.negotiable,
+    location: row.location,
+    gemTypeId: row.gemTypeId,
+    attributes: {
+      carat: row.attributes.carat,
+      color: row.attributes.color,
+      shape: row.attributes.shape,
+      treatment: row.attributes.treatment,
+      certificateStatus: row.attributes.certificateStatus
+    },
+    promoted: Array.from(promotions),
+    publishedAt: row.publishedAt?.toISOString(),
+    seller: {
+      id: row.sellerId,
+      displayName: row.sellerDisplayName,
+      businessName: row.sellerBusinessName ?? undefined,
+      verificationStatus: row.sellerVerificationStatus as SellerProfile["verificationStatus"],
+      location: row.sellerLocation,
+      rating: row.sellerRating
+    },
+    image: firstPhoto ? {
+      url: firstPhoto.url,
+      thumbnailUrl: (firstPhoto as typeof firstPhoto & { thumbnailUrl?: string }).thumbnailUrl,
+      alt: firstPhoto.alt || row.title,
+      width: 800,
+      height: 600
+    } : undefined
+  };
 }
 
 export async function searchListings(params: {
@@ -117,7 +287,7 @@ export async function searchListings(params: {
   const offset = (page - 1) * limit;
 
   if (hasDatabase) {
-    const conditions = [eq(listingTable.status, "live"), eq(listingTable.moderationStatus, "approved"), sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`];
+    const conditions = [publicListingPredicate()];
 
     if (params.query) {
       const q = `%${params.query}%`;
@@ -554,7 +724,8 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
 
   const media = Array.isArray(row.media) ? row.media.map((m: any) => ({
     ...m,
-    url: normalizeListingMediaUrl(m.url ?? m.id, m.id)
+    url: normalizeListingMediaUrl(m.url ?? m.id, m.id),
+    thumbnailUrl: m.thumbnailKey ? normalizeListingMediaUrl(m.thumbnailKey, m.thumbnailKey) : m.thumbnailUrl
   })) : [];
 
   return {

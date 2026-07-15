@@ -1,9 +1,10 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, unlink } from "node:fs/promises";
+import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { IncomingMessage } from "node:http";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import sharp from "sharp";
 import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, StorageSharedKeyCredential } from "@azure/storage-blob";
 import type { StorageUploadRequest, StorageUploadTarget } from "@gems/schemas";
 
@@ -169,12 +170,41 @@ export async function deleteBlob(blobKey: string) {
   }
 }
 
+export async function ensureListingCardThumbnail(blobKey: string) {
+  const thumbnailKey = thumbnailKeyFor(blobKey);
+  if (blobServiceClient && sharedKeyCredential) {
+    const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
+    const thumbnailClient = containerClient.getBlockBlobClient(thumbnailKey);
+    if (!await thumbnailClient.exists()) {
+      const source = await containerClient.getBlockBlobClient(blobKey).downloadToBuffer();
+      const thumbnail = await sharp(source).rotate().resize(800, 600, { fit: "cover", withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
+      await thumbnailClient.uploadData(thumbnail, { blobHTTPHeaders: { blobContentType: "image/webp", blobCacheControl: "public, max-age=31536000, immutable" } });
+    }
+  } else {
+    const sourcePath = localUploadPath(blobKey);
+    const thumbnailPath = localUploadPath(thumbnailKey);
+    try {
+      await access(thumbnailPath);
+    } catch {
+      await mkdir(dirname(thumbnailPath), { recursive: true });
+      const thumbnail = await sharp(await readFile(sourcePath)).rotate().resize(800, 600, { fit: "cover", withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
+      await writeFile(thumbnailPath, thumbnail);
+    }
+  }
+  return { thumbnailKey, thumbnailUrl: createSignedReadUrl(thumbnailKey), width: 800, height: 600 };
+}
+
 function createLocalUploadUrl(blobKey: string) {
   return `/api/v1/storage/local-upload?key=${encodeURIComponent(blobKey)}`;
 }
 
 function createLocalReadUrl(blobKey: string) {
   return `/uploads/${encodeURIComponent(blobKey)}`;
+}
+
+function thumbnailKeyFor(blobKey: string) {
+  const extension = extname(blobKey);
+  return `${extension ? blobKey.slice(0, -extension.length) : blobKey}.card.webp`;
 }
 
 function createUserBlobKey(userId: string, request: StorageUploadRequest) {

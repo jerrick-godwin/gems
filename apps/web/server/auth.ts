@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "node:http";
-import admin from "firebase-admin";
+import { cert, initializeApp, type App } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,23 +15,23 @@ const currentDir = fileURLToPath(new URL(".", import.meta.url));
 const serviceAccountPath = join(currentDir, "firebase-service-account.json");
 const adminServiceAccountPath = join(currentDir, "admin-firebase-service-account.json");
 
-let firebaseApp: admin.app.App;
+let firebaseApp: App;
 try {
   const serviceAccountContent = process.env.FIREBASE_SERVICE_ACCOUNT || readFileSync(serviceAccountPath, "utf-8");
   const serviceAccount = JSON.parse(serviceAccountContent);
-  firebaseApp = admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+  firebaseApp = initializeApp({
+    credential: cert(serviceAccount)
   }, "default");
 } catch (error) {
   console.warn("Failed to initialize Firebase Admin:", error);
 }
 
-let adminFirebaseApp: admin.app.App;
+let adminFirebaseApp: App;
 try {
   const adminServiceAccountContent = process.env.ADMIN_FIREBASE_SERVICE_ACCOUNT || readFileSync(adminServiceAccountPath, "utf-8");
   const adminServiceAccount = JSON.parse(adminServiceAccountContent);
-  adminFirebaseApp = admin.initializeApp({
-    credential: admin.credential.cert(adminServiceAccount)
+  adminFirebaseApp = initializeApp({
+    credential: cert(adminServiceAccount)
   }, "admin");
 } catch (error) {
   console.warn("Failed to initialize Admin Firebase App:", error);
@@ -69,7 +70,7 @@ export async function verifyFirebaseIdToken(token: string, options: { allowDevel
     throw new Error("Authentication service is not initialized.");
   }
 
-  const decodedToken = await admin.auth(firebaseApp).verifyIdToken(token);
+  const decodedToken = await getAuth(firebaseApp).verifyIdToken(token);
   
   const uid = decodedToken.uid;
   const email = decodedToken.email ?? "";
@@ -87,7 +88,7 @@ export async function verifyAdminFirebaseIdToken(token: string): Promise<{ email
     throw new Error("Admin authentication service is not initialized.");
   }
 
-  const decodedToken = await admin.auth(adminFirebaseApp).verifyIdToken(token);
+  const decodedToken = await getAuth(adminFirebaseApp).verifyIdToken(token);
   
   const email = decodedToken.email;
   if (!email) {
