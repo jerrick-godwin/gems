@@ -37,10 +37,6 @@ export function MyReportsView({
 
   return (
     <section className="dashboard">
-      <div className="section-heading">
-        <h1>My Reports</h1>
-        <p>View the status of listings you have reported.</p>
-      </div>
       <section className="data-panel">
         <div className="reports-stack">
           {reports.map((report) => {

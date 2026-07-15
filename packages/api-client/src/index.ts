@@ -12,6 +12,7 @@ import type {
   ListingSubscriptionPlan,
   ListingSubscriptionPlanId,
   MarketplaceContent,
+  MarketplaceListingPage,
   Order,
   OrderStatus,
   PaymentIntent,
@@ -81,6 +82,14 @@ export class GemsApiClient {
     const response = await fetch(`${this.baseUrl}/snapshot`);
     if (!response.ok) throw new Error("Unable to load marketplace snapshot");
     return response.json() as Promise<MarketplaceSnapshot>;
+  }
+
+  async marketplace(params: URLSearchParams | Record<string, string> = {}): Promise<MarketplaceListingPage> {
+    const searchParams = params instanceof URLSearchParams ? params : new URLSearchParams(params);
+    const query = searchParams.toString();
+    const response = await fetch(`${this.baseUrl}/marketplace${query ? `?${query}` : ""}`);
+    if (!response.ok) throw new Error("Unable to load marketplace listings");
+    return response.json() as Promise<MarketplaceListingPage>;
   }
 
   async searchListings(params: Record<string, string>): Promise<PaginatedResponse<Listing>> {

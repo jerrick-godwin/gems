@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, Flag, Info, LogIn, LogOut, Plus, Settings, S
 import { useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import type { User as AccountUser } from "@gems/schemas";
-import { authClient, type MarketplaceAuthUser } from "../../firebase";
+import type { MarketplaceAuthUser } from "../../firebase";
 import { footerDescription } from "../../shared/seo";
 import { pathForView, type View } from "../../shared/types";
 import { getTrialMenuLabel, getTrialMenuTone } from "../account/TrialStatusPanel";
@@ -185,7 +185,7 @@ export function AppFrame({
   };
 
   const handleLogout = () => {
-    authClient.signOut().then(() => {
+    import("../../firebase").then(({ authClient }) => authClient.signOut()).then(() => {
       setView("market");
     });
   };

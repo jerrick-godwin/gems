@@ -37,7 +37,7 @@ import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
-import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob } from "./storage.js";
+import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob, ensureListingCardThumbnail } from "./storage.js";
 import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
@@ -1488,7 +1488,7 @@ export async function updateUserListing(userId: string, listingId: string, input
     if (input.priceLkr !== undefined) updates.priceLkr = Number(input.priceLkr);
     if (input.location !== undefined) updates.location = input.location;
     if (input.gemTypeId !== undefined) updates.gemTypeId = input.gemTypeId;
-    if (input.media !== undefined) updates.media = input.media;
+    if (input.media !== undefined) updates.media = await withCardThumbnails(input.media);
     if (input.attributes !== undefined) updates.attributes = updatedAttributes;
     
     if (existing.moderationStatus !== "not_submitted" || existing.status !== "draft") {
@@ -1510,7 +1510,7 @@ export async function updateUserListing(userId: string, listingId: string, input
   if (input.priceLkr !== undefined) listing.priceLkr = Number(input.priceLkr);
   if (input.location !== undefined) listing.location = input.location;
   if (input.gemTypeId !== undefined) listing.gemTypeId = input.gemTypeId;
-  if (input.media !== undefined) listing.media = input.media;
+  if (input.media !== undefined) listing.media = await withCardThumbnails(input.media);
   if (input.attributes !== undefined) listing.attributes = { ...listing.attributes, ...input.attributes } as GemAttributes;
   
   if (listing.moderationStatus !== "not_submitted" || listing.status !== "draft") {
@@ -2777,6 +2777,24 @@ function normalizeListingMediaUrl(value?: string | null, fallbackKey?: string | 
   return mediaKey ? createSignedReadUrl(mediaKey) : value ?? "";
 }
 
+async function withCardThumbnails(media: ListingMedia[]) {
+  const result = [...media];
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(3, result.length) }, async () => {
+    while (cursor < result.length) {
+      const index = cursor++;
+      const item = result[index];
+      if (item.kind !== "photo" || item.thumbnailKey) continue;
+      try {
+        result[index] = { ...item, ...await ensureListingCardThumbnail(item.id) };
+      } catch (error) {
+        console.warn(`Unable to create card thumbnail for ${item.id}`, error);
+      }
+    }
+  }));
+  return result;
+}
+
 function normalizeBlobReadKey(value?: string | null) {
   if (!value) return undefined;
   if (value.startsWith("mock-read://")) return value.slice("mock-read://".length);
@@ -2818,7 +2836,8 @@ function toListing(row: typeof listings.$inferSelect): Listing {
 
   const media = Array.isArray(row.media) ? row.media.map((m: any) => ({
     ...m,
-    url: normalizeListingMediaUrl(m.url ?? m.id, m.id)
+    url: normalizeListingMediaUrl(m.url ?? m.id, m.id),
+    thumbnailUrl: m.thumbnailKey ? normalizeListingMediaUrl(m.thumbnailKey, m.thumbnailKey) : m.thumbnailUrl
   })) : [];
   
   return {

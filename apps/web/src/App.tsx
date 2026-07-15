@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GemsApiClient } from "@gems/api-client";
+import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
 import { authClient, type MarketplaceAuthUser } from "./firebase";
 import { ForgotPasswordPage } from "./features/account/ForgotPasswordPage";
@@ -16,7 +16,7 @@ import { AppFrame } from "./features/shell/AppFrame";
 import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
-import { listingCheckoutTokenFromPathname, pathForView, protectedViews, viewFromPathname, type View } from "./shared/types";
+import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 import { footerDescription, homepageKeywords, siteName } from "./shared/seo";
@@ -24,6 +24,18 @@ import { footerDescription, homepageKeywords, siteName } from "./shared/seo";
 const siteOrigin = "https://gemslanka.lk";
 const homepageTitle = siteName;
 const homepageDescription = footerDescription;
+
+function readCachedMarketplaceReferences() {
+  try {
+    const value = window.sessionStorage.getItem("marketplace-reference-data");
+    if (!value) return undefined;
+    const parsed = JSON.parse(value) as { gemTypes?: MarketplaceSnapshot["gemTypes"]; locations?: string[] };
+    if (!Array.isArray(parsed.gemTypes) || !Array.isArray(parsed.locations)) return undefined;
+    return { gemTypes: parsed.gemTypes, locations: parsed.locations };
+  } catch {
+    return undefined;
+  }
+}
 
 const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow"; keywords?: string }> = {
   market: {
@@ -144,10 +156,12 @@ function App() {
   const [authResolved, setAuthResolved] = useState(false);
   const [view, setView] = useState<View>(() => viewFromPathname(window.location.pathname));
   const [paymentNotice, setPaymentNotice] = useState<PaymentNotice | null>(null);
+  const [cachedMarketplaceReferences] = useState(readCachedMarketplaceReferences);
   const isSignedIn = user !== null;
   const [theme, setTheme] = useTheme("app-theme");
 
-  const navigateToView = useCallback((nextView: View, options?: { replace?: boolean }) => {
+  const navigateToView = useCallback((requestedView: View, options?: { replace?: boolean }) => {
+    const nextView = viewForAuthState(requestedView, isSignedIn);
     setView(nextView);
 
     const nextPath = pathForView(nextView);
@@ -160,7 +174,7 @@ function App() {
     } else {
       window.history.pushState({}, "", nextUrl);
     }
-  }, []);
+  }, [isSignedIn]);
 
   const navigateToListingCheckout = useCallback((token: string, checkoutUrl: string) => {
     setView("post_checkout");
@@ -181,6 +195,11 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!authResolved || !isSignedIn || !signedOutOnlyViews.has(view)) return;
+    navigateToView("market", { replace: true });
+  }, [authResolved, isSignedIn, navigateToView, view]);
 
   useEffect(() => {
     const seo = viewSeo[view];
@@ -232,6 +251,8 @@ function App() {
     myReports: account.myReports,
     setMyReports: account.setMyReports
   });
+  const referenceGemTypes = marketplace.snapshot?.gemTypes ?? cachedMarketplaceReferences?.gemTypes ?? [];
+  const referenceLocations = marketplace.snapshot?.locations ?? cachedMarketplaceReferences?.locations ?? [];
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -278,7 +299,7 @@ function App() {
     setQuery: marketplace.setQuery,
     selectedLocations: marketplace.selectedLocations,
     setSelectedLocations: marketplace.setSelectedLocations,
-    locations: marketplace.snapshot?.locations ?? [],
+    locations: referenceLocations,
     authResolved,
     theme,
     setTheme,
@@ -324,6 +345,18 @@ function App() {
     );
   }
 
+  if (signedOutOnlyViews.has(view) && (!authResolved || isSignedIn)) {
+    return (
+      <AppFrame {...frameProps}>
+        <StatusState
+          title={isSignedIn ? "Opening marketplace" : "Checking account"}
+          message={isSignedIn ? "Taking you back to the main page." : "Confirming your sign-in status."}
+          loading
+        />
+      </AppFrame>
+    );
+  }
+
   if (view === "login" || view === "signup" || view === "forgot_password") {
     return (
       <AppFrame {...frameProps}>
@@ -346,6 +379,15 @@ function App() {
     return (
       <AppFrame {...frameProps}>
         <ReceiptPage api={api} onDashboardChange={account.setDashboard} onNavigate={navigateToView} />
+      </AppFrame>
+    );
+  }
+
+  if (view === "post" && referenceGemTypes.length > 0 && referenceLocations.length > 0) {
+    const editCheckoutToken = new URLSearchParams(window.location.search).get("checkoutToken") ?? "";
+    return (
+      <AppFrame {...frameProps} locations={referenceLocations}>
+        <PostGem gemTypes={referenceGemTypes} locations={referenceLocations} api={api} editCheckoutToken={editCheckoutToken} onCheckoutCreated={navigateToListingCheckout} />
       </AppFrame>
     );
   }
@@ -388,6 +430,8 @@ function App() {
           page={marketplace.page}
           setPage={marketplace.setPage}
           totalPages={marketplace.totalPages}
+          pageSize={marketplace.pageSize}
+          setPageSize={(pageSize) => { marketplace.setPage(1); marketplace.setPageSize(pageSize); }}
           selectedListing={marketplace.selectedListing}
           setQuery={marketplace.setQuery}
           query={marketplace.query}

@@ -166,11 +166,7 @@ export function MyListingsView({
 
   return (
     <section className="dashboard">
-      <div className="section-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1>My Listings</h1>
-          <p>Manage your submitted listings and view their approval status.</p>
-        </div>
+      <div className="section-heading" style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-start" }}>
         <div style={{ position: "relative", width: 280, marginTop: 4 }}>
           <Search size={18} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--sage)" }} />
           <input

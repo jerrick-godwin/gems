@@ -3,12 +3,14 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ViteDevServer } from "vite";
+import type { PublicRenderPayload } from "../src/public/types.js";
 import {
   getConversations,
   getGemTypes,
-  getListing,
+  getPublicListing,
+  getPublicListingIds,
   getListings,
   getLiveListings,
   getLocations,
@@ -29,6 +31,7 @@ import {
   recordListingInteraction,
   updateListingStatus
 } from "./marketplace-repository.js";
+import { broadcastMarketplaceInvalidation, loadMarketplacePage, pageSizeFromCookie, parseMarketplaceFilters, prewarmMarketplacePages, startMarketplaceInvalidationListener } from "./public-marketplace.js";
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
   createListingPaymentIntent,
@@ -79,7 +82,8 @@ const host = process.env.HOST ?? "0.0.0.0";
 const isProduction = process.env.NODE_ENV === "production";
 const currentDir = fileURLToPath(new URL(".", import.meta.url));
 const webRoot = isProduction ? resolve(currentDir, "../dist") : resolve(currentDir, "..");
-const staticRoot = isProduction ? webRoot : resolve(webRoot, "dist");
+const staticRoot = isProduction ? resolve(webRoot, "client") : resolve(webRoot, "dist/client");
+const ssrRoot = isProduction ? resolve(webRoot, "ssr") : resolve(webRoot, "dist/ssr");
 
 const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -144,10 +148,11 @@ Sitemap: ${siteUrl}/sitemap.xml
 `);
 }
 
-function sendSitemapXml(request: IncomingMessage, response: ServerResponse) {
+async function sendSitemapXml(request: IncomingMessage, response: ServerResponse) {
   const siteUrl = getPublicSiteUrl(request);
   const today = new Date().toISOString().slice(0, 10);
-  const urls = publicPagePaths.map((path) => `  <url>
+  const listingPaths = await getPublicListingIds().then((ids) => ids.map((id) => `/listings/${encodeURIComponent(id)}`)).catch(() => []);
+  const urls = [...publicPagePaths, ...listingPaths].map((path) => `  <url>
     <loc>${escapeHtml(`${siteUrl}${path}`)}</loc>
     <lastmod>${today}</lastmod>
   </url>`).join("\n");
@@ -241,6 +246,16 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const path = url.pathname;
 
   if (!path.startsWith("/api/v1")) return false;
+  if (request.method === "POST" && path === "/api/v1/metrics/web-vitals") {
+    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const metrics = Object.fromEntries(["ttfb", "lcp", "inp", "cls"].flatMap((name) => {
+      const value = Number(body[name]);
+      return Number.isFinite(value) && value >= 0 ? [[name, Math.round(value * 100) / 100]] : [];
+    }));
+    if (Object.keys(metrics).length) console.info("web-vitals", metrics);
+    sendJson(response, 202, { accepted: true });
+    return true;
+  }
   requireDatabase();
   await ensureDatabaseCompatibility();
 
@@ -248,6 +263,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     try {
       const event = constructStripeWebhookEvent(await readRawBody(request), request.headers["stripe-signature"]);
       await handleStripeWebhookEvent(event);
+      await broadcastMarketplaceInvalidation();
       sendJson(response, 200, { received: true });
     } catch (error) {
       console.warn("Stripe webhook handling failed:", error);
@@ -468,6 +484,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         return true;
       }
       const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
+      if (listing) await broadcastMarketplaceInvalidation();
       if (listing && decision === "reject") {
         await cancelListingSubscriptionsForListing(listing.id);
       }
@@ -483,6 +500,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const adminListingMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)$/);
     if (request.method === "DELETE" && adminListingMatch) {
       const listing = await removeListing(adminListingMatch[1]);
+      if (listing) await broadcastMarketplaceInvalidation();
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -495,6 +513,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         return true;
       }
       const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
+      if (listing) await broadcastMarketplaceInvalidation();
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -514,6 +533,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         endsAt: body.endsAt
       };
       const listing = await createPromotionCampaign(createCampaignMatch[1], campaign);
+      if (listing) await broadcastMarketplaceInvalidation();
       sendJson(response, listing ? 201 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -522,6 +542,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "PATCH" && updateCampaignMatch) {
       const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
       const listing = await updatePromotionCampaign(updateCampaignMatch[1], updateCampaignMatch[2], body);
+      if (listing) await broadcastMarketplaceInvalidation();
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing or campaign not found" });
       return true;
     }
@@ -680,6 +701,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const myListingMatch = path.match(/^\/api\/v1\/users\/me\/listings\/([^/]+)$/);
     if (myListingMatch && request.method === "DELETE") {
       const listing = await removeUserListing(user.id, myListingMatch[1]);
+      if (listing) await broadcastMarketplaceInvalidation();
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -687,6 +709,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (myListingMatch && request.method === "PATCH") {
       const body = parseObject(await readJsonBody(request).catch(() => ({})));
       const listing = await updateUserListing(user.id, myListingMatch[1], body);
+      if (listing) await broadcastMarketplaceInvalidation();
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -719,6 +742,17 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   if (request.method === "GET" && path === "/api/v1/snapshot") {
     sendJson(response, 200, await getMarketplaceSnapshot());
+    return true;
+  }
+
+  if (request.method === "GET" && path === "/api/v1/marketplace") {
+    const filters = parseMarketplaceFilters(url, pageSizeFromCookie(request.headers.cookie));
+    const result = await loadMarketplacePage(filters);
+    response.setHeader("server-timing", `db;dur=${result.databaseMs.toFixed(1)}, cache;desc=\"${result.cache}\"`);
+    if (url.searchParams.has("limit")) {
+      response.setHeader("set-cookie", `marketplace_page_size=${filters.limit}; Path=/; Max-Age=31536000; SameSite=Lax`);
+    }
+    sendJson(response, 200, result.data.page);
     return true;
   }
 
@@ -764,16 +798,15 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   const listingMatch = path.match(/^\/api\/v1\/listings\/([^/]+)$/);
   if (request.method === "GET" && listingMatch) {
-    const listing = await getListing(listingMatch[1]);
-    const publicListing = listing?.moderationStatus === "approved" && (!listing.expiresAt || listing.expiresAt > new Date().toISOString()) ? listing : undefined;
-    sendJson(response, publicListing ? 200 : 404, publicListing ?? { error: "Listing not found" });
+    const result = await getPublicListing(listingMatch[1]);
+    sendJson(response, result ? 200 : 404, result?.listing ?? { error: "Listing not found" });
     return true;
   }
 
   const revealMatch = path.match(/^\/api\/v1\/listings\/([^/]+)\/reveal-phone$/);
   if (request.method === "POST" && revealMatch) {
-    const listing = await getListing(revealMatch[1]);
-    if (!listing || listing.moderationStatus !== "approved" || (listing.expiresAt && listing.expiresAt <= new Date().toISOString())) {
+    const listing = await getPublicListing(revealMatch[1]);
+    if (!listing) {
       sendJson(response, 404, { error: "Listing not found" });
       return true;
     }
@@ -989,7 +1022,8 @@ function stripeId(value: unknown) {
 function sendStaticFile(response: ServerResponse, filePath: string) {
   const extension = extname(filePath);
   response.writeHead(200, {
-    "content-type": mimeTypes[extension] ?? "application/octet-stream"
+    "content-type": mimeTypes[extension] ?? "application/octet-stream",
+    "cache-control": /\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[^.]+$/.test(filePath) || filePath.endsWith(".card.webp") ? "public, max-age=31536000, immutable" : "public, max-age=3600"
   });
   createReadStream(filePath).pipe(response);
 }
@@ -1009,6 +1043,116 @@ async function handleLocalUploadStatic(request: IncomingMessage, response: Serve
 
   sendJson(response, 404, { error: "Upload not found" });
   return true;
+}
+
+interface PublicRenderer {
+  renderPublicPage(payload: PublicRenderPayload, options?: { abortMs?: number }): Promise<{ pipe(destination: ServerResponse): unknown }>;
+}
+let productionRenderer: Promise<PublicRenderer> | undefined;
+let productionAssets: Promise<PublicRenderPayload["assets"]> | undefined;
+
+function isPublicRenderPath(pathname: string) {
+  return publicPagePaths.includes(pathname) || /^\/listings\/[^/]+\/?$/.test(pathname);
+}
+
+async function handlePublicSsr(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
+  if (request.method !== "GET") return false;
+  const url = new URL(request.url ?? "/", getPublicSiteUrl(request));
+  if (!isPublicRenderPath(url.pathname)) return false;
+
+  const totalStartedAt = performance.now();
+  let databaseMs = 0;
+  let cacheStatus: "hit" | "miss" = "miss";
+  let status = 200;
+  let route: PublicRenderPayload["route"];
+  try {
+    if (url.pathname === "/") {
+      const cookieLimit = pageSizeFromCookie(request.headers.cookie);
+      const filters = parseMarketplaceFilters(url, cookieLimit);
+      const result = await loadMarketplacePage(filters);
+      route = { kind: "marketplace", data: result.data };
+      databaseMs = result.databaseMs;
+      cacheStatus = result.cache;
+      if (url.searchParams.has("limit")) {
+        response.setHeader("set-cookie", `marketplace_page_size=${filters.limit}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      }
+    } else {
+      const listingMatch = url.pathname.match(/^\/listings\/([^/]+)\/?$/);
+      if (listingMatch) {
+        const dbStartedAt = performance.now();
+        const result = await getPublicListing(decodeURIComponent(listingMatch[1]));
+        databaseMs = performance.now() - dbStartedAt;
+        if (result) route = { kind: "listing", ...result };
+        else {
+          status = 404;
+          route = { kind: "error", status: 404, message: "This listing is unavailable, expired, or has been removed." };
+        }
+      } else {
+        const pageByPath: Record<string, "contact" | "terms" | "privacy" | "refund"> = {
+          "/contact-us": "contact",
+          "/terms-and-conditions": "terms",
+          "/privacy-policy": "privacy",
+          "/refund-policy": "refund"
+        };
+        route = { kind: "content", page: pageByPath[url.pathname] };
+      }
+    }
+  } catch (error) {
+    console.error("Unable to load SSR page data", error);
+    status = 503;
+    route = { kind: "error", status: 503, message: "Listings could not be loaded. Please try again in a moment." };
+  }
+
+  try {
+    const [renderer, assets] = await Promise.all([loadPublicRenderer(vite), loadPublicAssets()]);
+    const renderStartedAt = performance.now();
+    const stream = await renderer.renderPublicPage({
+      url: `${url.pathname}${url.search}`,
+      origin: getPublicSiteUrl(request),
+      theme: readCookie(request.headers.cookie, "theme") === "dark" ? "dark" : "light",
+      year: new Date().getUTCFullYear(),
+      route,
+      assets
+    }, { abortMs: 10_000 });
+    const renderMs = performance.now() - renderStartedAt;
+    response.statusCode = status;
+    response.setHeader("content-type", "text/html; charset=utf-8");
+    response.setHeader("cache-control", "private, no-cache");
+    response.setHeader("server-timing", `db;dur=${databaseMs.toFixed(1)}, cache;desc=\"${cacheStatus}\", render;dur=${renderMs.toFixed(1)}, total;dur=${(performance.now() - totalStartedAt).toFixed(1)}`);
+    stream.pipe(response);
+  } catch (error) {
+    console.error("Unable to render SSR page", error);
+    if (!response.headersSent) {
+      response.writeHead(500, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      response.end("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"robots\" content=\"noindex\"><title>Server error | Gemslanka</title></head><body><main><h1>Gemslanka is temporarily unavailable</h1><p>Please try again in a moment.</p><a href=\"/\">Return home</a></main></body></html>");
+    } else response.destroy();
+  }
+  return true;
+}
+
+async function loadPublicRenderer(vite: ViteDevServer | undefined): Promise<PublicRenderer> {
+  if (vite) return await vite.ssrLoadModule("/src/entry-server.tsx") as PublicRenderer;
+  productionRenderer ??= import(pathToFileURL(resolve(ssrRoot, "entry-server.js")).href) as Promise<PublicRenderer>;
+  return productionRenderer;
+}
+
+async function loadPublicAssets(): Promise<PublicRenderPayload["assets"]> {
+  if (!isProduction) return { clientEntry: "/src/entry-client.tsx", stylesheets: ["/src/styles.css"], modulePreloads: [], reactRefreshPreamble: true };
+  productionAssets ??= (async () => {
+    const manifest = JSON.parse(await readFile(resolve(staticRoot, ".vite/manifest.json"), "utf8")) as Record<string, { file: string; css?: string[]; imports?: string[] }>;
+    const entry = manifest["src/entry-client.tsx"];
+    if (!entry) throw new Error("Public client entry is missing from the Vite manifest.");
+    return {
+      clientEntry: `/${entry.file}`,
+      stylesheets: (entry.css ?? []).map((file) => `/${file}`),
+      modulePreloads: (entry.imports ?? []).flatMap((key) => manifest[key]?.file ? [`/${manifest[key].file}`] : [])
+    };
+  })();
+  return productionAssets;
+}
+
+function readCookie(cookieHeader: string | undefined, name: string) {
+  return cookieHeader?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
 async function handleStatic(request: IncomingMessage, response: ServerResponse) {
@@ -1044,6 +1188,7 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
 
 async function main() {
   await ensureDatabaseCompatibility({ force: true });
+  await startMarketplaceInvalidationListener().catch((error) => console.error("Marketplace invalidation listener failed", error));
   let vite: ViteDevServer | undefined;
   const server = createServer((request, response) => {
     void handleRequest(request, response, vite);
@@ -1065,6 +1210,10 @@ async function main() {
     );
   }
 
+  if (isProduction) {
+    await prewarmMarketplacePages().catch((error) => console.error("Marketplace prewarm failed", error));
+  }
+
   server.listen(port, host, () => {
     console.log(`Gems monolith listening on http://${host}:${port}`);
   });
@@ -1073,18 +1222,22 @@ async function main() {
 async function handleRequest(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    if (request.method === "GET" && !isPublicRenderPath(url.pathname) && !extname(url.pathname) && !url.pathname.startsWith("/api/")) {
+      response.setHeader("x-robots-tag", "noindex,follow");
+    }
     if (request.method === "GET" && url.pathname === "/robots.txt") {
       sendRobotsTxt(request, response);
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/sitemap.xml") {
-      sendSitemapXml(request, response);
+      await sendSitemapXml(request, response);
       return;
     }
 
     if (await handleApi(request, response)) return;
     if (await handleLocalUploadStatic(request, response)) return;
+    if (await handlePublicSsr(request, response, vite)) return;
 
     if (vite) {
       vite.middlewares(request, response, () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GemsApiClient, MarketplaceSnapshot } from "@gems/api-client";
-import type { CertificateStatus, Listing, Report, Treatment } from "@gems/schemas";
+import type { CertificateStatus, Listing, MarketplacePageSize, Report, Treatment } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
 
@@ -22,6 +22,7 @@ export function useMarketplaceWorkflow({
   const [certificate, setCertificate] = useState<CertificateStatus | "all">("all");
   const [sort, setSort] = useState<SortKey>("featured");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<MarketplacePageSize>(20);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewPhones, setPreviewPhones] = useState<Record<string, string>>({});
@@ -43,7 +44,7 @@ export function useMarketplaceWorkflow({
           ...(certificate !== "all" ? { certificate } : {}),
           ...(sort ? { sort } : {}),
           page: page.toString(),
-          limit: "20"
+          limit: String(pageSize)
         })
       ]);
       setSnapshot(nextSnapshot);
@@ -55,7 +56,7 @@ export function useMarketplaceWorkflow({
     } catch (error: unknown) {
       setLoadError(publicErrorMessage(error, "Unable to load marketplace snapshot"));
     }
-  }, [api, certificate, gemType, page, query, selectedLocations, sort, treatment]);
+  }, [api, certificate, gemType, page, pageSize, query, selectedLocations, sort, treatment]);
 
   useEffect(() => {
     let active = true;
@@ -65,8 +66,8 @@ export function useMarketplaceWorkflow({
         if (!active) return;
         setSnapshot(nextSnapshot);
         const publicListings = nextSnapshot.listings.filter((listing) => listing.moderationStatus === "approved");
-        setFilteredListings(publicListings.slice(0, 20));
-        setTotalPages(Math.max(1, Math.ceil(publicListings.length / 20)));
+        setFilteredListings(publicListings.slice(0, pageSize));
+        setTotalPages(Math.max(1, Math.ceil(publicListings.length / pageSize)));
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -77,7 +78,7 @@ export function useMarketplaceWorkflow({
     return () => {
       active = false;
     };
-  }, [api]);
+  }, [api, pageSize]);
 
   const listings = snapshot?.listings ?? [];
   const approvedListings = useMemo(() => listings.filter((listing) => listing.moderationStatus === "approved"), [listings]);
@@ -98,7 +99,7 @@ export function useMarketplaceWorkflow({
           ...(certificate !== "all" ? { certificate } : {}),
           ...(sort ? { sort } : {}),
           page: page.toString(),
-          limit: "20"
+          limit: String(pageSize)
         })
         .then((res) => {
           if (!active) return;
@@ -112,7 +113,7 @@ export function useMarketplaceWorkflow({
       active = false;
       clearTimeout(timeout);
     };
-  }, [api, query, gemType, selectedLocations, treatment, certificate, sort, page]);
+  }, [api, query, gemType, selectedLocations, treatment, certificate, sort, page, pageSize]);
 
   const selectedListing = filteredListings.find((listing) => listing.id === selectedId);
 
@@ -152,6 +153,8 @@ export function useMarketplaceWorkflow({
     setSort,
     page,
     setPage,
+    pageSize,
+    setPageSize,
     totalPages,
     selectedId,
     setSelectedId,

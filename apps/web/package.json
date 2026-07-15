@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "tsx watch --exclude \"src/**\" --exclude \"node_modules/**\" --exclude \"vite.config.ts.timestamp-*.mjs\" server/server.ts",
     "dev:admin": "vite --config vite.admin.config.ts --host 127.0.0.1 --port 4200",
-    "build": "npm run build --workspace @gems/schemas && tsc -p tsconfig.json && vite build && npm run build:server",
+    "build": "npm run build --workspace @gems/schemas && tsc -p tsconfig.json && npm run build:client && npm run build:ssr && npm run build:server",
+    "build:client": "vite build",
+    "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist/ssr",
     "build:server": "esbuild server/server.ts --bundle --platform=node --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=server-dist/server.js --external:vite",
     "start": "NODE_ENV=production node server-dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "node --import tsx --test server/public-marketplace.test.ts src/entry-server.test.tsx src/shared/types.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx server/db/seed.ts",
+    "thumbnails:backfill": "tsx server/scripts/backfill-listing-thumbnails.ts",
     "preview": "NODE_ENV=production node server-dist/server.js",
     "preview:admin": "vite preview --config vite.admin.config.ts --host 127.0.0.1 --port 4200"
   },
@@ -24,19 +28,20 @@
     "@vitejs/plugin-react": "^4.3.1",
     "drizzle-orm": "^0.45.2",
     "firebase": "^12.14.0",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.1.0",
     "lucide-react": "^0.468.0",
     "postgres": "^3.4.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "sharp": "^0.35.3",
     "stripe": "^22.2.3",
-    "vite": "^5.3.3"
+    "vite": "^6.4.3"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "drizzle-kit": "^0.31.10",
-    "esbuild": "^0.21.5",
+    "esbuild": "^0.28.1",
     "tsx": "^4.22.4",
     "typescript": "^5.5.3"
   }

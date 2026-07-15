@@ -2,7 +2,7 @@ import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Fi
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
-import { formatLkr, type CertificateStatus, type Listing, type SellerProfile, type Treatment } from "@gems/schemas";
+import { formatLkr, type CertificateStatus, type Listing, type MarketplacePageSize, type SellerProfile, type Treatment } from "@gems/schemas";
 import { MultiSelectDropdown } from "../../shared/MultiSelectDropdown";
 import { StatusState } from "../../shared/StatusState";
 import { publicErrorMessage } from "../../shared/helpers";
@@ -20,6 +20,9 @@ export interface MarketplaceProps {
   page: number;
   setPage: (page: number) => void;
   totalPages: number;
+  pageSize?: MarketplacePageSize;
+  setPageSize?: (pageSize: MarketplacePageSize) => void;
+  pageHref?: (page: number) => string;
   selectedListing?: Listing;
   query: string;
   setQuery: (value: string) => void;
@@ -52,13 +55,6 @@ export function Marketplace(props: MarketplaceProps) {
   return (
     <section className="market-grid">
       <section className="feed">
-        <div className="feed-header">
-          <div>
-            <h1>Explore Gems</h1>
-            <p>{props.filteredListings.length} active Ceylon gems and Sri Lankan gemstone listings in Sri Lanka with seller and lab details.</p>
-          </div>
-        </div>
-
         {props.filteredListings.length === 0 ? (
           <div className="empty-results">
             <h2>No matches found</h2>
@@ -67,13 +63,15 @@ export function Marketplace(props: MarketplaceProps) {
         ) : (
           <>
             <div className="listing-list">
-              {props.filteredListings.map((listing) => (
+              {props.filteredListings.map((listing, index) => (
                 <ListingCard
                   key={listing.id}
                   listing={listing}
                   gemTypes={props.gemTypes}
                   sellers={props.sellers}
                   selected={props.selectedId === listing.id}
+                  eager={index < 4}
+                  priority={index === 0}
                   onSelect={() => {
                     props.setSelectedId(listing.id);
                     props.onRecordInteraction(listing.id, "view");
@@ -83,25 +81,37 @@ export function Marketplace(props: MarketplaceProps) {
             </div>
             {props.totalPages > 1 && (
               <div className="pagination">
-                <button
+                <a
                   className="pagination-btn"
-                  disabled={props.page <= 1}
-                  onClick={() => props.setPage(props.page - 1)}
+                  aria-disabled={props.page <= 1}
+                  href={props.pageHref?.(props.page - 1) ?? "#"}
+                  onClick={(event) => { event.preventDefault(); if (props.page > 1) props.setPage(props.page - 1); }}
                 >
                   Previous
-                </button>
+                </a>
                 <span className="pagination-info">Page {props.page} of {props.totalPages}</span>
-                <button
+                <a
                   className="pagination-btn"
-                  disabled={props.page >= props.totalPages}
-                  onClick={() => props.setPage(props.page + 1)}
+                  aria-disabled={props.page >= props.totalPages}
+                  href={props.pageHref?.(props.page + 1) ?? "#"}
+                  onClick={(event) => { event.preventDefault(); if (props.page < props.totalPages) props.setPage(props.page + 1); }}
                 >
                   Next
-                </button>
+                </a>
               </div>
             )}
           </>
         )}
+        {props.pageSize && props.setPageSize && <div className="listing-results-footer">
+          <label className="listing-page-size">
+            Items per page
+            <select value={props.pageSize} onChange={(event) => props.setPageSize?.(Number(event.target.value) as MarketplacePageSize)} id="items-per-page">
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>}
       </section>
 
       <aside className="filters" aria-label="Gem filters">
@@ -180,7 +190,7 @@ export function Marketplace(props: MarketplaceProps) {
   );
 }
 
-function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; selected: boolean; onSelect: () => void; }) {
+function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, onSelect }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; selected: boolean; eager: boolean; priority: boolean; onSelect: () => void; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const sellerRating = seller?.rating ?? 0;
@@ -192,9 +202,10 @@ function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listi
   ]);
 
   return (
-    <article className={`listing-card ${selected ? "selected" : ""}`} onClick={onSelect} id={`listing-${listing.id}`}>
+    <article className={`listing-card${selected ? " selected" : ""}`} id={`listing-${listing.id}`}>
+      <a className="listing-card-link" href={`/listings/${encodeURIComponent(listing.id)}`} onClick={(event) => { event.preventDefault(); onSelect(); }}>
       <div className="listing-media">
-        <img src={listing.media[0]?.url} alt={listing.media[0]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} />
+        <img src={listing.media[0]?.thumbnailUrl ?? listing.media[0]?.url} alt={listing.media[0]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} width={listing.media[0]?.width ?? 800} height={listing.media[0]?.height ?? 600} loading={eager ? "eager" : "lazy"} {...(priority ? { fetchpriority: "high" } : {})} />
         <div className="listing-badges">
           {listing.promoted.includes("top") && <span className="listing-badge listing-badge-top"><Star size={11} />Top</span>}
           {listing.promoted.includes("urgent") && <span className="listing-badge listing-badge-urgent">Urgent</span>}
@@ -212,6 +223,7 @@ function ListingCard({ listing, gemTypes, sellers, selected, onSelect }: { listi
         </div>
         <div className="seller-line"><MapPin size={14} strokeWidth={2} />{listing.location}</div>
       </div>
+      </a>
     </article>
   );
 }

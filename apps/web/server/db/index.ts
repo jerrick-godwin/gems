@@ -16,6 +16,7 @@ const client = postgres(connectionString || "", {
   prepare: false,
   onnotice: () => {} 
 });
+export const databaseClient = client;
 export const db = drizzle(client, { schema });
 
 let compatibilityPromise: Promise<void> | undefined;
@@ -61,6 +62,11 @@ export async function ensureDatabaseCompatibility(options: { force?: boolean } =
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "payment_intents_stripe_subscription_id_idx" ON "payment_intents" ("stripe_subscription_id")`);
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "listings_seller_idempotency_unique" ON "listings" ("seller_id", "idempotency_key")`);
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "payment_intents_user_listing_idempotency_unique" ON "payment_intents" ("user_id", "listing_id", "idempotency_key")`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "listings_public_featured_idx" ON "listings" ((jsonb_array_length("promoted")) DESC, "published_at" DESC, "id") WHERE "status" = 'live' AND "moderation_status" = 'approved'`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "listings_public_newest_idx" ON "listings" ("published_at" DESC, "id") WHERE "status" = 'live' AND "moderation_status" = 'approved'`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "listings_public_price_idx" ON "listings" ("price_lkr", "id") WHERE "status" = 'live' AND "moderation_status" = 'approved'`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "listings_public_gem_type_idx" ON "listings" ("gem_type_id", "published_at" DESC) WHERE "status" = 'live' AND "moderation_status" = 'approved'`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "listings_public_location_idx" ON "listings" ("location", "published_at" DESC) WHERE "status" = 'live' AND "moderation_status" = 'approved'`);
     await db.insert(schema.gemTypes)
       .values(worldwideGemTypes)
       .onConflictDoUpdate({
