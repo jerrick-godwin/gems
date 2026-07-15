@@ -1,74 +1,43 @@
 {
   "version": 2,
   "framework": "vite",
-  "rewrites": [
+  "outputDirectory": "dist/client",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "dist/**"
+    }
+  },
+  "routes": [
     {
-      "source": "/api/v1/(.*)",
-      "destination": "/api/index.ts"
+      "src": "^/api/v1(?:/.*)?$",
+      "dest": "/api/index.ts"
     },
     {
-      "source": "/admin",
-      "destination": "/admin.html"
+      "src": "^/$",
+      "dest": "/api/index.ts"
     },
     {
-      "source": "/admin/",
-      "destination": "/admin.html"
+      "src": "^/(?:robots\\.txt|sitemap\\.xml)$",
+      "dest": "/api/index.ts"
     },
     {
-      "source": "/login",
-      "destination": "/index.html"
+      "src": "^/listings/[^/]+/?$",
+      "dest": "/api/index.ts"
     },
     {
-      "source": "/signup",
-      "destination": "/index.html"
+      "src": "^/(?:contact-us|terms-and-conditions|privacy-policy|refund-policy)/?$",
+      "dest": "/api/index.ts"
     },
     {
-      "source": "/forgot-password",
-      "destination": "/index.html"
+      "handle": "filesystem"
     },
     {
-      "source": "/post",
-      "destination": "/index.html"
+      "src": "^/admin/?$",
+      "dest": "/admin.html"
     },
     {
-      "source": "/post/checkout",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/post/checkout/(.*)",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/listings",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/reports",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/profile",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/receipt",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/contact-us",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/terms-and-conditions",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/privacy-policy",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/refund-policy",
-      "destination": "/index.html"
+      "src": "^/.*$",
+      "dest": "/index.html"
     }
   ]
 }

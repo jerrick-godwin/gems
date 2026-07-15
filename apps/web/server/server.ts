@@ -1253,6 +1253,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   }
 }
 
+export async function handleVercelRequest(request: IncomingMessage, response: ServerResponse) {
+  await handleRequest(request, response, undefined);
+}
+
 if (!process.env.VERCEL) {
   void main();
 }
