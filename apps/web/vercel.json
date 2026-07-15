@@ -33,7 +33,17 @@
     },
     {
       "src": "^/admin/?$",
-      "dest": "/admin.html"
+      "dest": "/admin.html",
+      "headers": {
+        "X-Robots-Tag": "noindex, follow"
+      }
+    },
+    {
+      "src": "^/(?:login|signup|forgot-password|post(?:/.*)?|profile|reports|listings|receipt)/?$",
+      "dest": "/index.html",
+      "headers": {
+        "X-Robots-Tag": "noindex, follow"
+      }
     },
     {
       "src": "^/.*$",
