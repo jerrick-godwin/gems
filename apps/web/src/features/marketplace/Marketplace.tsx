@@ -55,13 +55,6 @@ export function Marketplace(props: MarketplaceProps) {
   return (
     <section className="market-grid">
       <section className="feed">
-        <div className="feed-header">
-          <div>
-            <h1>Explore Gems</h1>
-            <p>{props.filteredListings.length} active Ceylon gems and Sri Lankan gemstone listings in Sri Lanka with seller and lab details.</p>
-          </div>
-        </div>
-
         {props.filteredListings.length === 0 ? (
           <div className="empty-results">
             <h2>No matches found</h2>
