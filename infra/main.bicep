@@ -193,7 +193,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: appServicePlan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'NODE|20-lts'
+      linuxFxVersion: 'NODE|24-lts'
       alwaysOn: appServiceSkuName == 'F1' ? false : true
       appCommandLine: 'node apps/web/server-dist/server.js'
       appSettings: [

@@ -1,3 +1,4 @@
+import React from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import type { ThemePreference } from "../hooks/useTheme";
 
