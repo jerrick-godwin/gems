@@ -32,6 +32,7 @@ import {
   updateListingStatus
 } from "./marketplace-repository.js";
 import { broadcastMarketplaceInvalidation, loadMarketplacePage, pageSizeFromCookie, parseMarketplaceFilters, prewarmMarketplacePages, startMarketplaceInvalidationListener } from "./public-marketplace.js";
+import { publicAssetsFromViteManifest, type ViteManifestEntry } from "./public-assets.js";
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
   createListingPaymentIntent,
@@ -1139,14 +1140,8 @@ async function loadPublicRenderer(vite: ViteDevServer | undefined): Promise<Publ
 async function loadPublicAssets(): Promise<PublicRenderPayload["assets"]> {
   if (!isProduction) return { clientEntry: "/src/entry-client.tsx", stylesheets: ["/src/styles.css"], modulePreloads: [], reactRefreshPreamble: true };
   productionAssets ??= (async () => {
-    const manifest = JSON.parse(await readFile(resolve(staticRoot, ".vite/manifest.json"), "utf8")) as Record<string, { file: string; css?: string[]; imports?: string[] }>;
-    const entry = manifest["src/entry-client.tsx"];
-    if (!entry) throw new Error("Public client entry is missing from the Vite manifest.");
-    return {
-      clientEntry: `/${entry.file}`,
-      stylesheets: (entry.css ?? []).map((file) => `/${file}`),
-      modulePreloads: (entry.imports ?? []).flatMap((key) => manifest[key]?.file ? [`/${manifest[key].file}`] : [])
-    };
+    const manifest = JSON.parse(await readFile(resolve(staticRoot, ".vite/manifest.json"), "utf8")) as Record<string, ViteManifestEntry>;
+    return publicAssetsFromViteManifest(manifest);
   })();
   return productionAssets;
 }
