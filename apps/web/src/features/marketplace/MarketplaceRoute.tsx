@@ -48,6 +48,7 @@ export function MarketplaceRoute({
     setSelectedLocations: () => {},
     locations: initialData.locations,
     isSignedIn: Boolean(user),
+    authResolved: authState.status !== "resolving",
     theme,
     setTheme,
     user,

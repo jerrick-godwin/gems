@@ -236,6 +236,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   const frameProps = {
     isSignedIn,
+    authResolved,
     view,
     setView: navigateToView,
     query: marketplace.query,
