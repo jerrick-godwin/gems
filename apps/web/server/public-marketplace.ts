@@ -1,6 +1,8 @@
 import type { MarketplaceFilters, MarketplacePageData, MarketplacePageSize, MarketplaceSort } from "@gems/schemas";
+import type { Listing } from "@gems/schemas";
 import { getGemTypes, getLocations, getMarketplaceListingPage } from "./marketplace-repository.js";
 import { databaseClient, hasDatabase } from "./db/index.js";
+import { notifyIndexNow } from "./indexnow.js";
 
 const PAGE_SIZES = new Set<number>([10, 20, 50]);
 const SORTS = new Set<MarketplaceSort>(["featured", "newest", "price-low", "price-high"]);
@@ -87,12 +89,16 @@ export async function startMarketplaceInvalidationListener() {
   await databaseClient.listen("marketplace_invalidation", () => invalidateMarketplaceCache());
 }
 
-export async function broadcastMarketplaceInvalidation() {
+export async function broadcastMarketplaceInvalidation(listings?: Pick<Listing, "id" | "gemTypeId"> | Array<Pick<Listing, "id" | "gemTypeId">>) {
   invalidateMarketplaceCache();
   if (hasDatabase) {
     await databaseClient.notify("marketplace_invalidation", "changed").catch((error) => {
       console.error("Marketplace invalidation broadcast failed", error);
     });
+  }
+  const siteUrl = process.env.PUBLIC_SITE_URL?.trim();
+  if (siteUrl) {
+    await notifyIndexNow(siteUrl, listings).catch((error) => console.warn("IndexNow notification failed:", error));
   }
 }
 

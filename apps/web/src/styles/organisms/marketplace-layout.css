@@ -1,0 +1,24 @@
+/* ── Nav active indicator ─────────────────────────────────── */
+
+.nav-actions > button.active::after,
+.nav-actions > a.active::after {
+  content: none;
+}
+
+
+/* ── Footer accent border ─────────────────────────────────── */
+
+.footer-accent-bar {
+  height: 1px;
+  background: var(--line);
+}
+
+
+/* ── Improved spec grid hover ─────────────────────────────── */
+
+.spec-grid div:hover,
+.certificate-box:hover {
+  border-color: var(--emerald-subtle);
+  background: var(--emerald-subtle);
+}
+

@@ -1,5 +1,5 @@
 import { BadgeCheck, ChevronDown, Gem } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type Listing, type Report, type SellerProfile } from "@gems/schemas";
 import { StatusState } from "../../shared/StatusState";
@@ -37,7 +37,7 @@ export function MyReportsView({
 
   return (
     <section className="dashboard">
-      <section className="data-panel">
+      <section className="data-panel card card--surface">
         <div className="reports-stack">
           {reports.map((report) => {
             const listing = listingForReport(report);
@@ -59,7 +59,7 @@ export function MyReportsView({
               : [];
             const facts = rawFacts.filter(isDisplayFact);
             return (
-              <article key={report.id} className={`report-card ${isExpanded ? "expanded" : ""}`}>
+              <article key={report.id} className={`report-card card card--compact ${isExpanded ? "expanded" : ""}`}>
                 <div className="report-card-header">
                   <div className="report-summary">
                     {listing?.media[0] ? (
@@ -82,7 +82,7 @@ export function MyReportsView({
                     </div>
                   </div>
                   <div className="report-actions">
-                    <span className="report-status" style={{ backgroundColor: statusInfo.bg, color: statusInfo.color }}>
+                    <span className="report-status" style={{ "--status-background": statusInfo.bg, "--status-foreground": statusInfo.color } as CSSProperties}>
                       {statusInfo.label}
                     </span>
                     <button

@@ -280,27 +280,27 @@ export function ActiveListingRow({
       )}
 
       {showPauseConfirm && createPortal(
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
-              {listing.status === "paused" ? <Play size={20} style={{ color: "var(--gold)" }} /> : <Pause size={20} style={{ color: "var(--gold)" }} />} 
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="toggle-listing-title">
+            <h3 id="toggle-listing-title" className="confirmation-dialog-title tone-warning">
+              {listing.status === "paused" ? <Play size={20} /> : <Pause size={20} />}
               {listing.status === "paused" ? "Resume Listing" : "Pause Listing"}
             </h3>
-            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+            <p className="confirmation-dialog-copy">
               Are you sure you want to {listing.status === "paused" ? "resume" : "pause"} <strong>"{listing.title}"</strong>? 
               {listing.status === "paused" ? " It will become visible on the public marketplace again." : " It will be temporarily hidden from the public marketplace."}
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div className="confirmation-dialog-actions">
               <button
                 onClick={() => setShowPauseConfirm(false)}
-                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+                className="confirmation-dialog-button"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void handleTogglePause()}
                 disabled={busy}
-                style={{ padding: "8px 16px", background: "var(--gold-soft)", color: "var(--gold-dark)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy ? "not-allowed" : "pointer", fontWeight: 600 }}
+                className="confirmation-dialog-button tone-warning"
               >
                 {busy ? "Processing..." : `Proceed to ${listing.status === "paused" ? "Resume" : "Pause"}`}
               </button>
@@ -311,25 +311,25 @@ export function ActiveListingRow({
       )}
 
       {showRemoveConfirm && createPortal(
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
-              <Trash size={20} style={{ color: "var(--danger)" }} /> Remove Listing
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="remove-listing-title">
+            <h3 id="remove-listing-title" className="confirmation-dialog-title tone-danger">
+              <Trash size={20} /> Remove Listing
             </h3>
-            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+            <p className="confirmation-dialog-copy">
               Are you sure you want to completely remove <strong>"{listing.title}"</strong>? This action cannot be undone.
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div className="confirmation-dialog-actions">
               <button
                 onClick={() => setShowRemoveConfirm(false)}
-                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+                className="confirmation-dialog-button"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void handleRemove()}
                 disabled={removeAction.busy || busy}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: removeAction.busy || busy ? "not-allowed" : "pointer", fontWeight: 600 }}
+                className="confirmation-dialog-button tone-danger"
               >
                 {busy || removeAction.busy ? "Removing..." : "Proceed to Remove"}
               </button>

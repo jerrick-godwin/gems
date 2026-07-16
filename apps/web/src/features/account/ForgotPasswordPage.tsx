@@ -51,9 +51,9 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
           <p>Reset your password and get back to managing listings, renewals, and reports.</p>
         </div>
       </div>
-      <div className="login-panel">
+      <div className="login-panel card card--spacious">
         <div>
-          <h1 style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 34, letterSpacing: "-0.02em", fontWeight: 800, margin: "0 0 10px", color: "var(--ink)" }}>
+          <h1 className="auth-title">
             Forgot password?
           </h1>
           <p>Enter your account email and we will send a secure password reset link if an account exists.</p>

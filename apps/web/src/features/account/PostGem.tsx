@@ -252,7 +252,7 @@ export function PostGem({
           {/* ── Media uploads ── */}
           <div className="upload-section">
             <div className="upload-section-header">
-              <span className="upload-section-title">Gem Photos <span style={{ color: 'var(--danger)', fontWeight: 700 }}>*</span></span>
+              <span className="upload-section-title">Gem Photos <span className="upload-required">*</span></span>
               <button
                 type="button"
                 className="upload-trigger"
@@ -269,7 +269,7 @@ export function PostGem({
                 multiple
                 disabled={isSubmitting}
                 onChange={(e) => addPhotos(e.target.files)}
-                style={{ display: 'none' }}
+                className="u-hidden"
               />
             </div>
             {totalPhotoCount > 0 ? (
@@ -306,14 +306,17 @@ export function PostGem({
                 ))}
               </div>
             ) : (
-              <div
+              <button
+                type="button"
                 className="upload-dropzone"
+                disabled={isSubmitting}
                 onClick={() => { if (!isSubmitting) photosInputRef.current?.click(); }}
+                aria-label="Add gem photos"
               >
-                <Camera size={24} strokeWidth={1.5} style={{ color: 'var(--sage)' }} />
+                <Camera className="upload-dropzone-icon" size={24} strokeWidth={1.5} />
                 <span>Click to add gem photos</span>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>JPG, PNG — at least one required</span>
-              </div>
+                <span className="upload-dropzone-help">JPG, PNG — at least one required</span>
+              </button>
             )}
           </div>
 
@@ -345,7 +348,7 @@ export function PostGem({
                   setCertificateFile(file ?? null);
                   setStatus(null);
                 }}
-                style={{ display: 'none' }}
+                className="u-hidden"
               />
             </div>
             {certificate || retainedCertificate ? (
@@ -381,14 +384,16 @@ export function PostGem({
                 </div>
               </div>
             ) : (
-              <div
-                className="upload-dropzone"
+              <button
+                type="button"
+                className="upload-dropzone upload-dropzone-compact"
+                disabled={isSubmitting}
                 onClick={() => { if (!isSubmitting) certInputRef.current?.click(); }}
-                style={{ minHeight: 64 }}
+                aria-label="Upload an optional certificate"
               >
-                <Upload size={20} strokeWidth={1.5} style={{ color: 'var(--sage)' }} />
-                <span style={{ fontSize: 12 }}>Optional — PDF or image</span>
-              </div>
+                <Upload className="upload-dropzone-icon" size={20} strokeWidth={1.5} />
+                <span className="upload-dropzone-optional">Optional — PDF or image</span>
+              </button>
             )}
           </div>
 

@@ -79,49 +79,41 @@ export function ReviewRow({
   };
   
   return (
-    <div className="review-row" style={{ background: "var(--panel-strong)", padding: 16, borderRadius: "var(--radius)", marginBottom: 12, border: "1px solid var(--line)", boxShadow: "var(--shadow-xs)", display: "block" }}>
-      <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+    <article className="review-row card card--surface card--compact">
+      <div className="review-row-main">
         <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} />
-        <div style={{ flex: 1 }}>
-          <strong style={{ fontSize: 16, fontWeight: 700 }}>{listing.title}</strong>
-          <span style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
+        <div className="review-row-identity">
+          <strong>{listing.title}</strong>
+          <span className="review-row-meta">
             {listing.attributes.carat} ct ·
             {listing.attributes.certificateStatus !== "none" && (
-              <span style={{
-                background: "var(--brand-soft)",
-                color: "var(--brand)",
-                padding: "4px 8px",
-                borderRadius: 999,
-                fontWeight: 700,
-                fontSize: 11,
-                textTransform: "uppercase"
-              }}>
+              <span className="review-row-certificate">
                 {listing.attributes.certificateStatus.replace("_", " ")}
               </span>
             )}
           </span>
         </div>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600 }} onClick={() => setExpanded(!expanded)}>
+        <button className="review-row-action" onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide Details" : "View Details"}
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--success-soft)", color: "var(--success)" }} disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => setShowApprovePrompt(true)}>
+        <button className="review-row-action tone-success" disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => setShowApprovePrompt(true)}>
           {busy === "approve" ? "Approving..." : "Approve"}
         </button>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)", borderRadius: "var(--radius-sm)", border: "none", cursor: moderationAction.busy || busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }} disabled={moderationAction.busy || busy !== null} onClick={() => setShowRejectPrompt(true)}>
+        <button className="review-row-action tone-danger" disabled={moderationAction.busy || busy !== null} onClick={() => setShowRejectPrompt(true)}>
           {busy === "reject" ? "Rejecting..." : "Reject"}
         </button>
       </div>
 
       {showRejectPrompt && createPortal(
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
-              <XCircle size={20} className="text-danger" style={{ color: "var(--danger)" }} /> Reject Listing
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="reject-listing-title">
+            <h3 id="reject-listing-title" className="confirmation-dialog-title tone-danger">
+              <XCircle size={20} /> Reject Listing
             </h3>
-            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
+            <p className="confirmation-dialog-copy review-reject-copy">
               Please provide a reason for rejecting the listing:
               <br />
-              <strong style={{ display: "block", marginTop: 4, marginBottom: 8, color: "var(--ink)" }}>{listing.title}</strong>
+              <strong className="confirmation-dialog-subject">{listing.title}</strong>
               This will be sent to the seller to help them correct the issue.
             </p>
             <textarea
@@ -129,19 +121,19 @@ export function ReviewRow({
               value={rejectReason}
               onChange={e => setRejectReason(e.target.value)}
               placeholder="e.g., The certificate image is illegible. Please upload a clearer copy."
-              style={{ width: "100%", height: 100, padding: 12, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--soft)", color: "var(--ink)", marginBottom: 20, resize: "none", boxSizing: "border-box", fontFamily: "inherit", fontSize: 14 }}
+              className="confirmation-dialog-textarea"
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div className="confirmation-dialog-actions">
               <button
                 onClick={() => { setShowRejectPrompt(false); setRejectReason(""); }}
-                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+                className="confirmation-dialog-button"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void runModeration("reject")}
                 disabled={moderationAction.busy || busy !== null || !rejectReason.trim()}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null || !rejectReason.trim() ? "not-allowed" : "pointer", fontWeight: 600, opacity: !rejectReason.trim() ? 0.5 : 1 }}
+                className="confirmation-dialog-button tone-danger"
               >
                 {busy === "reject" ? "Rejecting..." : "Confirm Rejection"}
               </button>
@@ -152,27 +144,27 @@ export function ReviewRow({
       )}
 
       {showApprovePrompt && createPortal(
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
-              <CheckCircle2 size={20} className="text-success" style={{ color: "var(--success)" }} /> Approve Listing
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="approve-listing-title">
+            <h3 id="approve-listing-title" className="confirmation-dialog-title tone-success">
+              <CheckCircle2 size={20} /> Approve Listing
             </h3>
-            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+            <p className="confirmation-dialog-copy">
               Are you sure you want to approve this listing? It will become visible to all buyers immediately.
               <br />
-              <strong style={{ display: "block", marginTop: 4, marginBottom: 8, color: "var(--ink)" }}>{listing.title}</strong>
+              <strong className="confirmation-dialog-subject">{listing.title}</strong>
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div className="confirmation-dialog-actions">
               <button
                 onClick={() => setShowApprovePrompt(false)}
-                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+                className="confirmation-dialog-button"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void runModeration("approve")}
                 disabled={moderationAction.busy || busy !== null}
-                style={{ padding: "8px 16px", background: "var(--success-soft)", color: "var(--success)", border: "none", borderRadius: "var(--radius-sm)", cursor: busy !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                className="confirmation-dialog-button tone-success"
               >
                 {busy === "approve" ? "Approving..." : "Confirm Approval"}
               </button>
@@ -183,77 +175,77 @@ export function ReviewRow({
       )}
 
       {expanded && (
-        <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid var(--line)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24, marginBottom: 24 }}>
-            <div>
-              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Seller Details</h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
+        <div className="review-row-details">
+          <div className="review-row-details-grid">
+            <div className="review-row-detail-section">
+              <h4>Seller Details</h4>
+              <div className="review-row-detail-list">
                 <div><strong>Display Name:</strong> {seller?.displayName || "Unknown"}</div>
                 <div><strong>User Name:</strong> {user?.name || "Unknown"}</div>
                 <div><strong>Email:</strong> {user?.email || "Unknown"}</div>
                 <div><strong>Phone:</strong> {user?.phone || "Unknown"}</div>
               </div>
             </div>
-            <div>
-              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Listing Details</h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
-                <div><strong>Description:</strong> <span style={{ color: "var(--muted)" }}>{listing.description}</span></div>
-                <div><strong>Price:</strong> LKR {listing.priceLkr.toLocaleString()} {listing.negotiable ? <span style={{ color: "var(--muted)", fontSize: 12 }}>(Negotiable)</span> : ""}</div>
+            <div className="review-row-detail-section">
+              <h4>Listing Details</h4>
+              <div className="review-row-detail-list">
+                <div><strong>Description:</strong> <span className="admin-muted">{listing.description}</span></div>
+                <div><strong>Price:</strong> LKR {listing.priceLkr.toLocaleString()} {listing.negotiable ? <span className="admin-muted admin-small">(Negotiable)</span> : ""}</div>
                 <div><strong>Location:</strong> {listing.location}</div>
               </div>
             </div>
-            <div>
-              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Payment Details</h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 14 }}>
+            <div className="review-row-detail-section">
+              <h4>Payment Details</h4>
+              <div className="review-row-detail-list">
                 {payment ? (
                   <>
-                    <div><strong>Status:</strong> <span style={{ color: paymentStatusColor(payment.status), fontWeight: 800, textTransform: "capitalize" }}>{payment.status.replace("_", " ")}</span></div>
-                    <div><strong>Amount:</strong> <span style={{ color: "var(--muted)" }}>{formatLkr(payment.amountLkr)}</span></div>
-                    <div><strong>Plan:</strong> <span style={{ color: "var(--muted)" }}>{payment.quote.plan.name}</span></div>
-                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <a href={`https://dashboard.stripe.com/invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>{payment.stripeInvoiceId}</a></div>}
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+                    <div><strong>Status:</strong> <span className={`admin-payment-state status-${payment.status}`}>{payment.status.replace("_", " ")}</span></div>
+                    <div><strong>Amount:</strong> <span className="admin-muted">{formatLkr(payment.amountLkr)}</span></div>
+                    <div><strong>Plan:</strong> <span className="admin-muted">{payment.quote.plan.name}</span></div>
+                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <a className="admin-link" href={`https://dashboard.stripe.com/invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer">{payment.stripeInvoiceId}</a></div>}
+                    <div className="review-row-receipt">
                       <button
                         type="button"
                         onClick={() => void handleViewReceipt()}
                         disabled={!canViewReceipt || receiptBusy}
-                        style={{ minHeight: 36, padding: "0 14px", display: "inline-flex", alignItems: "center", gap: 8, background: canViewReceipt ? "var(--emerald-soft)" : "var(--soft)", color: canViewReceipt ? "var(--emerald)" : "var(--muted)", border: "none", borderRadius: "var(--radius-sm)", cursor: canViewReceipt && !receiptBusy ? "pointer" : "not-allowed", fontWeight: 700 }}
+                        className="review-row-receipt-button"
                       >
                         <ReceiptText size={16} />
                         {receiptBusy ? "Opening receipt..." : "View Receipt"}
                       </button>
-                      {receiptError && <span role="alert" style={{ color: "var(--danger)", fontSize: 12, fontWeight: 700 }}>{receiptError}</span>}
-                      {!canViewReceipt && <span style={{ color: "var(--muted)", fontSize: 12, fontWeight: 600 }}>Receipt appears after a successful invoice payment.</span>}
+                      {receiptError && <span role="alert" className="admin-inline-error">{receiptError}</span>}
+                      {!canViewReceipt && <span className="admin-inline-note">Receipt appears after a successful invoice payment.</span>}
                     </div>
                   </>
                 ) : (
-                  <div style={{ color: "var(--muted)", fontWeight: 600 }}>No payment record was found for this listing.</div>
+                  <div className="admin-empty-copy">No payment record was found for this listing.</div>
                 )}
               </div>
             </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Gem Attributes</h4>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: 14 }}>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Carat:</strong> <span style={{ color: "var(--muted)" }}>{listing.attributes.carat}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Color:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.color}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Origin:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.origin}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Treatment:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.treatment}</span></div>
-                <div><strong style={{ display: "block", marginBottom: 2 }}>Certificate:</strong> <span style={{ color: "var(--muted)", textTransform: "capitalize" }}>{listing.attributes.certificateStatus.replace("_", " ")}</span></div>
+            <div className="review-row-detail-section review-row-detail-wide">
+              <h4>Gem Attributes</h4>
+              <div className="review-row-attributes">
+                <div><strong>Carat:</strong> <span>{listing.attributes.carat}</span></div>
+                <div><strong>Color:</strong> <span>{listing.attributes.color}</span></div>
+                <div><strong>Origin:</strong> <span>{listing.attributes.origin}</span></div>
+                <div><strong>Treatment:</strong> <span>{listing.attributes.treatment}</span></div>
+                <div><strong>Certificate:</strong> <span>{listing.attributes.certificateStatus.replace("_", " ")}</span></div>
               </div>
             </div>
           </div>
 
-          <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12, letterSpacing: "0.05em", fontWeight: 700 }}>Uploaded Files</h4>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", background: "var(--soft)", padding: 16, borderRadius: 8 }}>
+          <h4 className="review-row-section-title">Uploaded Files</h4>
+          <div className="review-row-media">
             {listing.media.map(m => (
-              <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", textDecoration: "none", color: "inherit", background: "var(--panel)", padding: 8, borderRadius: 6, border: "1px solid var(--line)" }}>
+              <div key={m.id} className="review-row-media-item card card--inset card--compact">
                 <AdminMediaPreview media={m} alt={m.alt || listing.title} variant="detail" />
-                <div style={{ fontSize: 11, textAlign: "center", color: "var(--ink)", marginTop: 8, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.02em" }}>{m.kind}</div>
+                <div className="review-row-media-kind">{m.kind}</div>
               </div>
             ))}
           </div>
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -267,16 +259,4 @@ function paymentRank(payment: PaymentIntent) {
   if (payment.status === "succeeded") return 3;
   if (payment.status === "pending") return 2;
   return 1;
-}
-
-function paymentStatusBackground(status?: PaymentIntent["status"]) {
-  if (status === "succeeded") return "var(--emerald-subtle)";
-  if (status === "failed" || status === "cancelled" || status === "expired") return "var(--danger-soft)";
-  return "var(--soft)";
-}
-
-function paymentStatusColor(status?: PaymentIntent["status"]) {
-  if (status === "succeeded") return "var(--emerald)";
-  if (status === "failed" || status === "cancelled" || status === "expired") return "var(--danger)";
-  return "var(--muted)";
 }

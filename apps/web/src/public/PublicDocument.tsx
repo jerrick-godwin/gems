@@ -1,5 +1,12 @@
 import type { MarketplacePageData } from "@gems/schemas";
 import { MarketplaceRoute } from "../features/marketplace/MarketplaceRoute.js";
+import {
+  descriptiveListingImageAlt,
+  gemstoneCategoryIntroduction,
+  gemstoneCategoryPath,
+  publicListingPhotoPath,
+  seoLandingPages
+} from "../shared/seo.js";
 import type { PublicRenderPayload, PublicRouteData } from "./types.js";
 export type { PublicRenderPayload, PublicRouteData } from "./types.js";
 
@@ -10,7 +17,6 @@ export interface PublicDocumentProps extends PublicRenderPayload {
 const analyticsMeasurementId = "G-PBC7B30RE3";
 const adsensePublisherId = "ca-pub-1870465390690184";
 const defaultSocialImagePath = "/assets/gem-triptych.png";
-const defaultKeywords = "gems, lanka, ceylon gems, ceylon gemstones, sri lanka gems, sri lankan gems, sri lankan gemstones, gemstones sri lanka, ceylon sapphire, sri lankan gemstone marketplace, buy gems sri lanka, sell gems sri lanka";
 
 export function PublicDocument(props: PublicDocumentProps) {
   const metadata = metadataFor(props);
@@ -20,8 +26,9 @@ export function PublicDocument(props: PublicDocumentProps) {
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="description" content={metadata.description} />
-        <meta name="keywords" content={defaultKeywords} />
         <meta name="robots" content={metadata.robots} />
+        {props.verification?.google && <meta name="google-site-verification" content={props.verification.google} />}
+        {props.verification?.bing && <meta name="msvalidate.01" content={props.verification.bing} />}
         <meta name="theme-color" content="#fdd404" />
         <meta name="application-name" content="Gemslanka" />
         <meta name="google-adsense-account" content={adsensePublisherId} />
@@ -39,9 +46,9 @@ export function PublicDocument(props: PublicDocumentProps) {
         <meta name="twitter:image:alt" content={metadata.imageAlt} />
         <link rel="canonical" href={metadata.canonical} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/assets/logo-mark-192.png" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-rounded-32.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/assets/logo-mark-rounded-192.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon-rounded.png" />
         <link rel="manifest" href="/site.webmanifest" crossOrigin="use-credentials" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -83,10 +90,10 @@ export function PublicApp({ initialRoute, initialTheme }: { initialUrl: string; 
   return <MarketplaceRoute initialRoute={initialRoute} initialTheme={initialTheme} />;
 }
 
-function marketplaceHref(filters: MarketplacePageData["filters"]) {
+function marketplaceHref(filters: MarketplacePageData["filters"], basePath = "/", lockedGemType?: string) {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
-  if (filters.gemType) params.set("gemType", filters.gemType);
+  if (filters.gemType && filters.gemType !== lockedGemType) params.set("gemType", filters.gemType);
   for (const location of filters.locations) params.append("location", location);
   if (filters.treatment) params.set("treatment", filters.treatment);
   if (filters.certificate) params.set("certificate", filters.certificate);
@@ -94,42 +101,63 @@ function marketplaceHref(filters: MarketplacePageData["filters"]) {
   if (filters.page !== 1) params.set("page", String(filters.page));
   if (filters.limit !== 20) params.set("limit", String(filters.limit));
   const query = params.toString();
-  return query ? `/?${query}` : "/";
+  return query ? `${basePath}?${query}` : basePath;
 }
 
 export function metadataFor(props: PublicRenderPayload) {
-  const fallbackDescription = "Browse verified gemstone listings from sellers across Sri Lanka on Gemslanka.";
-  let title = "Gemslanka | Sri Lankan Gemstone Marketplace";
+  const fallbackDescription = "Browse gemstone listings from Sri Lanka and sellers worldwide, compare disclosed details, and contact sellers directly on Gemslanka.";
+  let title = "Gemslanka | Buy and Sell Gemstones Worldwide";
   let description = fallbackDescription;
-  let robots = "index,follow";
+  let robots = "index,follow,max-image-preview:large";
   let image = new URL(defaultSocialImagePath, props.origin).href;
-  let imageAlt = "Sri Lankan gemstones listed on Gemslanka";
+  let imageAlt = "Gemstones listed on the Gemslanka marketplace";
   const current = new URL(props.url, props.origin);
-  let canonicalPath = current.pathname;
+  let canonicalPath = current.pathname.replace(/\/+$/, "") || "/";
   if (props.route.kind === "marketplace") {
     const filters = props.route.data.filters;
-    const indexable = !filters.q && !filters.gemType && !filters.locations.length && !filters.treatment && !filters.certificate && filters.sort === "featured" && filters.limit === 20;
+    const indexable = !filters.q && !filters.gemType && !filters.locations.length && !filters.treatment && !filters.certificate && filters.sort === "featured" && !current.searchParams.has("limit");
     if (!indexable) robots = "noindex,follow";
     canonicalPath = marketplaceHref({ ...filters, limit: 20 });
-    if (filters.page > 1) title = `Gemstone listings – page ${filters.page} | Gemslanka`;
+    if (filters.page > 1) {
+      title = `Gemstone Marketplace – Page ${filters.page} | Gemslanka`;
+      description = `Browse page ${filters.page} of current gemstone listings from sellers on Gemslanka.`;
+    }
+  } else if (props.route.kind === "category") {
+    const filters = props.route.data.filters;
+    const indexableFilters = !filters.q && !filters.locations.length && !filters.treatment && !filters.certificate && filters.sort === "featured" && !current.searchParams.has("limit");
+    if (!props.route.indexable || !indexableFilters) robots = "noindex,follow";
+    canonicalPath = marketplaceHref({ ...filters, gemType: props.route.gemType.id, limit: 20 }, gemstoneCategoryPath(props.route.gemType.slug), props.route.gemType.id);
+    title = `Buy ${props.route.gemType.name} Gemstones Online${filters.page > 1 ? ` – Page ${filters.page}` : ""} | Gemslanka`;
+    description = filters.page > 1
+      ? `Browse page ${filters.page} of ${props.route.gemType.name.toLowerCase()} gemstone listings on Gemslanka.`
+      : `${gemstoneCategoryIntroduction(props.route.gemType.name, props.route.gemType.slug).slice(0, 154).trimEnd()}`;
+  } else if (props.route.kind === "landing") {
+    const definition = seoLandingPages[props.route.page];
+    title = definition.title;
+    description = definition.description;
+    canonicalPath = definition.path;
   } else if (props.route.kind === "listing") {
     title = `${props.route.listing.title} | Gemslanka`;
-    description = props.route.listing.description.slice(0, 160);
+    description = props.route.listing.description.trim().slice(0, 160) || `${props.route.listing.title}, a gemstone listing available from a seller on Gemslanka.`;
     const listingImage = props.route.listing.media
       .filter((media) => media.kind === "photo")
       .sort((left, right) => left.order - right.order)[0];
     if (listingImage) {
-      image = new URL(listingImage.thumbnailUrl ?? listingImage.url, props.origin).href;
-      imageAlt = listingImage.alt || props.route.listing.title;
+      image = new URL(publicListingPhotoPath(props.route.listing.id, listingImage.order, true), props.origin).href;
+      imageAlt = descriptiveListingImageAlt(listingImage.alt, props.route.listing.title, humanizeGemType(props.route.listing.gemTypeId));
     }
   } else if (props.route.kind === "content") {
     const labels = { contact: "Contact Gemslanka", terms: "Terms and Conditions", privacy: "Privacy Policy", refund: "Refund Policy" };
     title = `${labels[props.route.page]} | Gemslanka`;
+    description = props.route.page === "contact"
+      ? "Contact Gemslanka for support with gemstone listings, marketplace accounts, and listing services."
+      : `${labels[props.route.page]} for the Gemslanka gemstone listing marketplace.`;
+    if (props.route.page !== "contact") robots = "noindex,follow";
   } else {
     title = `${props.route.status} | Gemslanka`;
     robots = "noindex,follow";
   }
-  const canonical = `${props.origin}${canonicalPath}`;
+  const canonical = new URL(canonicalPath, props.origin).href;
   const structuredData = JSON.stringify(structuredDataFor(props, { canonical, description, image })).replaceAll("<", "\\u003c");
   return { title, description, robots, canonical, image, imageAlt, structuredData };
 }
@@ -139,31 +167,123 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
     "@type": "Organization",
     "@id": `${props.origin}/#organization`,
     name: "Gemslanka",
-    alternateName: ["Gemslanka.lk", "gems lanka", "ceylon gems", "sri lanka gems"],
+    alternateName: ["Gemslanka.lk", "Gems Lanka"],
+    legalName: "KRISTIANA MAGRET GEM & JEWELLERY",
     url: `${props.origin}/`,
-    logo: new URL("/assets/logo-mark-512.png", props.origin).href
+    logo: new URL("/assets/logo-mark-512.png", props.origin).href,
+    email: "info@gemslanka.lk"
   };
 
   if (props.route.kind === "listing") {
+    const firstPhoto = props.route.listing.media
+      .filter((media) => media.kind === "photo")
+      .sort((left, right) => left.order - right.order)[0];
+    const productImage = firstPhoto
+      ? new URL(publicListingPhotoPath(props.route.listing.id, firstPhoto.order), props.origin).href
+      : metadata.image;
     return {
       "@context": "https://schema.org",
-      "@type": "Product",
-      name: props.route.listing.title,
-      description: metadata.description,
-      image: [metadata.image],
-      url: metadata.canonical,
-      category: "Gemstone",
-      offers: {
-        "@type": "Offer",
-        priceCurrency: "LKR",
-        price: props.route.listing.priceLkr,
-        availability: "https://schema.org/InStock",
-        url: metadata.canonical,
-        seller: {
-          "@type": props.route.seller.businessName ? "Organization" : "Person",
-          name: props.route.seller.businessName ?? props.route.seller.displayName
+      "@graph": [
+        organization,
+        {
+          "@type": "Product",
+          "@id": `${metadata.canonical}#product`,
+          name: props.route.listing.title,
+          sku: props.route.listing.id,
+          description: metadata.description,
+          image: [productImage],
+          url: metadata.canonical,
+          category: `${humanizeGemType(props.route.listing.gemTypeId)} gemstone`,
+          offers: {
+            "@type": "Offer",
+            priceCurrency: "LKR",
+            price: props.route.listing.priceLkr,
+            availability: "https://schema.org/InStock",
+            url: metadata.canonical,
+            seller: {
+              "@type": props.route.seller.businessName ? "Organization" : "Person",
+              name: props.route.seller.businessName ?? props.route.seller.displayName
+            }
+          }
+        },
+        breadcrumbData(props.origin, [
+          ["Marketplace", "/"],
+          [humanizeGemType(props.route.listing.gemTypeId), gemstoneCategoryPath(props.route.listing.gemTypeId)],
+          [props.route.listing.title, new URL(props.url, props.origin).pathname]
+        ])
+      ]
+    };
+  }
+
+  if (props.route.kind === "marketplace") {
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        organization,
+        {
+          "@type": "WebSite",
+          "@id": `${props.origin}/#website`,
+          url: `${props.origin}/`,
+          name: "Gemslanka",
+          alternateName: ["Gemslanka.lk", "Gems Lanka"],
+          description: metadata.description,
+          publisher: { "@id": organization["@id"] },
+          inLanguage: "en"
         }
-      }
+      ]
+    };
+  }
+
+  if (props.route.kind === "category") {
+    const categoryPath = gemstoneCategoryPath(props.route.gemType.slug);
+    const categoryData = props.route.data;
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        organization,
+        {
+          "@type": "CollectionPage",
+          "@id": metadata.canonical,
+          url: metadata.canonical,
+          name: `Buy ${props.route.gemType.name} Gemstones Online`,
+          description: metadata.description,
+          isPartOf: { "@id": `${props.origin}/#website` },
+          mainEntity: {
+            "@type": "ItemList",
+            numberOfItems: categoryData.page.total,
+            itemListElement: categoryData.page.items.map((item, index) => ({
+              "@type": "ListItem",
+              position: (categoryData.page.page - 1) * categoryData.page.limit + index + 1,
+              url: new URL(`/listings/${encodeURIComponent(item.id)}`, props.origin).href,
+              name: item.title
+            }))
+          },
+          inLanguage: "en"
+        },
+        breadcrumbData(props.origin, [["Marketplace", "/"], ["Gemstones", "/gemstones"], [props.route.gemType.name, categoryPath]])
+      ]
+    };
+  }
+
+  if (props.route.kind === "landing") {
+    const definition = seoLandingPages[props.route.page];
+    const pageType = props.route.page === "about" ? "AboutPage" : props.route.page === "buy" || props.route.page === "gemstones" ? "CollectionPage" : "WebPage";
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        organization,
+        {
+          "@type": pageType,
+          "@id": metadata.canonical,
+          url: metadata.canonical,
+          name: definition.heading,
+          description: metadata.description,
+          isPartOf: { "@id": `${props.origin}/#website` },
+          publisher: { "@id": organization["@id"] },
+          inLanguage: "en"
+        },
+        breadcrumbData(props.origin, [["Marketplace", "/"], [definition.heading, definition.path]])
+      ]
     };
   }
 
@@ -172,14 +292,30 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
     "@graph": [
       organization,
       {
-        "@type": props.route.kind === "content" ? "WebPage" : "WebSite",
-        "@id": props.route.kind === "content" ? metadata.canonical : `${props.origin}/#website`,
+        "@type": props.route.kind === "content" && props.route.page === "contact" ? "ContactPage" : "WebPage",
+        "@id": metadata.canonical,
         url: metadata.canonical,
-        name: "Gemslanka",
+        name: props.route.kind === "content" ? `${props.route.page} | Gemslanka` : "Gemslanka",
         description: metadata.description,
         publisher: { "@id": organization["@id"] },
         inLanguage: "en"
       }
     ]
   };
+}
+
+function breadcrumbData(origin: string, items: Array<[name: string, path: string]>) {
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items.map(([name, path], index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name,
+      item: new URL(path, origin).href
+    }))
+  };
+}
+
+function humanizeGemType(value: string) {
+  return value.split("-").map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part).join(" ");
 }

@@ -19,10 +19,10 @@ import { StatusState } from "./shared/StatusState";
 import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, viewFromPathname, type View } from "./shared/types";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
-import { footerDescription, homepageKeywords, siteName } from "./shared/seo";
+import { footerDescription, siteName } from "./shared/seo";
 
 const siteOrigin = "https://gemslanka.lk";
-const homepageTitle = siteName;
+const homepageTitle = `${siteName} | Buy and Sell Gemstones Worldwide`;
 const homepageDescription = footerDescription;
 
 function readCachedMarketplaceReferences() {
@@ -37,12 +37,11 @@ function readCachedMarketplaceReferences() {
   }
 }
 
-const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow"; keywords?: string }> = {
+const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
   market: {
     title: homepageTitle,
     description: homepageDescription,
-    robots: "index,follow",
-    keywords: homepageKeywords
+    robots: "index,follow"
   },
   contact: {
     title: "Contact Gemslanka.lk | Sri Lankan Gemstone Marketplace",
@@ -52,17 +51,17 @@ const viewSeo: Record<View, { title: string; description: string; robots: "index
   terms: {
     title: "Terms and Conditions | Gemslanka.lk",
     description: "Read the Gemslanka.lk terms for gemstone listing services, seller responsibilities, subscriptions, and marketplace use.",
-    robots: "index,follow"
+    robots: "noindex,follow"
   },
   privacy: {
     title: "Privacy Policy | Gemslanka.lk",
     description: "Learn how Gemslanka.lk handles account, listing, payment metadata, moderation, and support information.",
-    robots: "index,follow"
+    robots: "noindex,follow"
   },
   refund: {
     title: "Refund Policy | Gemslanka.lk",
     description: "Review the Gemslanka.lk refund policy for listing subscriptions, renewals, and extra-photo fees.",
-    robots: "index,follow"
+    robots: "noindex,follow"
   },
   login: {
     title: "Sign In | Gemslanka.lk",
@@ -207,11 +206,7 @@ function App() {
     document.title = seo.title;
     upsertNamedMeta("description", seo.description);
     upsertNamedMeta("robots", seo.robots);
-    if (seo.keywords) {
-      upsertNamedMeta("keywords", seo.keywords);
-    } else {
-      document.head.querySelector<HTMLMetaElement>('meta[name="keywords"]')?.remove();
-    }
+    document.head.querySelector<HTMLMetaElement>('meta[name="keywords"]')?.remove();
     upsertPropertyMeta("og:title", seo.title);
     upsertPropertyMeta("og:description", seo.description);
     upsertPropertyMeta("og:url", canonicalUrl);

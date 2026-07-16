@@ -1,0 +1,192 @@
+/* ── Admin orders ─────────────────────────────────────────── */
+
+.admin-order-row {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.admin-order-row + .admin-order-row {
+  margin-top: 12px;
+}
+
+.admin-order-header strong {
+  display: block;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.admin-order-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.order-status-pill {
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  background: var(--emerald-soft);
+  color: var(--emerald);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-order-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.58fr) minmax(420px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.admin-order-contact,
+.admin-order-items {
+  min-width: 0;
+}
+
+.admin-order-contact {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+}
+
+.admin-order-contact strong {
+  display: block;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.admin-order-items {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-order-item {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+}
+
+.admin-order-thumb {
+  width: 112px;
+  height: 112px;
+  border-radius: var(--radius);
+}
+
+.admin-order-item-copy {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.admin-order-product-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-order-product-head strong {
+  font-size: 16px;
+}
+
+.admin-order-product-head span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-order-attribute-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.admin-order-attribute {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.admin-order-attribute span {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.admin-order-attribute strong {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.admin-order-actions {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.admin-order-actions select {
+  max-width: 260px;
+}
+
+.admin-order-actions .primary-action {
+  min-width: 140px;
+}
+
+.admin-order-note {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-strong);
+}
+
+@media print {
+  .topbar,
+  .payment-notice,
+  .site-footer,
+  .checkout-actions,
+  .print-action {
+    display: none !important;
+  }
+
+  main {
+    padding: 0;
+  }
+
+  .invoice-panel {
+    border: 0;
+    box-shadow: none;
+  }
+
+  .receipt-panel {
+    padding: 0;
+  }
+}
+
+

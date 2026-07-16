@@ -1,5 +1,5 @@
 import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
@@ -166,31 +166,26 @@ export function MyListingsView({
 
   return (
     <section className="dashboard">
-      <div className="section-heading" style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-start" }}>
-        <div style={{ position: "relative", width: 280, marginTop: 4 }}>
-          <Search size={18} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--sage)" }} />
+      <div className="section-heading seller-listings-heading">
+        <label className="seller-listings-search">
+          <Search size={18} aria-hidden="true" />
           <input
             type="text"
             placeholder="Search listings..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ 
-              width: "100%", padding: "10px 12px 10px 38px", 
-              borderRadius: "8px", border: "1px solid var(--line)", 
-              backgroundColor: "var(--surface)", color: "var(--ink)", outline: "none",
-              fontSize: 14
-            }}
+            aria-label="Search your listings"
           />
-        </div>
+        </label>
       </div>
       <TrialStatusPanel trial={dashboard?.user.trial} variant="compact" />
-      <section className="data-panel" style={{ opacity: isLoadingListings ? 0.6 : 1, transition: "opacity 0.2s" }}>
+      <section className={`data-panel seller-listings-panel card card--surface ${isLoadingListings ? "is-loading" : ""}`}>
         {isLoadingListings && listings.length === 0 ? (
-          <p style={{ color: "var(--sage)", fontWeight: 600 }}>Loading listings...</p>
+          <p className="seller-listings-state">Loading listings...</p>
         ) : listings.length === 0 ? (
-          <p style={{ color: "var(--sage)", fontWeight: 600 }}>No listings found.</p>
+          <p className="seller-listings-state">No listings found.</p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="seller-listings-stack">
             {listings.map((listing) => {
               const statusInfo = getStatusLabel(listing);
               const gemTypeName = gemTypes.find((gemType) => gemType.id === listing.gemTypeId)?.name;
@@ -213,7 +208,7 @@ export function MyListingsView({
               const renewalStatus = getSubscriptionRenewalStatus(subscription);
 
               return (
-                <div key={listing.id} className="seller-listing-card">
+                <article key={listing.id} className="seller-listing-card card card--surface card--compact">
                   {listing.media[0] && (
                     <img src={listing.media[0].url} alt={listing.title} className="seller-listing-image" />
                   )}
@@ -238,11 +233,11 @@ export function MyListingsView({
                         {subscription && plan && (
                           <div className={`seller-listing-finance-card ${canCancelRenewal ? "is-renewing" : "is-muted"}`}>
                             <div className="seller-listing-finance-title">
-                              <ShieldCheck size={16} style={{ color: canCancelRenewal ? 'var(--emerald)' : 'var(--muted)' }} />
+                              <ShieldCheck size={16} />
                               {subscription.source === "trial" ? `${plan.name} Trial Access` : `${plan.name} Subscription`}
                             </div>
                             <div className="seller-listing-finance-line">
-                              Status: <span style={{ textTransform: 'capitalize', fontWeight: 600, color: 'var(--ink)' }}>{subscription.status.replace("_", " ")}</span>
+                              Status: <span className="seller-listing-finance-value">{subscription.status.replace("_", " ")}</span>
                             </div>
                             {subscription.expiresAt && (
                               <div className="seller-listing-finance-line">
@@ -250,7 +245,7 @@ export function MyListingsView({
                               </div>
                             )}
                             {renewalStatus && (
-                              <div className="seller-listing-finance-note" style={{ color: renewalStatus.color }}>
+                              <div className="seller-listing-finance-note is-status" style={{ "--status-foreground": renewalStatus.color } as CSSProperties}>
                                 {renewalStatus.label}
                               </div>
                             )}
@@ -259,11 +254,11 @@ export function MyListingsView({
                         {payment && (
                           <div className={`seller-listing-finance-card ${payment.status === "succeeded" ? "is-paid" : "is-pending"}`}>
                             <div className="seller-listing-finance-title">
-                              <Receipt size={16} style={{ color: 'var(--muted)' }} />
+                              <Receipt size={16} />
                               Payment details
                             </div>
                             <div className="seller-listing-finance-line">
-                              Amount: <strong style={{ color: 'var(--ink)' }}>{formatLkr(payment.amountLkr)}</strong> ({payment.status})
+                              Amount: <strong className="seller-listing-finance-value">{formatLkr(payment.amountLkr)}</strong> ({payment.status})
                             </div>
                             {payment.stripeInvoiceId && (
                               <div className="seller-listing-finance-line is-small">
@@ -279,12 +274,12 @@ export function MyListingsView({
                         )}
                       </div>
                       <div className="seller-listing-status-row">
-                        <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 12, backgroundColor: statusInfo.bg, color: statusInfo.color }}>
+                        <span className="seller-listing-status" style={{ "--status-background": statusInfo.bg, "--status-foreground": statusInfo.color } as CSSProperties}>
                           {statusInfo.label}
                         </span>
                       </div>
                       {isRejected && listing.rejectionReason && (
-                        <div style={{ fontSize: 13, color: "var(--danger)", padding: "8px 12px", borderRadius: "6px", border: "1px solid rgba(248,113,113,0.2)" }}>
+                        <div className="seller-listing-rejection">
                           <strong>Reason:</strong> {listing.rejectionReason}
                         </div>
                       )}
@@ -330,31 +325,29 @@ export function MyListingsView({
                       {deletingId === listing.id ? "Deleting..." : "Delete"}
                       </button>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
           )}
           
           {listings.length > 0 && totalListings > 10 && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--line-subtle)" }}>
-              <span style={{ fontSize: 14, color: "var(--sage)", fontWeight: 500 }}>
+            <div className="seller-listings-pagination">
+              <span>
                 Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, totalListings)} of {totalListings} listings
               </span>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="seller-listings-pagination-actions">
                 <button 
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="seller-listing-secondary-button"
-                  style={{ display: "flex", alignItems: "center", gap: 4, opacity: page === 1 ? 0.5 : 1, cursor: page === 1 ? "not-allowed" : "pointer" }}
+                  className="seller-listing-secondary-button seller-listings-page-button"
                 >
                   <ChevronLeft size={16} /> Prev
                 </button>
                 <button 
                   onClick={() => setPage(p => p + 1)}
                   disabled={page * 10 >= totalListings}
-                  className="seller-listing-secondary-button"
-                  style={{ display: "flex", alignItems: "center", gap: 4, opacity: page * 10 >= totalListings ? 0.5 : 1, cursor: page * 10 >= totalListings ? "not-allowed" : "pointer" }}
+                  className="seller-listing-secondary-button seller-listings-page-button"
                 >
                   Next <ChevronRight size={16} />
                 </button>
@@ -364,12 +357,12 @@ export function MyListingsView({
         </section>
 
       {confirmDeleteId && createPortal(
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
-              <Trash2 size={20} className="text-danger" style={{ color: "var(--danger)" }} /> Delete Listing
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="delete-listing-title">
+            <h3 id="delete-listing-title" className="confirmation-dialog-title tone-danger">
+              <Trash2 size={20} /> Delete Listing
             </h3>
-            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+            <p className="confirmation-dialog-copy">
               {confirmDeleteRemovesAtExpiry && confirmDeleteSubscription?.expiresAt ? (
                 <>
                   This listing has active access. Deleting it will cancel renewal when applicable, keep the current access, and remove the listing on <strong>{formatDate(confirmDeleteSubscription.expiresAt)}</strong>.
@@ -380,17 +373,17 @@ export function MyListingsView({
                 </>
               )}
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div className="confirmation-dialog-actions">
               <button
                 onClick={() => setConfirmDeleteId(null)}
-                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+                className="confirmation-dialog-button"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void handleDelete(confirmDeleteId)}
                 disabled={deleteAction.busy || deletingId !== null}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: deleteAction.busy || deletingId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                className="confirmation-dialog-button tone-danger"
               >
                 {deletingId === confirmDeleteId ? "Processing..." : confirmDeleteRemovesAtExpiry ? "Cancel Renewal" : "Proceed to Delete"}
               </button>
@@ -401,25 +394,25 @@ export function MyListingsView({
       )}
 
       {confirmCancelSubscriptionId && createPortal(
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 400, maxWidth: "90vw", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16, color: "var(--ink)", display: "flex", alignItems: "center", gap: 8 }}>
-              <RefreshCcw size={20} style={{ color: "var(--gold)" }} /> Cancel Renewal
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="cancel-renewal-title">
+            <h3 id="cancel-renewal-title" className="confirmation-dialog-title tone-warning">
+              <RefreshCcw size={20} /> Cancel Renewal
             </h3>
-            <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 24, lineHeight: 1.5 }}>
+            <p className="confirmation-dialog-copy">
               Are you sure you want to cancel auto-renewal for this listing subscription? The listing keeps its current paid access, but it will not renew automatically.
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div className="confirmation-dialog-actions">
               <button
                 onClick={() => setConfirmCancelSubscriptionId(null)}
-                style={{ padding: "8px 16px", background: "var(--soft)", color: "var(--ink)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontWeight: 500 }}
+                className="confirmation-dialog-button"
               >
                 Keep Renewal
               </button>
               <button
                 onClick={() => void handleCancelRenewal(confirmCancelSubscriptionId)}
                 disabled={cancelAction.busy || cancellingSubscriptionId !== null}
-                style={{ padding: "8px 16px", background: "var(--danger-soft)", color: "var(--danger)", border: "none", borderRadius: "var(--radius-sm)", cursor: cancelAction.busy || cancellingSubscriptionId !== null ? "not-allowed" : "pointer", fontWeight: 600 }}
+                className="confirmation-dialog-button tone-danger"
               >
                 {cancellingSubscriptionId === confirmCancelSubscriptionId ? "Cancelling..." : "Proceed to Cancel"}
               </button>

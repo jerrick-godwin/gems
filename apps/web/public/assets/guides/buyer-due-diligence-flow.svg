@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title description">
+  <title id="title">Buyer due-diligence flow</title>
+  <desc id="description">Five steps from comparing a gemstone listing through requesting evidence, verifying a report, arranging inspection, and agreeing transaction terms.</desc>
+  <rect width="1200" height="520" rx="32" fill="#fff9df"/>
+  <text x="600" y="66" text-anchor="middle" fill="#181207" font-family="Arial, sans-serif" font-size="29" font-weight="700">A practical buyer due-diligence flow</text>
+  <text x="600" y="98" text-anchor="middle" fill="#735b16" font-family="Arial, sans-serif" font-size="17">More risk or value can justify more independent checking.</text>
+  <path d="M148 244H1052" stroke="#c7b969" stroke-width="8" stroke-linecap="round"/>
+  <g font-family="Arial, sans-serif" text-anchor="middle">
+    <g transform="translate(128 244)"><circle r="54" fill="#fdd404" stroke="#b99400" stroke-width="3"/><text y="10" fill="#181207" font-size="28" font-weight="800">1</text><text y="96" fill="#181207" font-size="19" font-weight="700">Compare the listing</text><text y="124" fill="#735b16" font-size="15">Note missing or</text><text y="145" fill="#735b16" font-size="15">inconsistent details</text></g>
+    <g transform="translate(364 244)"><circle r="54" fill="#ffffff" stroke="#c7b969" stroke-width="3"/><text y="10" fill="#181207" font-size="28" font-weight="800">2</text><text y="96" fill="#181207" font-size="19" font-weight="700">Request evidence</text><text y="124" fill="#735b16" font-size="15">Current images, video</text><text y="145" fill="#735b16" font-size="15">and complete report</text></g>
+    <g transform="translate(600 244)"><circle r="54" fill="#ffffff" stroke="#c7b969" stroke-width="3"/><text y="10" fill="#181207" font-size="28" font-weight="800">3</text><text y="96" fill="#181207" font-size="19" font-weight="700">Verify the report</text><text y="124" fill="#735b16" font-size="15">Use the issuing lab's</text><text y="145" fill="#735b16" font-size="15">official service</text></g>
+    <g transform="translate(836 244)"><circle r="54" fill="#ffffff" stroke="#c7b969" stroke-width="3"/><text y="10" fill="#181207" font-size="28" font-weight="800">4</text><text y="96" fill="#181207" font-size="19" font-weight="700">Inspect if warranted</text><text y="124" fill="#735b16" font-size="15">Arrange independent</text><text y="145" fill="#735b16" font-size="15">professional advice</text></g>
+    <g transform="translate(1072 244)"><circle r="54" fill="#181207" stroke="#181207" stroke-width="3"/><text y="10" fill="#fdd404" font-size="28" font-weight="800">5</text><text y="96" fill="#181207" font-size="19" font-weight="700">Agree terms</text><text y="124" fill="#735b16" font-size="15">Payment, delivery,</text><text y="145" fill="#735b16" font-size="15">insurance and returns</text></g>
+  </g>
+  <rect x="180" y="430" width="840" height="54" rx="27" fill="#fff4b6" stroke="#d6c98c" stroke-width="2"/>
+  <text x="600" y="463" text-anchor="middle" fill="#181207" font-family="Arial, sans-serif" font-size="16" font-weight="700">Pause whenever important information does not match. Clarify before proceeding.</text>
+</svg>

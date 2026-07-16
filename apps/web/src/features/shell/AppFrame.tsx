@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Flag, Info, LogIn, LogOut, Plus, Settings, Store, User, X } from "lucide-react";
-import { useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import type { User as AccountUser } from "@gems/schemas";
 import type { MarketplaceAuthUser } from "../../firebase";
@@ -44,6 +44,7 @@ function ProfileMenu({
   setTheme: (theme: ThemePreference) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const menuId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   useOutsideClick(menuRef, () => setIsOpen(false), isOpen);
   const accountName = accountUser?.name?.trim();
@@ -54,31 +55,24 @@ function ProfileMenu({
   const trialMenuLabel = getTrialMenuLabel(accountUser?.trial);
 
   return (
-    <div className="profile-menu-container" ref={menuRef} style={{ position: "relative" }}>
+    <div className="profile-menu-container" ref={menuRef}>
       <button 
         className="avatar-button" 
         onClick={() => setIsOpen(!isOpen)}
-        style={{
-          background: "var(--emerald-subtle)",
-          color: "var(--emerald)",
-          border: "2px solid var(--emerald)",
-          cursor: "pointer",
-          fontWeight: 700,
-          fontSize: 16,
-          transition: "box-shadow 0.2s, transform 0.15s"
-        }}
         aria-label="Profile menu"
+        aria-expanded={isOpen}
+        aria-controls={menuId}
       >
         {avatarLabel || <User size={17} />}
       </button>
       
       {isOpen && (
-        <div className="profile-dropdown">
-          <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--line)", marginBottom: 4 }}>
-            <div style={{ fontWeight: 800, color: "var(--ink)", fontSize: 15, overflowWrap: "anywhere" }}>{displayName}</div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 3, overflowWrap: "anywhere" }}>{email}</div>
+        <div className="profile-dropdown" id={menuId}>
+          <div className="profile-dropdown-header">
+            <div className="profile-dropdown-name">{displayName}</div>
+            <div className="profile-dropdown-email">{email}</div>
             {trialMenuLabel && (
-              <div style={{ color: getTrialMenuTone(accountUser?.trial), fontSize: 12, fontWeight: 800, marginTop: 6, overflowWrap: "anywhere" }}>
+              <div className="profile-dropdown-trial" style={{ "--profile-tone": getTrialMenuTone(accountUser?.trial) } as CSSProperties}>
                 {trialMenuLabel}
               </div>
             )}
@@ -119,13 +113,11 @@ function ProfileMenu({
           >
             <Settings size={16} /> Profile
           </a>
-          <div
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", gap: 8 }}
-          >
-            <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Theme</span>
+          <div className="profile-theme-row">
+            <span>Theme</span>
             <ThemeSwitcher theme={theme} setTheme={setTheme} />
           </div>
-          <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
+          <div className="profile-menu-divider" />
           <button
             className="menu-item danger"
             onClick={() => { handleLogout(); setIsOpen(false); }}
@@ -193,25 +185,24 @@ export function AppFrame({
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")} aria-label="gemslanka.lk home">
-          <span className="brand-mark" style={{ width: 48, height: 48 }}>
-            <img src="/assets/gemslanka-logo.png" alt="" />
-          </span>
-          <span className="brand-site-name"><BrandWordmark /></span>
-        </a>
+        <div className="topbar-inner">
+          <a className="brand" href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")} aria-label="gemslanka.lk home">
+            <span className="brand-mark brand-mark-main">
+              <img src="/assets/gemslanka-logo.png" alt="" />
+            </span>
+            <span className="brand-site-name"><BrandWordmark /></span>
+          </a>
 
-        <nav className="nav-actions" aria-label="Primary" data-nosnippet>
+          <nav className="nav-actions" aria-label="Primary" data-nosnippet>
           {authResolved && !isSignedIn && <ThemeSwitcher theme={theme} setTheme={setTheme} />}
           <a
             href={pathForView("market")}
             className={view === "market" ? "active" : ""}
             onClick={(event) => handleViewLinkClick(event, "market")}
             id="nav-browse"
-            style={{ position: "relative" }}
           >
             Browse
           </a>
-          
           {!authResolved ? (
             <span className="nav-auth-placeholder" aria-hidden="true">
               <span className="skeleton nav-auth-placeholder-action" />
@@ -223,7 +214,6 @@ export function AppFrame({
               className={`primary-action${view === "post" ? " active" : ""}`}
               onClick={(event) => handleViewLinkClick(event, "post")}
               id="nav-post"
-              style={{ padding: "0 16px" }}
             >
               <Plus size={16} strokeWidth={2.5} />
               Post a Gem
@@ -237,7 +227,6 @@ export function AppFrame({
                 className={`primary-action${view === "post" || view === "post_checkout" ? " active" : ""}`}
                 onClick={(event) => handleViewLinkClick(event, "post")}
                 id="nav-post"
-                style={{ padding: "0 16px" }}
               >
                 <Plus size={16} strokeWidth={2.5} />
                 Post a Gem
@@ -248,7 +237,8 @@ export function AppFrame({
               </a>
             </>
           )}
-        </nav>
+          </nav>
+        </div>
       </header>
       {paymentNotice && (
         <div className={`payment-notice payment-notice-${paymentNotice.tone}`} role="status" aria-live="polite">
@@ -265,7 +255,7 @@ export function AppFrame({
           </button>
         </div>
       )}
-      <main>{children}</main>
+      <main className="app-main"><div className="app-main-inner">{children}</div></main>
       <footer className="site-footer" data-nosnippet>
         <div className="footer-accent-bar" aria-hidden="true" />
         <div className="site-footer-inner">
@@ -282,39 +272,53 @@ export function AppFrame({
             </div>
           </div>
 
-          {/* Marketplace links */}
-          <div className="footer-col">
-            <h3 className="footer-col-heading">Marketplace</h3>
-            <nav className="footer-col-links" aria-label="Marketplace">
-              <a href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
-              {!authResolved ? (
-                <span className="footer-auth-placeholder" aria-hidden="true">
-                  <span className="skeleton footer-auth-placeholder-line" />
-                  <span className="skeleton footer-auth-placeholder-line short" />
-                </span>
-              ) : isSignedIn ? (
-                <>
-                  <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
-                  <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")}>My Listings</a>
-                </>
-              ) : (
-                <>
-                  <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
-                  <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")}>Sign In</a>
-                </>
-              )}
-            </nav>
-          </div>
+          <div className="footer-links-grid">
+            {/* Marketplace links */}
+            <div className="footer-col">
+              <h3 className="footer-col-heading">Marketplace</h3>
+              <nav className="footer-col-links" aria-label="Marketplace">
+                <a href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
+                <a href="/buy-gemstones">Buy Gemstones</a>
+                <a href="/sell-gemstones">Sell Gemstones</a>
+                {!authResolved ? (
+                  <span className="footer-auth-placeholder" aria-hidden="true">
+                    <span className="skeleton footer-auth-placeholder-line" />
+                    <span className="skeleton footer-auth-placeholder-line short" />
+                  </span>
+                ) : isSignedIn ? (
+                  <>
+                    <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
+                    <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")}>My Listings</a>
+                  </>
+                ) : (
+                  <>
+                    <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")}>Post a Listing</a>
+                    <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")}>Sign In</a>
+                  </>
+                )}
+              </nav>
+            </div>
 
-          {/* Legal links */}
-          <div className="footer-col">
-            <h3 className="footer-col-heading">Legal &amp; Support</h3>
-            <nav className="footer-col-links" aria-label="Legal">
-              <a href={pathForView("contact")} onClick={(event) => handleViewLinkClick(event, "contact")}>Contact Us</a>
-              <a href={pathForView("terms")} onClick={(event) => handleViewLinkClick(event, "terms")}>Terms &amp; Conditions</a>
-              <a href={pathForView("privacy")} onClick={(event) => handleViewLinkClick(event, "privacy")}>Privacy Policy</a>
-              <a href={pathForView("refund")} onClick={(event) => handleViewLinkClick(event, "refund")}>Refund Policy</a>
-            </nav>
+            <div className="footer-col">
+              <h3 className="footer-col-heading">Guides &amp; About</h3>
+              <nav className="footer-col-links" aria-label="Guides and information">
+                <a href="/gemstones">Gemstone Guide</a>
+                <a href="/guides/buying-gemstones-online">Buying Guide</a>
+                <a href="/guides/gemstone-certification-and-treatments">Certification &amp; Treatments</a>
+                <a href="/about-us">About Us</a>
+              </nav>
+            </div>
+
+            {/* Legal links */}
+            <div className="footer-col">
+              <h3 className="footer-col-heading">Support &amp; Legal</h3>
+              <nav className="footer-col-links" aria-label="Support and legal">
+                <a href={pathForView("contact")} onClick={(event) => handleViewLinkClick(event, "contact")}>Contact Us</a>
+                <a href={pathForView("terms")} onClick={(event) => handleViewLinkClick(event, "terms")}>Terms &amp; Conditions</a>
+                <a href={pathForView("privacy")} onClick={(event) => handleViewLinkClick(event, "privacy")}>Privacy Policy</a>
+                <a href={pathForView("refund")} onClick={(event) => handleViewLinkClick(event, "refund")}>Refund Policy</a>
+              </nav>
+            </div>
           </div>
         </div>
 

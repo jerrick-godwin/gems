@@ -65,96 +65,69 @@ export function ReportRow({
   };
 
   return (
-    <div
-      className="report-row"
-      style={{
-        borderLeft: report.status === "open" ? "3px solid var(--danger)" : "3px solid var(--gold)",
-        background: "var(--panel-strong)",
-        padding: 12,
-        paddingLeft: 16,
-        borderRadius: "var(--radius)",
-        marginBottom: 12,
-        border: "1px solid var(--line)",
-        boxShadow: "var(--shadow-xs)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "stretch",
-        gap: 12
-      }}
-    >
-      <div style={{ display: "flex", gap: 16, alignItems: "center", width: "100%", flexWrap: "wrap" }}>
+    <article className={`report-row card card--surface card--compact status-${report.status}`}>
+      <div className="report-row-summary">
         {listing ? (
           <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} />
         ) : (
-          <div style={{ width: 80, height: 80, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
+          <div className="report-row-media-placeholder">
             <Flag size={20} />
           </div>
         )}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <strong style={{ fontSize: 15, fontWeight: 700, display: "block" }}>{listing?.title || "Listing details unavailable"}</strong>
+        <div className="report-row-identity">
+          <strong>{listing?.title || "Listing details unavailable"}</strong>
           {listing && (
-            <span style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="report-row-listing-meta">
               {listing.attributes.carat} ct · LKR {listing.priceLkr.toLocaleString()}
               {hasActiveCampaign && (
-                <span style={{ background: "var(--gold-soft)", color: "var(--gold-dark)", padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>
+                <span className="report-row-promoted">
                   PROMOTED
                 </span>
               )}
             </span>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-            <Flag size={14} strokeWidth={2} style={{ color: "var(--danger)" }} />
-            <span style={{ fontSize: 13, color: "var(--muted)", textTransform: "capitalize" }}>{report.reason.replace(/_/g, " ")}</span>
-            <em
-              style={{
-                padding: "3px 7px",
-                borderRadius: "4px",
-                background: report.status === "open" ? "var(--danger-soft)" : "rgba(196, 147, 58, 0.1)",
-                color: report.status === "open" ? "var(--danger)" : "var(--gold)",
-                fontSize: 11,
-                fontWeight: 800,
-                textTransform: "uppercase",
-                fontStyle: "normal"
-              }}
-            >
+          <div className="report-row-reason">
+            <Flag size={14} strokeWidth={2} />
+            <span>{report.reason.replace(/_/g, " ")}</span>
+            <em className="report-row-status">
               {report.status}
             </em>
           </div>
         </div>
-        <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)", fontWeight: 600, marginLeft: "auto" }} onClick={() => setExpanded(!expanded)}>
-          <Eye size={16} style={{ marginRight: 6 }} /> {expanded ? "Hide" : "View"}
+        <button className="report-row-action report-row-view" onClick={() => setExpanded(!expanded)}>
+          <Eye size={16} /> {expanded ? "Hide" : "View"}
         </button>
       </div>
 
       {expanded && (
-        <div style={{ background: "var(--soft)", padding: 16, borderRadius: 8, marginTop: 4, display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-            <div>
-              <strong style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)" }}>Report</strong>
-              <div style={{ fontSize: 14, textTransform: "capitalize" }}>{report.reason.replace(/_/g, " ")}</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 3 }}>{report.notes || "No additional notes provided"}</div>
+        <div className="report-row-details card card--inset card--compact">
+          <div className="report-row-facts">
+            <div className="report-row-fact">
+              <strong>Report</strong>
+              <div className="is-capitalized">{report.reason.replace(/_/g, " ")}</div>
+              <div className="report-row-fact-note">{report.notes || "No additional notes provided"}</div>
             </div>
-            <div>
-              <strong style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)" }}>Reporter</strong>
-              <div style={{ fontSize: 14 }}>{reporter ? reporter.name : "Unknown User"}</div>
-              <div style={{ fontSize: 13, color: "var(--muted)" }}>{reporter?.email || "No email"}</div>
+            <div className="report-row-fact">
+              <strong>Reporter</strong>
+              <div>{reporter ? reporter.name : "Unknown User"}</div>
+              <div className="report-row-fact-note">{reporter?.email || "No email"}</div>
             </div>
-            <div>
-              <strong style={{ fontSize: 12, textTransform: "uppercase", color: "var(--muted)" }}>Listing Owner</strong>
-              <div style={{ fontSize: 14 }}>{sellerUser ? sellerUser.name : sellerProfile?.displayName || "Unknown Owner"}</div>
-              <div style={{ fontSize: 13, color: "var(--muted)" }}>{sellerUser?.email || "No email"}</div>
+            <div className="report-row-fact">
+              <strong>Listing Owner</strong>
+              <div>{sellerUser ? sellerUser.name : sellerProfile?.displayName || "Unknown Owner"}</div>
+              <div className="report-row-fact-note">{sellerUser?.email || "No email"}</div>
             </div>
           </div>
 
           {listing ? (
-            <div className="report-listing-detail" style={{ background: "var(--panel)", padding: 14, borderRadius: 6, border: "1px solid var(--line)" }}>
+            <div className="report-listing-detail card card--inset card--compact">
               <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} variant="detail" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+              <div className="report-listing-copy">
                 <div>
-                  <strong style={{ fontSize: 16 }}>{listing.title}</strong>
-                  <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>ID: {listing.id}</div>
+                  <strong className="report-listing-title">{listing.title}</strong>
+                  <div className="report-listing-id">ID: {listing.id}</div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, fontSize: 14 }}>
+                <div className="report-listing-facts">
                   <div><strong>Price:</strong> LKR {listing.priceLkr.toLocaleString()}</div>
                   <div><strong>Carat:</strong> {listing.attributes.carat}</div>
                   <div><strong>Location:</strong> {listing.location}</div>
@@ -162,29 +135,29 @@ export function ReportRow({
                   <div><strong>Origin:</strong> {listing.attributes.origin}</div>
                   <div><strong>Treatment:</strong> {listing.attributes.treatment}</div>
                 </div>
-                <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>{listing.description}</div>
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", marginTop: "auto" }}>
-                  <button style={{ minHeight: 38, padding: "0 16px", background: "var(--danger-soft)", color: "var(--danger)" }} disabled={rowAction.busy || busy !== null} onClick={() => void removeListing()}>
-                    <Trash size={16} style={{ marginRight: 6 }} /> {busy === "remove" ? "Removing..." : "Remove Listing"}
+                <div className="report-listing-description">{listing.description}</div>
+                <div className="report-listing-actions">
+                  <button className="report-row-action tone-danger" disabled={rowAction.busy || busy !== null} onClick={() => void removeListing()}>
+                    <Trash size={16} /> {busy === "remove" ? "Removing..." : "Remove Listing"}
                   </button>
-                  <button style={{ minHeight: 38, padding: "0 16px", background: "var(--soft)", color: "var(--ink)" }} disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
-                    <XCircle size={16} style={{ marginRight: 6 }} /> {busy === "reject" ? "Rejecting..." : "Reject"}
+                  <button className="report-row-action" disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
+                    <XCircle size={16} /> {busy === "reject" ? "Rejecting..." : "Reject"}
                   </button>
                 </div>
               </div>
             </div>
           ) : (
-            <div style={{ padding: 12, background: "var(--panel)", borderRadius: 6, fontSize: 13, color: "var(--muted)" }}>
+            <div className="report-row-unavailable card card--inset card--compact">
               Listing details no longer available.
-              <div style={{ marginTop: 12 }}>
-                <button style={{ minHeight: 36, padding: "0 16px", background: "var(--soft)", color: "var(--ink)" }} disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
-                  <XCircle size={16} style={{ marginRight: 6 }} /> {busy === "reject" ? "Rejecting..." : "Reject"}
+              <div className="report-row-unavailable-action">
+                <button className="report-row-action" disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
+                  <XCircle size={16} /> {busy === "reject" ? "Rejecting..." : "Reject"}
                 </button>
               </div>
             </div>
           )}
         </div>
       )}
-    </div>
+    </article>
   );
 }

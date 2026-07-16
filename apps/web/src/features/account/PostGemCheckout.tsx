@@ -184,7 +184,7 @@ export function PostGemCheckout({
       <div className="checkout-grid">
         <div className="checkout-form-stack">
           {!authResolved ? (
-            <section className="checkout-panel">
+            <section className="checkout-panel card card--surface">
               <h2>Account</h2>
               <p className="checkout-muted">Checking your sign-in status.</p>
             </section>
@@ -194,7 +194,7 @@ export function PostGemCheckout({
 
           <TrialStatusPanel trial={activeTrial} variant="checkout" />
 
-          <section className="checkout-panel" aria-labelledby="checkout-plan-heading">
+          <section className="checkout-panel card card--surface" aria-labelledby="checkout-plan-heading">
             <div className="checkout-panel-title">
               <h2 id="checkout-plan-heading">Choose your Subscription</h2>
             </div>
@@ -224,7 +224,7 @@ export function PostGemCheckout({
           </section>
         </div>
 
-        <aside className="checkout-summary-panel">
+        <aside className="checkout-summary-panel card card--surface">
           <div className="checkout-summary-title">
             <h2>Order Summary</h2>
           </div>
@@ -240,7 +240,7 @@ export function PostGemCheckout({
             <span>{session.draft.attributes.carat} ct · {session.draft.attributes.color} · {session.draft.location}</span>
             <em>{photoCount} photo{photoCount === 1 ? "" : "s"}{certificate ? " · Certificate included" : ""}</em>
           </div>
-          <div className="listing-checkout-amount-card" aria-label="Payment breakdown">
+          <div className="listing-checkout-amount-card card card--inset card--compact" aria-label="Payment breakdown">
             <div className="listing-checkout-amount-row">
               <div className="listing-checkout-amount-copy">
                 <span>Listing subscription</span>
@@ -316,7 +316,7 @@ function InlineCheckoutAuth({
   onDashboardChange: (dashboard: UserDashboard) => void;
 }) {
   return (
-    <section className="checkout-panel listing-checkout-auth">
+    <section className="checkout-panel listing-checkout-auth card card--surface">
       <div className="checkout-panel-title">
         <h2>{mode === "login" ? "Sign in" : "Create account"}</h2>
         <div className="checkout-auth-toggle">

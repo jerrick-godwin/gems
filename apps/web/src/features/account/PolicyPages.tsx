@@ -6,7 +6,7 @@ export function ContactUs({ disclosure }: { disclosure?: MerchantDisclosure }) {
       <div className="section-heading">
         <h1>Contact Us</h1>
       </div>
-      <div className="data-panel policy-content contact-disclosure">
+      <div className="data-panel policy-content contact-disclosure card card--spacious">
         {disclosure ? (
           <div className="contact-detail-grid">
             <ContactDetail label="Merchant name" value={disclosure.merchantName} />
@@ -28,7 +28,7 @@ export function TermsAndConditions() {
         <h1>Terms and Conditions</h1>
         <p>Effective June 11, 2026. These terms apply to gemslanka.lk listing services.</p>
       </div>
-      <div className="data-panel policy-content">
+      <div className="data-panel policy-content card card--spacious">
         <PolicySection title="Listing-only service">
           gemslanka.lk provides listing publication, seller visibility, contact tools, and moderation workflows only. We do not sell, buy, broker, inspect, transport, insure, or guarantee gemstones.
         </PolicySection>
@@ -65,7 +65,7 @@ export function PrivacyPolicy() {
         <h1>Privacy Policy</h1>
         <p>Effective June 11, 2026. This policy explains how gemslanka.lk handles user and listing data.</p>
       </div>
-      <div className="data-panel policy-content">
+      <div className="data-panel policy-content card card--spacious">
         <PolicySection title="Information we collect">
           We collect account details, contact details, profile settings, listing descriptions, uploaded media, certificates, reports, moderation records, trial status and dates, subscription selections, and payment metadata.
         </PolicySection>
@@ -96,7 +96,7 @@ export function RefundPolicy() {
         <h1>Refund Policy</h1>
         <p>Effective June 11, 2026. This policy applies to gemslanka.lk listing subscriptions, renewals, and extra-photo fees.</p>
       </div>
-      <div className="data-panel policy-content">
+      <div className="data-panel policy-content card card--spacious">
         <PolicySection title="No refunds">
           No refunds. gemslanka.lk paid listing subscriptions, renewals, and extra-photo fees are non-refundable. Free trial access has no cash value and is not refundable or redeemable.
         </PolicySection>
