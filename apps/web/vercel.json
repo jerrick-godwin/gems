@@ -25,6 +25,22 @@
       "dest": "/api/index.ts"
     },
     {
+      "src": "^/media/listings/[^/]+/photos/[0-9]+(?:/thumbnail\\.webp)?$",
+      "dest": "/api/index.ts"
+    },
+    {
+      "src": "^/gemstones/[^/]+/?$",
+      "dest": "/api/index.ts"
+    },
+    {
+      "src": "^/(?:buy-gemstones|sell-gemstones|about-us|gemstones|guides/buying-gemstones-online|guides/gemstone-certification-and-treatments)/?$",
+      "dest": "/api/index.ts"
+    },
+    {
+      "src": "^/[A-Za-z0-9-]{8,128}\\.txt$",
+      "dest": "/api/index.ts"
+    },
+    {
       "src": "^/(?:contact-us|terms-and-conditions|privacy-policy|refund-policy)/?$",
       "dest": "/api/index.ts"
     },

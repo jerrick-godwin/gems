@@ -120,11 +120,13 @@ export function useMarketplaceWorkflow({
   const handlePreviewPhone = async (listingId: string) => {
     const result = await api.previewPhone(listingId);
     setPreviewPhones((current) => ({ ...current, [listingId]: result.phone }));
+    return result.phone;
   };
 
   const handleRevealPhone = async (listingId: string) => {
     const result = await api.revealPhone(listingId);
     setFullPhones((current) => ({ ...current, [listingId]: result.phone }));
+    return result.phone;
   };
 
   const handleReportListing = async (listingId: string, reason: string, notes: string) => {

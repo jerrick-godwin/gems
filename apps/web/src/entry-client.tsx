@@ -1,6 +1,6 @@
 import { hydrateRoot } from "react-dom/client";
 import { PublicApp, type PublicRenderPayload } from "./public/PublicDocument.js";
-import "./styles.css";
+import "./styles/entries/public.css";
 
 const stateElement = document.getElementById("__PUBLIC_STATE__");
 if (!stateElement?.textContent) throw new Error("Missing server-rendered public state");

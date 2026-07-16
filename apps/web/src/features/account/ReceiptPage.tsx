@@ -101,7 +101,7 @@ export function ReceiptPage({
   }
 
   return (
-    <section className="invoice-panel data-panel receipt-panel" aria-labelledby="receipt-title">
+    <section className="invoice-panel data-panel receipt-panel card card--surface" aria-labelledby="receipt-title">
       <span className="eyebrow">Payment successful</span>
       <div className="invoice-header">
         <div>
@@ -140,7 +140,7 @@ export function ReceiptPage({
         </button>
       </div>
       {downloadError && (
-        <p role="alert" style={{ color: "var(--danger)", fontSize: 14, fontWeight: 700, marginTop: 12 }}>
+        <p role="alert" className="receipt-error">
           {downloadError}
         </p>
       )}

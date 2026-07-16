@@ -58,9 +58,7 @@ export function AdminConsole({
   return (
     <section className="dashboard">
       <div className="section-heading">
-        <h1 style={{ background: "var(--ink)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-          Admin moderation
-        </h1>
+        <h1>Admin moderation</h1>
         <p>Pending gems, certificate claims, and seller risk.</p>
       </div>
       <div className="metric-grid">
@@ -70,11 +68,11 @@ export function AdminConsole({
         <Metric icon={PackageCheck} label="Paid subscriptions" value={String(successfulPayments.length)} accent="var(--emerald)" />
         <Metric icon={Clock} label="Active trials" value={String(activeTrials)} accent="var(--gold)" />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 24, marginBottom: 16 }}>
+      <div className="admin-console-stack">
         {pendingPayments.length > 0 && (
-          <section className="data-panel admin-orders-panel" style={{ background: "var(--panel-strong)" }}>
+          <section className="data-panel admin-orders-panel card card--inset card--compact">
             <h2>Pending Payments</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontWeight: 700 }}>
+            <div className="admin-payment-status">
               <CreditCard size={18} />
               {pendingPayments.length} payment{pendingPayments.length > 1 ? "s" : ""} waiting for gateway confirmation.
             </div>
@@ -335,29 +333,28 @@ function UserTrialsPanel({
         </div>
       )}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="admin-trial-list">
           {filteredUsers.map((user) => {
             const trial = user.trial;
             const busy = busyUserId === user.id;
             return (
-              <div key={user.id} style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) minmax(170px, .7fr) minmax(240px, auto)", gap: 14, alignItems: "center", padding: 14, border: "1px solid var(--line)", borderRadius: 8, background: "var(--panel)" }}>
-                <div>
-                  <strong style={{ display: "block", color: "var(--ink)" }}>{user.name || user.email}</strong>
-                  <span style={{ color: "var(--muted)", fontSize: 13 }}>{user.email}</span>
+              <div key={user.id} className="admin-trial-row card card--inset card--compact">
+                <div className="admin-trial-identity">
+                  <strong>{user.name || user.email}</strong>
+                  <span>{user.email}</span>
                 </div>
-                <div style={{ color: "var(--muted)", fontSize: 13 }}>
-                  <strong style={{ display: "block", color: trialStatusColor(trial?.status), textTransform: "capitalize" }}>{trial?.status ?? "unknown"}</strong>
+                <div className="admin-trial-status">
+                  <strong className={`status-${trial?.status ?? "unknown"}`}>{trial?.status ?? "unknown"}</strong>
                   {trial?.endsAt && <span>Ends {formatDate(trial.endsAt)}</span>}
-                  {trial?.terminatedAt && <span style={{ display: "block" }}>Terminated {formatDate(trial.terminatedAt)}</span>}
+                  {trial?.terminatedAt && <span>Terminated {formatDate(trial.terminatedAt)}</span>}
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                <div className="admin-trial-actions">
                   <input
                     type="date"
                     value={trialEndDates[user.id] ?? dateInputValue(trial?.endsAt)}
                     min={dateInputValue(trial?.endsAt)}
                     onChange={(event) => setTrialEndDates((current) => ({ ...current, [user.id]: event.target.value }))}
                     disabled={busy}
-                    style={{ height: 38, border: "1px solid var(--line)", borderRadius: 8, padding: "0 10px", color: "var(--ink)", background: "var(--surface)" }}
                   />
                   <button type="button" className="active-listing-action" disabled={busy || !trialEndDates[user.id]} onClick={() => void handleExtend(user)}>
                     <CalendarPlus size={16} /> Extend
@@ -404,7 +401,7 @@ function AdminSection({
   const pluralCount = hasSearch ? visibleCount : totalCount;
 
   return (
-    <section className={`data-panel admin-data-section ${className}`} style={{ background: "var(--panel-strong)" }}>
+    <section className={`data-panel admin-data-section card card--surface ${className}`}>
       <div className="admin-section-header">
         <div>
           <h2>{title}</h2>
@@ -431,12 +428,6 @@ function AdminSection({
 
 function AdminSectionEmpty({ message }: { message: string }) {
   return <div className="admin-section-empty">{message}</div>;
-}
-
-function trialStatusColor(status?: string) {
-  if (status === "active") return "var(--emerald)";
-  if (status === "terminated") return "var(--danger)";
-  return "var(--muted)";
 }
 
 function formatDate(value: string) {

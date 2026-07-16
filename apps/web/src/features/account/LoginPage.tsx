@@ -50,9 +50,9 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
           <p>Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.</p>
         </div>
       </div>
-      <div className="login-panel">
+      <div className="login-panel card card--spacious">
         <div>
-          <h1 style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 34, letterSpacing: "-0.02em", fontWeight: 800, margin: "0 0 10px", color: "var(--ink)" }}>
+          <h1 className="auth-title">
             Sign in to continue
           </h1>
           <p>Use your secure account to manage listings, subscriptions, renewal settings, and reports.</p>

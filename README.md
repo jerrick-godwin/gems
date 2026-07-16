@@ -110,6 +110,9 @@ Backend variables belong in the root `.env.azure.local` for local development or
 | `FIREBASE_SERVICE_ACCOUNT` | Buyer/seller Firebase service-account JSON |
 | `ADMIN_FIREBASE_SERVICE_ACCOUNT` | Admin Firebase service-account JSON |
 | `PUBLIC_SITE_URL` | Canonical public origin and Stripe return URL base |
+| `GOOGLE_SITE_VERIFICATION` | Optional Google Search Console URL-prefix verification token |
+| `BING_SITE_VERIFICATION` | Optional Bing Webmaster Tools verification token |
+| `INDEXNOW_KEY` | Optional 8–128 character IndexNow key used for listing-change notifications |
 | `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key returned to the browser |
 | `STRIPE_SECRET_KEY` | Stripe server API key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
@@ -119,6 +122,17 @@ Backend variables belong in the root `.env.azure.local` for local development or
 | `AZURE_STORAGE_CONTAINER_NAME` | Blob container; defaults to `user-uploads` |
 | `LOCAL_UPLOADS_DIR` | Optional local upload directory override |
 | `PORT` / `HOST` | Server bind settings; defaults to `4100` / `0.0.0.0` |
+
+## Search Engine Setup
+
+The public server renders crawlable marketplace, landing, gemstone category, and listing pages. It also generates the live sitemap at `/sitemap.xml`. After deployment:
+
+1. Verify `gemslanka.lk` in Google Search Console (DNS domain verification is preferred) and submit `https://gemslanka.lk/sitemap.xml`.
+2. Verify or import the property in Bing Webmaster Tools and submit the same sitemap.
+3. Set `INDEXNOW_KEY` to enable automatic IndexNow notifications when public listing state changes. The server exposes the required key file at `/<key>.txt`.
+4. Inspect the homepage, one `/gemstones/:slug` category, and one `/listings/:id` URL in both webmaster tools. Validate listing schema with Google's Rich Results Test and the Schema.org validator.
+
+Search engines choose titles, site names, rich results, and sitelinks algorithmically. The application provides the technical signals and internal structure, but cannot guarantee a particular search-result layout.
 
 Never commit either local environment file or Firebase service-account JSON.
 

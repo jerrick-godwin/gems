@@ -17,6 +17,7 @@ import {
   listingSubscriptions as listingSubscriptionsTable
 } from "./db/schema.js";
 import { createSignedReadUrl } from "./storage.js";
+import { descriptiveListingImageAlt, publicListingPhotoPath } from "../src/shared/seo.js";
 
 export interface ListingContact {
   phone: string;
@@ -188,7 +189,7 @@ export async function getMarketplaceListingPage(filters: MarketplaceFilters): Pr
   };
 }
 
-export async function getPublicListing(listingId: string) {
+export async function getPublicListing(listingId: string, options: { stableMedia?: boolean } = {}) {
   requireMarketplaceDatabase();
   const rows = await db
     .select({ listing: listingTable, seller: sellerProfileTable })
@@ -197,12 +198,48 @@ export async function getPublicListing(listingId: string) {
     .where(and(eq(listingTable.id, listingId), publicListingPredicate()))
     .limit(1);
   const row = rows[0];
-  return row ? { listing: toListing(row.listing), seller: toSellerProfile(row.seller) } : undefined;
+  if (!row) return undefined;
+  const listing = toListing(row.listing);
+  return {
+    listing: options.stableMedia === false ? listing : {
+      ...listing,
+      media: listing.media.map((media) => media.kind === "photo" ? {
+        ...media,
+        url: publicListingPhotoPath(listing.id, media.order),
+        thumbnailUrl: publicListingPhotoPath(listing.id, media.order, true),
+        alt: descriptiveListingImageAlt(media.alt, listing.title, humanizeGemType(listing.gemTypeId))
+      } : media)
+    },
+    seller: toSellerProfile(row.seller)
+  };
 }
 
 export async function getPublicListingIds() {
   requireMarketplaceDatabase();
   return (await db.select({ id: listingTable.id }).from(listingTable).where(publicListingPredicate())).map((row) => row.id);
+}
+
+export async function getPublicSeoEntries() {
+  requireMarketplaceDatabase();
+  const rows = await db.select({
+    id: listingTable.id,
+    title: listingTable.title,
+    gemTypeId: listingTable.gemTypeId,
+    updatedAt: listingTable.updatedAt,
+    media: listingTable.media
+  }).from(listingTable).where(publicListingPredicate());
+  return rows.map((row) => ({
+    id: row.id,
+    gemTypeId: row.gemTypeId,
+    updatedAt: row.updatedAt.toISOString(),
+    images: (Array.isArray(row.media) ? row.media : [])
+      .filter((media) => media.kind === "photo")
+      .sort((left, right) => left.order - right.order)
+      .map((media) => ({
+        order: media.order,
+        alt: descriptiveListingImageAlt(media.alt, row.title, humanizeGemType(row.gemTypeId))
+      }))
+  }));
 }
 
 function requireMarketplaceDatabase() {
@@ -233,11 +270,7 @@ function toListingSearchItem(row: {
   for (const campaign of row.campaigns) {
     if (campaign.status === "active" && campaign.startsAt <= now && campaign.endsAt >= now) promotions.add(campaign.type);
   }
-  const firstPhoto = row.firstMedia ? {
-    ...row.firstMedia,
-    url: normalizeListingMediaUrl(row.firstMedia.url ?? row.firstMedia.id, row.firstMedia.id),
-    thumbnailUrl: row.firstMedia.thumbnailKey ? normalizeListingMediaUrl(row.firstMedia.thumbnailKey, row.firstMedia.thumbnailKey) : row.firstMedia.thumbnailUrl
-  } : undefined;
+  const firstPhoto = row.firstMedia;
   return {
     id: row.id,
     title: row.title,
@@ -263,9 +296,9 @@ function toListingSearchItem(row: {
       rating: row.sellerRating
     },
     image: firstPhoto ? {
-      url: firstPhoto.url,
-      thumbnailUrl: (firstPhoto as typeof firstPhoto & { thumbnailUrl?: string }).thumbnailUrl,
-      alt: firstPhoto.alt || row.title,
+      url: publicListingPhotoPath(row.id, firstPhoto.order),
+      thumbnailUrl: publicListingPhotoPath(row.id, firstPhoto.order, true),
+      alt: descriptiveListingImageAlt(firstPhoto.alt, row.title, humanizeGemType(row.gemTypeId)),
       width: 800,
       height: 600
     } : undefined
@@ -774,6 +807,10 @@ function normalizeBlobReadKey(value?: string | null) {
   if (value.startsWith("mock-read://")) return value.slice("mock-read://".length);
   if (value.startsWith("users/") || value.startsWith("listing-checkout-sessions/")) return value;
   return undefined;
+}
+
+function humanizeGemType(value: string) {
+  return value.split("-").map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part).join(" ");
 }
 
 function toConversation(row: typeof conversationTable.$inferSelect): Conversation {

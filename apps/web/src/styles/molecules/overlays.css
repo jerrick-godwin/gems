@@ -1,0 +1,351 @@
+/* ── Modal Popup ──────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  animation: fade-in var(--duration-fast) var(--ease-out);
+}
+
+.modal-content {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  animation: rise-in var(--duration-normal) var(--ease-spring);
+}
+
+.modal-overlay--priority {
+  z-index: 100000;
+}
+
+.confirmation-dialog {
+  width: min(400px, 90vw);
+  padding: 24px;
+}
+
+.confirmation-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  color: var(--ink);
+}
+
+.confirmation-dialog-title.tone-danger svg {
+  color: var(--danger);
+}
+
+.confirmation-dialog-title.tone-warning svg {
+  color: var(--gold);
+}
+
+.confirmation-dialog-title.tone-success svg {
+  color: var(--success);
+}
+
+.confirmation-dialog-copy {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.confirmation-dialog-subject {
+  display: block;
+  margin: 4px 0 8px;
+  color: var(--ink);
+}
+
+.confirmation-dialog-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100px;
+  padding: 12px;
+  margin-bottom: 20px;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--soft);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.confirmation-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.confirmation-dialog-button {
+  min-height: 38px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.confirmation-dialog-button.tone-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.confirmation-dialog-button.tone-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.confirmation-dialog-button.tone-warning {
+  background: var(--gold-soft);
+  color: var(--gold-dark);
+}
+
+.confirmation-dialog-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 420px) {
+  .confirmation-dialog-actions,
+  .confirmation-dialog-button {
+    width: 100%;
+  }
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: 1px solid rgba(var(--foreground-rgb), 0.1);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease;
+}
+
+.modal-close:hover {
+  background: rgba(var(--foreground-rgb), 0.1);
+}
+
+.required-asterisk {
+  color: var(--danger);
+  margin-left: 4px;
+}
+
+/* ── Carousel navigation ──────────────────────────────────── */
+
+.carousel-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition:
+    background var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.carousel-nav:hover {
+  background: rgba(0, 0, 0, 0.78);
+  transform: translateY(-50%) scale(1.08);
+}
+
+.carousel-nav.prev { left: 10px; }
+.carousel-nav.next { right: 10px; }
+
+
+/* ── Pagination buttons ───────────────────────────────────── */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 32px;
+}
+
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--panel-strong);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: var(--emerald-subtle);
+  border-color: var(--emerald);
+  color: var(--emerald);
+  transform: translateY(-1px);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pagination-info {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.listing-page-size {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.listing-page-size select {
+  width: 92px;
+  height: 40px;
+  padding: 0 38px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--field-bg);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Searchable multi-select */
+.multi-select {
+  position: relative;
+}
+
+.multi-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.multi-select-trigger:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.multi-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-select-chevron {
+  flex: 0 0 auto;
+  transition: transform var(--duration-fast) ease;
+}
+
+.multi-select.is-open .multi-select-chevron {
+  transform: rotate(180deg);
+}
+
+.multi-select-popover {
+  position: absolute;
+  z-index: 50;
+  top: 100%;
+  right: 0;
+  left: 0;
+  padding: 8px;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+}
+
+.multi-select-search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  color: var(--ink);
+}
+
+.multi-select-options {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 8px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.multi-select-empty {
+  padding: 8px;
+  color: var(--sage);
+  font-size: 12px;
+}

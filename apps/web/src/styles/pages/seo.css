@@ -1,0 +1,565 @@
+/* ── Search landing pages and marketplace introductions ──── */
+
+.seo-page,
+.marketplace-seo-intro,
+.category-seo-intro {
+  width: min(var(--layout-wide), 100%);
+  margin: 0 auto;
+}
+
+.seo-page {
+  display: grid;
+  gap: var(--section-gap);
+  padding-bottom: clamp(24px, 4vw, 48px);
+}
+
+.seo-hero,
+.marketplace-seo-intro,
+.category-seo-intro {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at top right, rgba(253, 212, 4, 0.16), transparent 34%),
+    var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.seo-hero {
+  padding: clamp(28px, 6vw, 72px);
+  text-align: left;
+}
+
+.seo-hero h1,
+.marketplace-seo-intro h1,
+.category-seo-intro h1 {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: clamp(30px, 5vw, 54px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.seo-hero > p,
+.marketplace-seo-intro > div > p,
+.category-seo-intro > p {
+  max-width: 780px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: clamp(15px, 2vw, 18px);
+  line-height: 1.75;
+}
+
+.seo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.seo-actions .primary-action,
+.seo-secondary-action {
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: var(--radius-full);
+  text-decoration: none;
+}
+
+.seo-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-strong);
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.seo-section {
+  display: grid;
+  gap: 20px;
+}
+
+.seo-section > h2,
+.seo-section .section-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.seo-section .section-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.seo-card-grid,
+.seo-sitelink-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.seo-card,
+.seo-sitelink-grid a {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.gemstone-directory-card {
+  align-content: start;
+  width: 100%;
+}
+
+.seo-card > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  background: var(--brand-yellow);
+  color: #171004;
+  font-weight: 900;
+}
+
+.seo-card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.seo-card p,
+.seo-sitelink-grid span,
+.seo-prose p,
+.seo-marketplace-notice p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.seo-card p {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.guide-visual-section {
+  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr);
+  align-items: start;
+  width: 100%;
+}
+
+.guide-visual-copy {
+  min-width: 0;
+}
+
+.guide-visual-copy h2,
+.guide-example h2,
+.guide-mismatch h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.guide-visual-copy > p,
+.guide-example .section-heading > p,
+.guide-mismatch p,
+.guide-source-list p,
+.guide-source-list > li > span,
+.seo-related-inline,
+.guide-matrix .section-heading > p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.guide-visual-copy > p {
+  margin: 12px 0 0;
+}
+
+.guide-figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.guide-figure-scroll {
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+}
+
+.guide-figure-scroll:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.guide-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff9df;
+}
+
+.guide-figure-scroll-note {
+  display: none;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.guide-figure figcaption {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.guide-legend {
+  display: grid;
+  gap: 9px;
+  margin: 18px 0 0;
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.guide-legend li::marker {
+  color: var(--brand-yellow-dark);
+  font-weight: 900;
+}
+
+.guide-citation {
+  display: inline;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--panel-strong);
+  color: var(--ink);
+  font-size: 0.9em;
+  font-weight: 750;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.guide-citation:focus-visible,
+.guide-source-list a:focus-visible,
+.seo-related-inline a:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.guide-example-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.guide-example-panel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
+}
+
+.guide-example-panel h3,
+.guide-matrix-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.guide-example-panel ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.guide-matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.guide-matrix-card {
+  min-width: 0;
+  padding: 20px;
+}
+
+.guide-matrix-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.guide-matrix-card strong {
+  color: var(--ink);
+}
+
+.guide-mismatch {
+  width: 100%;
+  padding: clamp(22px, 4vw, 36px);
+  border-left: 4px solid var(--brand-yellow);
+}
+
+.guide-mismatch p:last-child {
+  margin-bottom: 0;
+}
+
+.guide-sources {
+  width: 100%;
+}
+
+.guide-source-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: source;
+}
+
+.guide-source-list li {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
+  counter-increment: source;
+}
+
+.guide-source-list a {
+  color: var(--ink);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.guide-source-list a::before {
+  content: counter(source) ". ";
+  color: var(--brand-yellow-dark);
+}
+
+.guide-source-list p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.guide-source-list > li > span {
+  font-size: 12px;
+}
+
+.seo-related-pages {
+  width: 100%;
+}
+
+.seo-related-inline {
+  margin: 8px 0 0;
+}
+
+.seo-related-inline a {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.seo-related-links-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.seo-related-links-grid a {
+  align-content: start;
+  min-height: 130px;
+}
+
+.seo-prose {
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+}
+
+.seo-prose > h2,
+.seo-prose > p {
+  width: min(var(--layout-prose), 100%);
+  margin-inline: 0 auto;
+}
+
+.seo-prose > h2 {
+  margin-top: 16px;
+}
+
+.seo-prose > p {
+  margin-block: -8px 8px;
+}
+
+.gemstone-directory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gemstone-directory a {
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--panel-strong);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.seo-marketplace-notice {
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 20px 24px;
+  border-left: 4px solid var(--brand-yellow);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.seo-marketplace-notice > strong,
+.seo-marketplace-notice > p,
+.seo-marketplace-notice > a {
+  display: block;
+  width: min(var(--layout-prose), 100%);
+  margin-inline: 0 auto;
+}
+
+.seo-marketplace-notice > p {
+  margin-block: 8px;
+}
+
+.seo-marketplace-notice a {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.marketplace-seo-intro {
+  display: grid;
+  gap: 22px;
+  margin-bottom: 22px;
+  padding: clamp(24px, 5vw, 52px);
+}
+
+.marketplace-seo-intro > div > p {
+  margin-left: 0;
+}
+
+.seo-sitelink-grid a {
+  display: grid;
+  gap: 6px;
+  padding-right: 52px;
+  transition: border-color var(--duration-fast) ease, transform var(--duration-fast) ease;
+}
+
+.seo-sitelink-grid a:hover {
+  border-color: var(--brand-yellow);
+  transform: translateY(-2px);
+}
+
+.seo-sitelink-grid span {
+  font-size: 13px;
+}
+
+.category-seo-intro {
+  margin-bottom: 22px;
+  padding: clamp(22px, 4vw, 42px);
+}
+
+.category-seo-intro h1 {
+  font-size: clamp(28px, 4vw, 46px);
+}
+
+.category-seo-intro > p {
+  margin-left: 0;
+}
+
+.seo-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.seo-breadcrumbs a {
+  color: inherit;
+}
+
+@media (max-width: 1100px) {
+  .seo-card-grid,
+  .seo-sitelink-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+}
+
+@media (max-width: 900px) {
+  .guide-visual-section,
+  .guide-matrix-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-figure {
+    order: -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .seo-card-grid,
+  .seo-sitelink-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .seo-hero,
+  .marketplace-seo-intro,
+  .category-seo-intro {
+    border-radius: var(--radius-lg);
+  }
+
+  .guide-example-grid,
+  .guide-source-list {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-visual-section,
+  .guide-example,
+  .guide-sources {
+    padding: 18px;
+  }
+
+  .guide-example-panel,
+  .guide-matrix-card {
+    padding: 16px;
+  }
+
+  .guide-figure-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    background: #fff9df;
+    scrollbar-color: var(--brand-yellow-dark) transparent;
+  }
+
+  .guide-figure img {
+    width: 760px;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .guide-figure-scroll-note {
+    display: block;
+  }
+}

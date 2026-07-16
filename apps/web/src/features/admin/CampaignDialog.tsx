@@ -75,72 +75,65 @@ export function CampaignDialog({
   };
 
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100000, backdropFilter: "blur(4px)" }}>
-      <div style={{ background: "var(--bg)", padding: 24, borderRadius: "var(--radius)", width: "100%", maxWidth: 600, maxHeight: "90vh", overflow: "auto", boxShadow: "var(--shadow-xl)", border: "1px solid var(--line)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 20 }}>Manage Promotions</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--ink)" }}><XCircle size={24} /></button>
+    <div className="modal-overlay modal-overlay--priority" role="presentation">
+      <div className="campaign-dialog modal-content card card--surface" role="dialog" aria-modal="true" aria-labelledby="campaign-dialog-title">
+        <div className="campaign-dialog-header">
+          <h2 id="campaign-dialog-title">Manage Promotions</h2>
+          <button type="button" className="campaign-dialog-close" onClick={onClose} aria-label="Close promotions dialog"><XCircle size={24} /></button>
         </div>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 14, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12 }}>New Campaign</h3>
-          <form onSubmit={(e) => void handleCreate(e)} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <label style={{ flex: 1 }}>
-              <span style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Type</span>
-              <select value={type} onChange={e => setType(e.target.value as PromotionCampaign["type"])} style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid var(--line)" }}>
+        <div className="campaign-dialog-create">
+          <h3>New Campaign</h3>
+          <form className="campaign-dialog-form" onSubmit={(e) => void handleCreate(e)}>
+            <label>
+              <span>Type</span>
+              <select value={type} onChange={e => setType(e.target.value as PromotionCampaign["type"])}>
                 <option value="featured">Featured</option>
                 <option value="top">Top Ad</option>
                 <option value="urgent">Urgent</option>
                 <option value="bump">Bump</option>
               </select>
             </label>
-            <label style={{ flex: 1 }}>
-              <span style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Start Date</span>
-              <input type="date" value={startsAtInput} onChange={e => setStartsAtInput(e.target.value)} required min={defaultStartsAt} style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid var(--line)", boxSizing: "border-box" }} />
+            <label>
+              <span>Start Date</span>
+              <input type="date" value={startsAtInput} onChange={e => setStartsAtInput(e.target.value)} required min={defaultStartsAt} />
             </label>
-            <label style={{ flex: 1 }}>
-              <span style={{ fontSize: 12, display: "block", marginBottom: 4 }}>End Date</span>
-              <input type="date" value={endsAtInput} onChange={e => setEndsAtInput(e.target.value)} required min={startsAtInput} style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid var(--line)", boxSizing: "border-box" }} />
+            <label>
+              <span>End Date</span>
+              <input type="date" value={endsAtInput} onChange={e => setEndsAtInput(e.target.value)} required min={startsAtInput} />
             </label>
-            <button type="submit" disabled={campaignAction.busy || busy} style={{ minHeight: 38, padding: "0 16px" }}>Create</button>
+            <button type="submit" className="campaign-dialog-create-button" disabled={campaignAction.busy || busy}>Create</button>
           </form>
         </div>
 
-        <div>
-          <h3 style={{ fontSize: 14, textTransform: "uppercase", color: "var(--muted)", marginBottom: 12 }}>Existing Campaigns</h3>
+        <div className="campaign-dialog-existing">
+          <h3>Existing Campaigns</h3>
           {(listing.campaigns || []).length === 0 ? (
-            <p style={{ color: "var(--muted)", fontSize: 14 }}>No campaigns for this listing.</p>
+            <p className="campaign-dialog-empty">No campaigns for this listing.</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="campaign-dialog-list">
               {(listing.campaigns || []).map(campaign => (
-                <div key={campaign.id} style={{ border: "1px solid var(--line)", padding: 12, borderRadius: 6 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <strong style={{ textTransform: "capitalize" }}>{campaign.type}</strong>
-                    <span style={{ 
-                      padding: "2px 6px", 
-                      borderRadius: 4, 
-                      fontSize: 11, 
-                      fontWeight: 700, 
-                      background: campaign.status === "active" ? "var(--mint)" : "var(--soft)",
-                      color: campaign.status === "active" ? "var(--emerald-dark)" : "var(--muted)" 
-                    }}>
+                <div key={campaign.id} className="campaign-dialog-item card card--inset card--compact">
+                  <div className="campaign-dialog-item-header">
+                    <strong>{campaign.type}</strong>
+                    <span className={`campaign-dialog-status ${campaign.status === "active" ? "is-active" : ""}`}>
                       {campaign.status.toUpperCase()}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                  <div className="campaign-dialog-dates">
                     <Calendar size={14} /> {new Date(campaign.startsAt).toLocaleDateString()} - {new Date(campaign.endsAt).toLocaleDateString()}
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div className="campaign-dialog-actions">
                     {campaign.status === "active" && (
-                      <button onClick={() => void handleAction(campaign.id, "pause")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>Pause</button>
+                      <button onClick={() => void handleAction(campaign.id, "pause")} disabled={campaignAction.busy || busy}>Pause</button>
                     )}
                     {campaign.status === "paused" && (
-                      <button onClick={() => void handleAction(campaign.id, "resume")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>Resume</button>
+                      <button onClick={() => void handleAction(campaign.id, "resume")} disabled={campaignAction.busy || busy}>Resume</button>
                     )}
                     {(campaign.status === "active" || campaign.status === "paused") && (
                       <>
-                        <button onClick={() => void handleAction(campaign.id, "extend")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--soft)", color: "var(--ink)" }}>+7 Days</button>
-                        <button onClick={() => void handleAction(campaign.id, "stop")} disabled={campaignAction.busy || busy} style={{ flex: 1, padding: "6px 0", fontSize: 13, background: "var(--danger-soft)", color: "var(--danger)" }}>Stop</button>
+                        <button onClick={() => void handleAction(campaign.id, "extend")} disabled={campaignAction.busy || busy}>+7 Days</button>
+                        <button className="tone-danger" onClick={() => void handleAction(campaign.id, "stop")} disabled={campaignAction.busy || busy}>Stop</button>
                       </>
                     )}
                   </div>

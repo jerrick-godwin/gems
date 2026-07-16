@@ -7,11 +7,13 @@ type StatusStateProps = {
   variant?: "marketplace" | "admin" | "payment";
   showAction?: boolean;
   onRetry?: () => void | Promise<void>;
+  headingLevel?: 1 | 2;
 };
 
 const MARKETPLACE_SKELETON_CARDS = ["primary", "secondary"] as const;
 
-export function StatusState({ title, message, loading, variant = "marketplace", showAction = true, onRetry }: StatusStateProps) {
+export function StatusState({ title, message, loading, variant = "marketplace", showAction = true, onRetry, headingLevel = 1 }: StatusStateProps) {
+  const Heading = headingLevel === 2 ? "h2" : "h1";
   const retryLoad = () => {
     window.scrollTo({ top: 0, left: 0 });
     if (onRetry) {
@@ -29,7 +31,7 @@ export function StatusState({ title, message, loading, variant = "marketplace", 
           <LoaderCircle className="payment-processing-spinner" size={24} strokeWidth={2.5} />
         </div>
         <div className="status-state-copy">
-          <h1>{title}</h1>
+          <Heading>{title}</Heading>
           <p>{message}</p>
           <p className="payment-processing-note">Do not close, refresh, or go back while we finish this step.</p>
         </div>
@@ -79,7 +81,7 @@ export function StatusState({ title, message, loading, variant = "marketplace", 
     return (
       <section className="status-state status-state-marketplace" aria-live="polite">
         <div className="status-state-copy">
-          <h1>{title}</h1>
+          <Heading>{title}</Heading>
           <p>{message}</p>
         </div>
         {showAction && (
@@ -98,7 +100,7 @@ export function StatusState({ title, message, loading, variant = "marketplace", 
           <ShieldCheck size={48} strokeWidth={1.5} />
         </div>
       )}
-      <h1 className={variant === "admin" ? "status-state-admin-title" : undefined}>{title}</h1>
+      <Heading className={variant === "admin" ? "status-state-admin-title" : undefined}>{title}</Heading>
       <p>{message}</p>
     </section>
   );

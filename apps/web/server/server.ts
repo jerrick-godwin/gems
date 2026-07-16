@@ -10,7 +10,7 @@ import {
   getConversations,
   getGemTypes,
   getPublicListing,
-  getPublicListingIds,
+  getPublicSeoEntries,
   getListings,
   getLiveListings,
   getLocations,
@@ -77,6 +77,10 @@ import {
 import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
 import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./stripe.js";
 import { ensureDatabaseCompatibility, requireDatabase } from "./db/index.js";
+import { indexNowKey } from "./indexnow.js";
+import { resolvePublicListingMedia } from "./public-listing-media.js";
+import { buildSitemapXml } from "./sitemap.js";
+import { isPriorityGemSlug, seoLandingPageFromPath, seoLandingPages } from "../src/shared/seo.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -103,6 +107,7 @@ const mimeTypes: Record<string, string> = {
 
 const publicPagePaths = [
   "/",
+  ...Object.values(seoLandingPages).map((page) => page.path),
   "/contact-us",
   "/terms-and-conditions",
   "/privacy-policy",
@@ -151,29 +156,12 @@ Sitemap: ${siteUrl}/sitemap.xml
 
 async function sendSitemapXml(request: IncomingMessage, response: ServerResponse) {
   const siteUrl = getPublicSiteUrl(request);
-  const today = new Date().toISOString().slice(0, 10);
-  const listingPaths = await getPublicListingIds().then((ids) => ids.map((id) => `/listings/${encodeURIComponent(id)}`)).catch(() => []);
-  const urls = [...publicPagePaths, ...listingPaths].map((path) => `  <url>
-    <loc>${escapeHtml(`${siteUrl}${path}`)}</loc>
-    <lastmod>${today}</lastmod>
-  </url>`).join("\n");
-
+  const [listings, gemTypes] = await Promise.all([
+    getPublicSeoEntries().catch(() => []),
+    getGemTypes().catch(() => [])
+  ]);
   response.writeHead(200, { "content-type": "application/xml; charset=utf-8" });
-  response.end(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls}
-</urlset>
-`);
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => {
-    if (character === "&") return "&amp;";
-    if (character === "<") return "&lt;";
-    if (character === ">") return "&gt;";
-    if (character === '"') return "&quot;";
-    return "&#39;";
-  });
+  response.end(buildSitemapXml(siteUrl, listings, gemTypes));
 }
 
 
@@ -485,7 +473,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         return true;
       }
       const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       if (listing && decision === "reject") {
         await cancelListingSubscriptionsForListing(listing.id);
       }
@@ -501,7 +489,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const adminListingMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)$/);
     if (request.method === "DELETE" && adminListingMatch) {
       const listing = await removeListing(adminListingMatch[1]);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -514,7 +502,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         return true;
       }
       const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -534,7 +522,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         endsAt: body.endsAt
       };
       const listing = await createPromotionCampaign(createCampaignMatch[1], campaign);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 201 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -543,7 +531,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (request.method === "PATCH" && updateCampaignMatch) {
       const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
       const listing = await updatePromotionCampaign(updateCampaignMatch[1], updateCampaignMatch[2], body);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing or campaign not found" });
       return true;
     }
@@ -702,7 +690,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     const myListingMatch = path.match(/^\/api\/v1\/users\/me\/listings\/([^/]+)$/);
     if (myListingMatch && request.method === "DELETE") {
       const listing = await removeUserListing(user.id, myListingMatch[1]);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -710,7 +698,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     if (myListingMatch && request.method === "PATCH") {
       const body = parseObject(await readJsonBody(request).catch(() => ({})));
       const listing = await updateUserListing(user.id, myListingMatch[1], body);
-      if (listing) await broadcastMarketplaceInvalidation();
+      if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
@@ -1046,6 +1034,27 @@ async function handleLocalUploadStatic(request: IncomingMessage, response: Serve
   return true;
 }
 
+async function handlePublicListingMedia(request: IncomingMessage, response: ServerResponse) {
+  if (request.method !== "GET") return false;
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  const result = await resolvePublicListingMedia(
+    url.pathname,
+    (listingId) => getPublicListing(listingId, { stableMedia: false }).catch(() => undefined)
+  );
+  if (!result.matched) return false;
+  if (!result.location) {
+    sendJson(response, 404, { error: "Public listing image not found" });
+    return true;
+  }
+  response.writeHead(302, {
+    location: result.location,
+    "cache-control": "public, max-age=300, stale-while-revalidate=300",
+    "x-robots-tag": "index,follow,max-image-preview:large"
+  });
+  response.end();
+  return true;
+}
+
 interface PublicRenderer {
   renderPublicPage(payload: PublicRenderPayload, options?: { abortMs?: number }): Promise<{ pipe(destination: ServerResponse): unknown }>;
 }
@@ -1053,7 +1062,8 @@ let productionRenderer: Promise<PublicRenderer> | undefined;
 let productionAssets: Promise<PublicRenderPayload["assets"]> | undefined;
 
 function isPublicRenderPath(pathname: string) {
-  return publicPagePaths.includes(pathname) || /^\/listings\/[^/]+\/?$/.test(pathname);
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  return publicPagePaths.includes(normalized) || /^\/listings\/[^/]+$/.test(normalized) || /^\/gemstones\/[^/]+$/.test(normalized);
 }
 
 async function handlePublicSsr(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
@@ -1067,7 +1077,8 @@ async function handlePublicSsr(request: IncomingMessage, response: ServerRespons
   let status = 200;
   let route: PublicRenderPayload["route"];
   try {
-    if (url.pathname === "/") {
+    const normalizedPath = url.pathname.replace(/\/+$/, "") || "/";
+    if (normalizedPath === "/") {
       const cookieLimit = pageSizeFromCookie(request.headers.cookie);
       const filters = parseMarketplaceFilters(url, cookieLimit);
       const result = await loadMarketplacePage(filters);
@@ -1078,7 +1089,7 @@ async function handlePublicSsr(request: IncomingMessage, response: ServerRespons
         response.setHeader("set-cookie", `marketplace_page_size=${filters.limit}; Path=/; Max-Age=31536000; SameSite=Lax`);
       }
     } else {
-      const listingMatch = url.pathname.match(/^\/listings\/([^/]+)\/?$/);
+      const listingMatch = normalizedPath.match(/^\/listings\/([^/]+)$/);
       if (listingMatch) {
         const dbStartedAt = performance.now();
         const result = await getPublicListing(decodeURIComponent(listingMatch[1]));
@@ -1088,14 +1099,32 @@ async function handlePublicSsr(request: IncomingMessage, response: ServerRespons
           status = 404;
           route = { kind: "error", status: 404, message: "This listing is unavailable, expired, or has been removed." };
         }
+      } else if (/^\/gemstones\/[^/]+$/.test(normalizedPath)) {
+        const slug = decodeURIComponent(normalizedPath.slice("/gemstones/".length));
+        const gemTypes = await getGemTypes();
+        const gemType = gemTypes.find((item) => item.slug === slug);
+        if (!gemType) {
+          status = 404;
+          route = { kind: "error", status: 404, message: "This gemstone category could not be found." };
+        } else {
+          const cookieLimit = pageSizeFromCookie(request.headers.cookie);
+          const filters = { ...parseMarketplaceFilters(url, cookieLimit), gemType: gemType.id };
+          const result = await loadMarketplacePage(filters);
+          route = { kind: "category", gemType, data: result.data, indexable: isPriorityGemSlug(gemType.slug) || result.data.page.total > 0 };
+          databaseMs = result.databaseMs;
+          cacheStatus = result.cache;
+        }
       } else {
+        const landingPage = seoLandingPageFromPath(normalizedPath);
         const pageByPath: Record<string, "contact" | "terms" | "privacy" | "refund"> = {
           "/contact-us": "contact",
           "/terms-and-conditions": "terms",
           "/privacy-policy": "privacy",
           "/refund-policy": "refund"
         };
-        route = { kind: "content", page: pageByPath[url.pathname] };
+        route = landingPage
+          ? { kind: "landing", page: landingPage, gemTypes: await getGemTypes() }
+          : { kind: "content", page: pageByPath[normalizedPath] };
       }
     }
   } catch (error) {
@@ -1113,6 +1142,10 @@ async function handlePublicSsr(request: IncomingMessage, response: ServerRespons
       theme: readCookie(request.headers.cookie, "theme") === "dark" ? "dark" : "light",
       year: new Date().getUTCFullYear(),
       route,
+      verification: {
+        google: process.env.GOOGLE_SITE_VERIFICATION?.trim() || undefined,
+        bing: process.env.BING_SITE_VERIFICATION?.trim() || undefined
+      },
       assets
     }, { abortMs: 10_000 });
     const renderMs = performance.now() - renderStartedAt;
@@ -1138,7 +1171,7 @@ async function loadPublicRenderer(vite: ViteDevServer | undefined): Promise<Publ
 }
 
 async function loadPublicAssets(): Promise<PublicRenderPayload["assets"]> {
-  if (!isProduction) return { clientEntry: "/src/entry-client.tsx", stylesheets: ["/src/styles.css"], modulePreloads: [], reactRefreshPreamble: true };
+  if (!isProduction) return { clientEntry: "/src/entry-client.tsx", stylesheets: ["/src/styles/entries/public.css"], modulePreloads: [], reactRefreshPreamble: true };
   productionAssets ??= (async () => {
     const manifest = JSON.parse(await readFile(resolve(staticRoot, ".vite/manifest.json"), "utf8")) as Record<string, ViteManifestEntry>;
     return publicAssetsFromViteManifest(manifest);
@@ -1217,6 +1250,12 @@ async function main() {
 async function handleRequest(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    const configuredIndexNowKey = indexNowKey();
+    if (request.method === "GET" && configuredIndexNowKey && url.pathname === `/${configuredIndexNowKey}.txt`) {
+      response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400" });
+      response.end(configuredIndexNowKey);
+      return;
+    }
     if (request.method === "GET" && !isPublicRenderPath(url.pathname) && !extname(url.pathname) && !url.pathname.startsWith("/api/")) {
       response.setHeader("x-robots-tag", "noindex,follow");
     }
@@ -1231,6 +1270,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     }
 
     if (await handleApi(request, response)) return;
+    if (await handlePublicListingMedia(request, response)) return;
     if (await handleLocalUploadStatic(request, response)) return;
     if (await handlePublicSsr(request, response, vite)) return;
 

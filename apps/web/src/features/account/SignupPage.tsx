@@ -84,9 +84,9 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: (dashboard:
           <p>Create a secure buyer or seller account with verified contact details.</p>
         </div>
       </div>
-      <div className="login-panel">
+      <div className="login-panel card card--spacious">
         <div>
-          <h1 style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 34, letterSpacing: "-0.02em", fontWeight: 800, margin: "0 0 10px", color: "var(--ink)" }}>
+          <h1 className="auth-title">
             Create your account
           </h1>
           <p>Add your contact details once so buyers, sellers, and your listings stay easy to manage.</p>
