@@ -1,5 +1,5 @@
 import type { MarketplacePageData } from "@gems/schemas";
-import { MarketplaceRoute } from "../features/marketplace/MarketplaceRoute.js";
+import { CustomerRoot } from "../customer/CustomerRoot.js";
 import {
   descriptiveListingImageAlt,
   gemstoneCategoryIntroduction,
@@ -87,7 +87,7 @@ gtag('config', '${analyticsMeasurementId}');
 `;
 
 export function PublicApp({ initialRoute, initialTheme }: { initialUrl: string; initialRoute: PublicRouteData; initialTheme: "light" | "dark"; year: number }) {
-  return <MarketplaceRoute initialRoute={initialRoute} initialTheme={initialTheme} />;
+  return <CustomerRoot initialPublicRoute={initialRoute} initialTheme={initialTheme} />;
 }
 
 function marketplaceHref(filters: MarketplacePageData["filters"], basePath = "/", lockedGemType?: string) {

@@ -3,13 +3,32 @@ import type { Listing, ListingSearchItem, MarketplaceFilters, MarketplacePageDat
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "../account/PolicyPages.js";
 import { AppFrame } from "../shell/AppFrame.js";
 import { StatusState } from "../../shared/StatusState.js";
-import { pathForView, type View } from "../../shared/types.js";
+import type { View } from "../../shared/types.js";
 import { Marketplace } from "./Marketplace.js";
 import type { PublicRouteData } from "../../public/types.js";
+import type { CustomerAuthState } from "../../shared/customer.js";
 import { gemstoneCategoryPath } from "../../shared/seo.js";
 import { CategorySeoIntro, MarketplaceSeoIntro, SeoLandingPage } from "./SeoPages.js";
 
-export function MarketplaceRoute({ initialRoute, initialTheme }: { initialRoute: PublicRouteData; initialTheme: "light" | "dark" }) {
+export function MarketplaceRoute({
+  initialRoute,
+  initialTheme,
+  authState,
+  pendingView,
+  onNavigate,
+  onNavigateIntent,
+  onRouteStateChange,
+  onPublicUrlChange
+}: {
+  initialRoute: PublicRouteData;
+  initialTheme: "light" | "dark";
+  authState: CustomerAuthState;
+  pendingView?: View | null;
+  onNavigate: (view: View) => void;
+  onNavigateIntent?: (view: View) => void;
+  onRouteStateChange?: (route: PublicRouteData) => void;
+  onPublicUrlChange?: (href: string) => void;
+}) {
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(initialTheme);
   const setTheme = (next: "system" | "light" | "dark") => {
     const resolved = next === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : next;
@@ -18,26 +37,27 @@ export function MarketplaceRoute({ initialRoute, initialTheme }: { initialRoute:
     localStorage.setItem("app-theme", next);
     setThemeState(next);
   };
-  const navigateToView = (view: View) => {
-    if (view === "post") {
-      sessionStorage.setItem("marketplace-reference-data", JSON.stringify({ gemTypes: initialData.gemTypes, locations: initialData.locations }));
-    }
-    window.location.assign(pathForView(view));
-  };
   const initialData = useMemo(() => routePageData(initialRoute), [initialRoute]);
+  const user = authState.status === "signed-in" ? authState.user : null;
   const frameProps = {
     view: initialRoute.kind === "content" ? initialRoute.page : "market" as View,
-    setView: navigateToView,
+    setView: onNavigate,
     query: initialData.filters.q,
     setQuery: () => {},
     selectedLocations: initialData.filters.locations,
     setSelectedLocations: () => {},
     locations: initialData.locations,
-    isSignedIn: false,
-    authResolved: true,
+    isSignedIn: Boolean(user),
     theme,
-    setTheme
+    setTheme,
+    user,
+    onViewIntent: onNavigateIntent,
+    pendingView
   };
+
+  useEffect(() => {
+    onRouteStateChange?.(initialRoute);
+  }, [initialRoute, onRouteStateChange]);
 
   if (initialRoute.kind === "content") {
     const page = initialRoute.page === "terms" ? <TermsAndConditions />
@@ -52,10 +72,29 @@ export function MarketplaceRoute({ initialRoute, initialTheme }: { initialRoute:
   if (initialRoute.kind === "error") {
     return <AppFrame {...frameProps}><StatusState title={initialRoute.status === 404 ? "Page not found" : "Marketplace unavailable"} message={initialRoute.message} /></AppFrame>;
   }
-  return <AppFrame {...frameProps}><InteractiveMarketplace initialRoute={initialRoute} initialData={initialData} /></AppFrame>;
+  return (
+    <AppFrame {...frameProps}>
+      <InteractiveMarketplace
+        initialRoute={initialRoute}
+        initialData={initialData}
+        onRouteStateChange={onRouteStateChange}
+        onPublicUrlChange={onPublicUrlChange}
+      />
+    </AppFrame>
+  );
 }
 
-function InteractiveMarketplace({ initialRoute, initialData }: { initialRoute: Extract<PublicRouteData, { kind: "marketplace" | "category" | "listing" }>; initialData: MarketplacePageData }) {
+function InteractiveMarketplace({
+  initialRoute,
+  initialData,
+  onRouteStateChange,
+  onPublicUrlChange
+}: {
+  initialRoute: Extract<PublicRouteData, { kind: "marketplace" | "category" | "listing" }>;
+  initialData: MarketplacePageData;
+  onRouteStateChange?: (route: PublicRouteData) => void;
+  onPublicUrlChange?: (href: string) => void;
+}) {
   const [data, setData] = useState(initialData);
   const [selectedListing, setSelectedListing] = useState<Listing | undefined>(initialRoute.kind === "listing" ? initialRoute.listing : undefined);
   const [previewPhones, setPreviewPhones] = useState<Record<string, string>>({});
@@ -82,13 +121,33 @@ function InteractiveMarketplace({ initialRoute, initialData }: { initialRoute: E
     const page = await response.json() as MarketplacePageData["page"];
     setData((current) => ({ ...current, filters, page }));
     setSelectedListing(undefined);
-    if (push) history.pushState({ marketplace: true }, "", href);
-  }, [browserHref]);
+    if (push) onPublicUrlChange?.(href);
+  }, [browserHref, onPublicUrlChange]);
 
   useEffect(() => () => {
     requestRef.current?.abort();
     if (queryTimerRef.current) clearTimeout(queryTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!onRouteStateChange) return;
+    if (selectedListing) {
+      const seller = sellers.find((item) => item.id === selectedListing.sellerId);
+      if (seller) {
+        onRouteStateChange({ kind: "listing", listing: selectedListing, seller });
+        return;
+      }
+    }
+    if (initialRoute.kind === "category") {
+      onRouteStateChange({ ...initialRoute, data });
+      return;
+    }
+    if (initialRoute.kind === "listing") {
+      onRouteStateChange(initialRoute);
+      return;
+    }
+    onRouteStateChange({ kind: "marketplace", data });
+  }, [data, initialRoute, onRouteStateChange, selectedListing, sellers]);
 
   const change = (patch: Partial<MarketplaceFilters>) => {
     const filters = { ...data.filters, ...patch, page: patch.page ?? 1 };
@@ -104,13 +163,13 @@ function InteractiveMarketplace({ initialRoute, initialData }: { initialRoute: E
   const selectListing = async (id: string) => {
     if (!id) {
       setSelectedListing(undefined);
-      history.pushState({ marketplace: true }, "", browserHref(data.filters));
+      onPublicUrlChange?.(browserHref(data.filters));
       return;
     }
     const response = await fetch(`/api/v1/listings/${encodeURIComponent(id)}`);
     if (!response.ok) return window.location.assign(`/listings/${encodeURIComponent(id)}`);
     setSelectedListing(await response.json() as Listing);
-    history.pushState({ listing: id }, "", `/listings/${encodeURIComponent(id)}`);
+    onPublicUrlChange?.(`/listings/${encodeURIComponent(id)}`);
     void fetch(`/api/v1/listings/${encodeURIComponent(id)}/interactions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "view" }) });
   };
   const revealPhone = async (id: string, full: boolean) => {

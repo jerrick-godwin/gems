@@ -51,21 +51,27 @@ test("CSS cascade layers and shared layout tokens are declared once", () => {
   assert.equal(existsSync(`${webRoot}/src/styles.css`), false);
 });
 
-test("public, customer, and admin entries import only their surface styles", () => {
+test("public, customer, account, and admin entries import only their surface styles", () => {
+  const commonCss = source("src/styles/entries/common.css");
   const publicCss = source("src/styles/entries/public.css");
   const customerCss = source("src/styles/entries/customer.css");
+  const accountCss = source("src/styles/entries/account.css");
   const adminCss = source("src/styles/entries/admin.css");
 
-  for (const entry of [publicCss, customerCss, adminCss]) {
-    assert.equal(entry.trimStart().startsWith('@import "../global.css";'), true);
+  for (const entry of [commonCss, publicCss, customerCss, accountCss, adminCss]) {
     assert.doesNotMatch(entry, /styles\.css/);
   }
+  assert.equal(commonCss.trimStart().startsWith('@import "../global.css";'), true);
+  assert.equal(adminCss.trimStart().startsWith('@import "../global.css";'), true);
+  assert.match(publicCss, /entries\/common\.css|\.\/common\.css/);
+  assert.match(customerCss, /\.\/common\.css/);
+  assert.match(customerCss, /\.\/account\.css/);
 
   assert.match(publicCss, /pages\/seo\.css/);
   assert.doesNotMatch(publicCss, /pages\/(auth|dashboard|checkout-flow|admin-console|admin-orders)\.css/);
 
-  assert.match(customerCss, /pages\/(auth|post-gem|dashboard|checkout-flow)\.css/);
-  assert.doesNotMatch(customerCss, /pages\/(seo|admin-console|admin-orders)\.css/);
+  assert.match(accountCss, /pages\/(auth|post-gem|dashboard|checkout-flow)\.css/);
+  assert.doesNotMatch(accountCss, /pages\/(seo|admin-console|admin-orders)\.css/);
 
   assert.match(adminCss, /pages\/(dashboard|admin-console|admin-orders)\.css/);
   assert.doesNotMatch(adminCss, /pages\/(seo|auth|post-gem|checkout-flow)\.css/);
@@ -75,6 +81,7 @@ test("each browser and SSR entry points to its dedicated CSS aggregator", () => 
   assert.match(source("src/main.tsx"), /styles\/entries\/customer\.css/);
   assert.match(source("src/admin-main.tsx"), /styles\/entries\/admin\.css/);
   assert.match(source("src/entry-client.tsx"), /styles\/entries\/public\.css/);
+  assert.match(source("src/account-entry.tsx"), /styles\/entries\/account\.css/);
   assert.match(source("server/server.ts"), /\/src\/styles\/entries\/public\.css/);
 });
 
