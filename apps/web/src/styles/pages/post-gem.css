@@ -385,3 +385,23 @@
   color: var(--muted);
   font-weight: 600;
 }
+.post-reference-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.post-reference-status.is-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.post-reference-status button {
+  flex: 0 0 auto;
+}

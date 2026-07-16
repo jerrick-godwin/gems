@@ -12,12 +12,18 @@ import { formatPriceInput, parsePriceInput, isUploadableUrl, publicErrorMessage 
 export function PostGem({
   gemTypes,
   locations,
+  referencesLoading,
+  referencesError,
+  onRetryReferences,
   api,
   editCheckoutToken,
   onCheckoutCreated
 }: {
   gemTypes: MarketplaceSnapshot["gemTypes"];
   locations: string[];
+  referencesLoading?: boolean;
+  referencesError?: string | null;
+  onRetryReferences?: () => void;
   api: GemsApiClient;
   editCheckoutToken?: string;
   onCheckoutCreated: (token: string, checkoutUrl: string) => void;
@@ -36,6 +42,7 @@ export function PostGem({
   const totalPhotoCount = retainedPhotos.length + photos.length;
   const isEditingCheckout = Boolean(editCheckoutToken);
   const isSubmitting = submitAction.busy || status === "Loading saved draft..." || status === "Creating secure checkout..." || status === "Updating secure checkout..." || status === "Uploading media...";
+  const referencesReady = !referencesLoading && !referencesError && gemTypes.length > 0 && locations.length > 0;
 
   useEffect(() => {
     let active = true;
@@ -134,6 +141,10 @@ export function PostGem({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!referencesReady) {
+      setStatus("Gem types and locations are still loading. Please try again in a moment.");
+      return;
+    }
     const form = event.currentTarget;
     const value = (id: string) => (form.querySelector(`#${id}`) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null)?.value ?? "";
 
@@ -227,15 +238,23 @@ export function PostGem({
           <p>Build a clear listing for moderation. Complete each section for faster approval.</p>
         </div>
         <form ref={formRef} className="post-form" id="post-gem-form" onSubmit={handleSubmit} onReset={handleClear}>
+          {(referencesLoading || referencesError) && (
+            <div className={`post-reference-status${referencesError ? " is-error" : ""}`} role={referencesError ? "alert" : "status"} aria-live="polite">
+              <span>{referencesError ?? "Loading gem types and locations…"}</span>
+              {referencesError && onRetryReferences && (
+                <button type="button" onClick={onRetryReferences}>Retry</button>
+              )}
+            </div>
+          )}
           <label>
             Listing title
             <input placeholder="Ceylon Blue Sapphire" id="post-title" required disabled={isSubmitting} />
           </label>
           <label>
             Gem type
-            <select defaultValue="" id="post-gem-type" required disabled={isSubmitting}>
+            <select defaultValue="" id="post-gem-type" required disabled={isSubmitting || !referencesReady}>
               <option value="" disabled>
-                Select Gem Type
+                {referencesLoading ? "Loading gem types…" : referencesError ? "Gem types unavailable" : "Select Gem Type"}
               </option>
               {gemTypes.map((item) => (
                 <option value={item.id} key={item.id}>
@@ -408,9 +427,9 @@ export function PostGem({
               </label>
               <label>
                 <span className="field-label">Location<span className="required-marker" aria-hidden="true">*</span></span>
-                <select defaultValue="" id="post-location" required disabled={isSubmitting}>
+                <select defaultValue="" id="post-location" required disabled={isSubmitting || !referencesReady}>
                   <option value="" disabled>
-                    Select location
+                    {referencesLoading ? "Loading locations…" : referencesError ? "Locations unavailable" : "Select location"}
                   </option>
                   {locations.map((loc) => (
                     <option value={loc} key={loc}>
@@ -466,7 +485,7 @@ export function PostGem({
               type="submit" 
               className="primary-action" 
               id="submit-listing"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !referencesReady}
             >
               {isSubmitting ? (
                 <>

@@ -56,7 +56,6 @@ export function ReceiptPage({
   }, [api, onDashboardChange, paymentIntentId]);
 
   const handleReturnHome = () => {
-    window.history.pushState({}, "", "/");
     onNavigate("market");
   };
 

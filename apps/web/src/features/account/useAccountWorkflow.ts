@@ -3,7 +3,7 @@ import type { GemsApiClient } from "@gems/api-client";
 import type { Report, UserDashboard } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
 
-export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
+export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean, enabled = true) {
   const [accountError, setAccountError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<UserDashboard | null>(null);
   const [myReports, setMyReports] = useState<Report[]>([]);
@@ -15,6 +15,7 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
       setAccountError(null);
       return;
     }
+    if (!enabled) return;
 
     let active = true;
     Promise.all([api.dashboard(), api.myReports()])
@@ -32,7 +33,7 @@ export function useAccountWorkflow(api: GemsApiClient, isSignedIn: boolean) {
     return () => {
       active = false;
     };
-  }, [api, isSignedIn]);
+  }, [api, enabled, isSignedIn]);
 
   return { accountError, dashboard, setDashboard, myReports, setMyReports };
 }

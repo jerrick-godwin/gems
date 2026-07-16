@@ -1310,3 +1310,7 @@
 .primary-action.btn-red:hover {
   box-shadow: 0 12px 28px rgba(185, 28, 28, 0.35), 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
+[data-navigation-pending="true"] {
+  cursor: progress;
+  opacity: 0.72;
+}
