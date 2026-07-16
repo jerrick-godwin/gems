@@ -142,6 +142,7 @@ export function AppFrame({
   setSelectedLocations,
   locations,
   isSignedIn,
+  authResolved,
   theme,
   setTheme,
   user,
@@ -160,6 +161,7 @@ export function AppFrame({
   setSelectedLocations: (locations: string[]) => void;
   locations: string[];
   isSignedIn: boolean;
+  authResolved: boolean;
   theme: "system" | "light" | "dark";
   setTheme: (t: "system" | "light" | "dark") => void;
   user?: MarketplaceAuthUser | null;
@@ -204,7 +206,7 @@ export function AppFrame({
           </a>
 
           <nav className="nav-actions" aria-label="Primary" data-nosnippet>
-          {!isSignedIn && <ThemeSwitcher theme={theme} setTheme={setTheme} />}
+          {authResolved && !isSignedIn && <ThemeSwitcher theme={theme} setTheme={setTheme} />}
           <a
             href={pathForView("market")}
             className={view === "market" ? "active" : ""}
@@ -213,36 +215,27 @@ export function AppFrame({
           >
             Browse
           </a>
-          {isSignedIn ? ( <>
-            <a
-              href={pathForView("post")}
-              className={`primary-action${view === "post" ? " active" : ""}`}
-              onClick={(event) => handleViewLinkClick(event, "post")}
-              id="nav-post"
-              {...viewIntentProps("post")}
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              Post a Gem
-            </a>
+          <a
+            href={pathForView("post")}
+            className={`primary-action${view === "post" || view === "post_checkout" ? " active" : ""}`}
+            onClick={(event) => handleViewLinkClick(event, "post")}
+            id="nav-post"
+            {...viewIntentProps("post")}
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            Post a Gem
+          </a>
+          {!authResolved ? (
+            <span className="nav-auth-placeholder" aria-hidden="true">
+              <span className="skeleton nav-auth-placeholder-avatar" />
+            </span>
+          ) : isSignedIn ? (
             <ProfileMenu view={view} navigateToView={setView} handleLogout={handleLogout} user={user} accountUser={accountUser} theme={theme} setTheme={setTheme} />
-          </>
           ) : (
-            <>
-              <a
-                href={pathForView("post")}
-                className={`primary-action${view === "post" || view === "post_checkout" ? " active" : ""}`}
-                onClick={(event) => handleViewLinkClick(event, "post")}
-                id="nav-post"
-                {...viewIntentProps("post")}
-              >
-                <Plus size={16} strokeWidth={2.5} />
-                Post a Gem
-              </a>
-              <a className="login-button" href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} id="nav-login" {...viewIntentProps("login")}>
-                <LogIn size={16} strokeWidth={2.5} />
-                Sign In
-              </a>
-            </>
+            <a className="login-button" href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} id="nav-login" {...viewIntentProps("login")}>
+              <LogIn size={16} strokeWidth={2.5} />
+              Sign In
+            </a>
           )}
           </nav>
         </div>
@@ -287,16 +280,15 @@ export function AppFrame({
                 <a href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
                 <a href="/buy-gemstones">Buy Gemstones</a>
                 <a href="/sell-gemstones">Sell Gemstones</a>
-                {isSignedIn ? (
-                  <>
-                    <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")} {...viewIntentProps("post")}>Post a Listing</a>
-                    <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")} {...viewIntentProps("my_listings")}>My Listings</a>
-                  </>
+                <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")} {...viewIntentProps("post")}>Post a Listing</a>
+                {!authResolved ? (
+                  <span className="footer-auth-placeholder" aria-hidden="true">
+                    <span className="skeleton footer-auth-placeholder-line short" />
+                  </span>
+                ) : isSignedIn ? (
+                  <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")} {...viewIntentProps("my_listings")}>My Listings</a>
                 ) : (
-                  <>
-                    <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")} {...viewIntentProps("post")}>Post a Listing</a>
-                    <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} {...viewIntentProps("login")}>Sign In</a>
-                  </>
+                  <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} {...viewIntentProps("login")}>Sign In</a>
                 )}
               </nav>
             </div>

@@ -1241,12 +1241,6 @@
   flex: 0 0 auto;
 }
 
-.nav-auth-placeholder-action {
-  width: 132px;
-  height: 40px;
-  border-radius: var(--radius-full);
-}
-
 .nav-auth-placeholder-avatar {
   width: 42px;
   height: 42px;

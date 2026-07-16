@@ -131,7 +131,7 @@ test("keeps the current public page visible until Post references are ready", as
   await expect(page.getByRole("heading", { name: "Post a Gem Listing" })).toBeVisible();
 });
 
-test("keeps stable anonymous controls while authentication is unresolved", async ({ page }) => {
+test("keeps stable navigation controls while authentication is unresolved", async ({ page }) => {
   await page.route("**/src/firebase.ts*", (route) => route.fulfill({
     contentType: "application/javascript",
     body: `export const authClient = {
@@ -144,15 +144,68 @@ test("keeps stable anonymous controls while authentication is unresolved", async
   }));
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("#nav-login")).toBeVisible();
-  await expect(page.locator(".nav-auth-placeholder")).toHaveCount(0);
+  await expect(page.locator("#nav-browse")).toBeVisible();
+  await expect(page.locator("#nav-post")).toBeVisible();
+  await expect(page.locator("#nav-login")).toHaveCount(0);
+  await expect(page.getByLabel("Profile menu")).toHaveCount(0);
+  await expect(page.locator(".nav-auth-placeholder")).toBeVisible();
+  await expect(page.locator(".footer-auth-placeholder")).toBeVisible();
 
   await page.locator("#nav-post").click();
 
   await expect(page).toHaveURL(/\/post$/);
   await expect(page.getByRole("heading", { name: "Post a Gem Listing" })).toBeVisible();
   await expect(page.locator(".market-skeleton")).toHaveCount(0);
+  await expect(page.locator(".nav-auth-placeholder")).toBeVisible();
+});
+
+test("replaces unresolved auth controls directly with the signed-in profile", async ({ page }) => {
+  await page.route("**/src/firebase.ts*", (route) => route.fulfill({
+    contentType: "application/javascript",
+    body: `const user = {
+      uid: "delayed-browser-test",
+      email: "delayed@example.com",
+      displayName: "Delayed Browser Test",
+      getIdToken: async () => "delayed-browser-test-token"
+    };
+    export const authClient = {
+      onAuthStateChanged(callback) {
+        window.__resolveCustomerAuth = () => callback(user);
+        return () => {};
+      },
+      signOut: async () => {}
+    };`
+  }));
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".nav-auth-placeholder")).toBeVisible();
+  await expect(page.locator("#nav-login")).toHaveCount(0);
+  await expect(page.getByLabel("Profile menu")).toHaveCount(0);
+
+  await page.evaluate(() => (window as Window & { __resolveCustomerAuth: () => void }).__resolveCustomerAuth());
+
+  await expect(page.getByLabel("Profile menu")).toBeVisible();
   await expect(page.locator(".nav-auth-placeholder")).toHaveCount(0);
+  await expect(page.locator("#nav-login")).toHaveCount(0);
+});
+
+test("shows signed-out controls after authentication resolves", async ({ page }) => {
+  await page.route("**/src/firebase.ts*", (route) => route.fulfill({
+    contentType: "application/javascript",
+    body: `export const authClient = {
+      onAuthStateChanged(callback) {
+        callback(null);
+        return () => {};
+      },
+      signOut: async () => {}
+    };`
+  }));
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("#nav-login")).toBeVisible();
+  await expect(page.locator(".nav-actions .theme-switcher")).toBeVisible();
+  await expect(page.locator(".nav-auth-placeholder")).toHaveCount(0);
+  await expect(page.getByLabel("Profile menu")).toHaveCount(0);
 });
 
 test("signed-in Post transitions keep one auth observer and skip unrelated workflows", async ({ page }) => {
