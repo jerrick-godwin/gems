@@ -1,12 +1,39 @@
-import { BadgeCheck, Ban, CalendarPlus, ClipboardCheck, Clock, CreditCard, Flag, PackageCheck, Search } from "lucide-react";
+import {
+  BadgeCheck,
+  Ban,
+  CalendarPlus,
+  ChevronRight,
+  CircleAlert,
+  ClipboardCheck,
+  Clock,
+  CreditCard,
+  Flag,
+  Gem,
+  LayoutDashboard,
+  PackageCheck,
+  Search,
+  ShieldCheck,
+  UsersRound,
+  WalletCards
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
-import type { Listing, Report, User } from "@gems/schemas";
+import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
 import { Metric } from "../../shared/Metric";
 import { publicErrorMessage } from "../../shared/helpers";
 import { ActiveListingRow } from "./ActiveListingRow";
 import { ReportRow } from "./ReportRow";
 import { ReviewRow } from "./ReviewRow";
+
+type AdminView = "overview" | "moderation" | "listings" | "users" | "payments";
+
+const ADMIN_VIEW_COPY: Record<AdminView, { title: string; description: string }> = {
+  overview: { title: "Overview", description: "A quick view of marketplace activity and work that needs attention." },
+  moderation: { title: "Moderation", description: "Review new listings and investigate reports from the marketplace." },
+  listings: { title: "Listings", description: "Manage live, rejected, and archived gem listings." },
+  users: { title: "Users & trials", description: "Find users, review trial status, and manage trial access." },
+  payments: { title: "Payments", description: "Monitor subscription payments and gateway status." }
+};
 
 export function AdminConsole({
   api,
@@ -34,6 +61,8 @@ export function AdminConsole({
   const [activeListingSearch, setActiveListingSearch] = useState("");
   const [rejectedListingSearch, setRejectedListingSearch] = useState("");
   const [archivedListingSearch, setArchivedListingSearch] = useState("");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [activeView, setActiveView] = useState<AdminView>("overview");
   const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
   const rejectedListings = allListings.filter((listing) => listing.status === "rejected" || listing.moderationStatus === "rejected");
   const archivedListings = allListings.filter((listing) => listing.status === "expired" || listing.status === "paused");
@@ -42,6 +71,7 @@ export function AdminConsole({
   const filteredActiveListings = snapshot.liveListings.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
   const filteredRejectedListings = rejectedListings.filter((listing) => matchesListingSearch(listing, rejectedListingSearch, snapshot));
   const filteredArchivedListings = archivedListings.filter((listing) => matchesListingSearch(listing, archivedListingSearch, snapshot));
+  const filteredPayments = snapshot.payments.filter((payment) => matchesPaymentSearch(payment, paymentSearch, snapshot));
   const moderateListing = async (listingId: string, decision: "approve" | "reject", reason?: string) => {
     try {
       const updated = await api.moderateListing(token, listingId, decision, reason);
@@ -55,210 +85,460 @@ export function AdminConsole({
     }
   };
 
+  const selectView = (view: AdminView) => {
+    setActiveView(view);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const removeListing = (id: string) => {
+    setSnapshot({
+      ...snapshot,
+      listings: snapshot.listings.filter((listing) => listing.id !== id),
+      liveListings: snapshot.liveListings.filter((listing) => listing.id !== id),
+      reportedListings: snapshot.reportedListings.filter((listing) => listing.id !== id),
+      reports: snapshot.reports.map((report) => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
+    });
+  };
+
   return (
-    <section className="dashboard">
-      <div className="section-heading">
-        <h1>Admin moderation</h1>
-        <p>Pending gems, certificate claims, and seller risk.</p>
+    <section className="dashboard admin-workspace">
+      <AdminNavigation
+        activeView={activeView}
+        onSelect={selectView}
+        moderationCount={pending.length + openReports.length}
+        listingCount={allListings.length}
+        userCount={snapshot.users.length}
+        paymentCount={pendingPayments.length}
+      />
+
+      <div className="admin-workspace-content">
+        <div className="section-heading admin-view-heading">
+          <div>
+            <span className="admin-view-eyebrow">Admin workspace</span>
+            <h1>{ADMIN_VIEW_COPY[activeView].title}</h1>
+            <p>{ADMIN_VIEW_COPY[activeView].description}</p>
+          </div>
+        </div>
+
+        {activeView === "overview" && (
+          <AdminOverview
+            pendingReviews={pending.length}
+            openReports={openReports.length}
+            checkedCertificates={checkedCertificates}
+            paidSubscriptions={successfulPayments.length}
+            activeTrials={activeTrials}
+            liveListings={snapshot.liveListings.length}
+            totalUsers={snapshot.users.length}
+            pendingPayments={pendingPayments.length}
+            onNavigate={selectView}
+          />
+        )}
+
+        {activeView === "moderation" && (
+          <div className="admin-console-stack">
+            <div className="metric-grid admin-view-metrics">
+              <Metric icon={ClipboardCheck} label="Queued listings" value={String(pending.length)} accent="var(--gold)" />
+              <Metric icon={Flag} label="Open reports" value={String(openReports.length)} accent="var(--danger)" />
+              <Metric icon={BadgeCheck} label="Checked certs" value={String(checkedCertificates)} accent="var(--emerald)" />
+            </div>
+            <AdminSection
+              title="Review queue"
+              totalCount={pending.length}
+              visibleCount={filteredPending.length}
+              searchValue={reviewSearch}
+              onSearchChange={setReviewSearch}
+              searchPlaceholder="Search queued listings"
+              emptyMessage="No listings pending review."
+              noMatchesMessage="No queued listings match your search."
+            >
+              {filteredPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
+            </AdminSection>
+            <AdminSection
+              title="Reports"
+              totalCount={openReports.length}
+              visibleCount={filteredReports.length}
+              searchValue={reportSearch}
+              onSearchChange={setReportSearch}
+              searchPlaceholder="Search reports"
+              emptyMessage="No open reports."
+              noMatchesMessage="No reports match your search."
+            >
+              {filteredReports.map((report) => (
+                <ReportRow
+                  key={report.id}
+                  report={report}
+                  snapshot={snapshot}
+                  api={api}
+                  token={token}
+                  onRemoveListing={removeListing}
+                  onResolveReport={(reportId) => {
+                    setSnapshot({
+                      ...snapshot,
+                      reports: snapshot.reports.map((item) => item.id === reportId ? { ...item, status: "resolved" } : item)
+                    });
+                  }}
+                  setLoadError={setLoadError}
+                />
+              ))}
+            </AdminSection>
+          </div>
+        )}
+
+        {activeView === "listings" && (
+          <div className="admin-console-stack">
+            <div className="metric-grid admin-view-metrics">
+              <Metric icon={Gem} label="Live listings" value={String(snapshot.liveListings.length)} accent="var(--emerald)" />
+              <Metric icon={CircleAlert} label="Rejected" value={String(rejectedListings.length)} accent="var(--danger)" />
+              <Metric icon={Clock} label="Archived" value={String(archivedListings.length)} accent="var(--muted)" />
+            </div>
+            <AdminSection
+              title="Active listings"
+              totalCount={snapshot.liveListings.length}
+              visibleCount={filteredActiveListings.length}
+              searchValue={activeListingSearch}
+              onSearchChange={setActiveListingSearch}
+              searchPlaceholder="Search active listings"
+              emptyMessage="No live listings."
+              noMatchesMessage="No active listings match your search."
+            >
+              {filteredActiveListings.map((listing) => (
+                <ActiveListingRow
+                  listing={listing}
+                  key={listing.id}
+                  api={api}
+                  token={token}
+                  payments={snapshot.payments}
+                  sellers={snapshot.sellers}
+                  users={snapshot.users}
+                  onUpdate={(updated) => {
+                    setSnapshot({ ...snapshot, liveListings: snapshot.liveListings.map((item) => item.id === updated.id ? updated : item) });
+                  }}
+                  onRemove={removeListing}
+                />
+              ))}
+            </AdminSection>
+            <AdminSection
+              title="Rejected listings"
+              totalCount={rejectedListings.length}
+              visibleCount={filteredRejectedListings.length}
+              searchValue={rejectedListingSearch}
+              onSearchChange={setRejectedListingSearch}
+              searchPlaceholder="Search rejected listings"
+              emptyMessage="No rejected listings."
+              noMatchesMessage="No rejected listings match your search."
+            >
+              {filteredRejectedListings.map((listing) => (
+                <ActiveListingRow
+                  listing={listing}
+                  key={listing.id}
+                  api={api}
+                  token={token}
+                  payments={snapshot.payments}
+                  sellers={snapshot.sellers}
+                  users={snapshot.users}
+                  onUpdate={(updated) => {
+                    setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item) });
+                  }}
+                  onRemove={removeListing}
+                />
+              ))}
+            </AdminSection>
+            <AdminSection
+              title="Archived listings"
+              totalCount={archivedListings.length}
+              visibleCount={filteredArchivedListings.length}
+              searchValue={archivedListingSearch}
+              onSearchChange={setArchivedListingSearch}
+              searchPlaceholder="Search archived listings"
+              emptyMessage="No archived listings."
+              noMatchesMessage="No archived listings match your search."
+            >
+              {filteredArchivedListings.map((listing) => (
+                <ActiveListingRow
+                  listing={listing}
+                  key={listing.id}
+                  api={api}
+                  token={token}
+                  payments={snapshot.payments}
+                  sellers={snapshot.sellers}
+                  users={snapshot.users}
+                  onUpdate={(updated) => {
+                    setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item) });
+                  }}
+                  onRemove={removeListing}
+                />
+              ))}
+            </AdminSection>
+          </div>
+        )}
+
+        {activeView === "users" && (
+          <UserTrialsPanel
+            users={snapshot.users}
+            api={api}
+            token={token}
+            activeTrials={activeTrials}
+            expiredTrials={expiredTrials}
+            terminatedTrials={terminatedTrials}
+            setLoadError={setLoadError}
+            onUserUpdate={(updated) => {
+              setSnapshot({ ...snapshot, users: snapshot.users.map((user) => user.id === updated.id ? updated : user) });
+            }}
+          />
+        )}
+
+        {activeView === "payments" && (
+          <PaymentsPanel
+            payments={snapshot.payments}
+            filteredPayments={filteredPayments}
+            pendingCount={pendingPayments.length}
+            successfulCount={successfulPayments.length}
+            search={paymentSearch}
+            onSearchChange={setPaymentSearch}
+            snapshot={snapshot}
+          />
+        )}
       </div>
-      <div className="metric-grid">
-        <Metric icon={ClipboardCheck} label="Queued listings" value={String(pending.length)} accent="var(--gold)" />
-        <Metric icon={Flag} label="Open reports" value={String(openReports.length)} accent="var(--danger)" />
+    </section>
+  );
+}
+
+function AdminNavigation({
+  activeView,
+  onSelect,
+  moderationCount,
+  listingCount,
+  userCount,
+  paymentCount
+}: {
+  activeView: AdminView;
+  onSelect: (view: AdminView) => void;
+  moderationCount: number;
+  listingCount: number;
+  userCount: number;
+  paymentCount: number;
+}) {
+  return (
+    <aside className="admin-navigation card card--surface">
+      <div className="admin-navigation-heading">
+        <span>Workspace</span>
+        <strong>Admin console</strong>
+      </div>
+      <nav className="admin-navigation-list" aria-label="Admin sections">
+        <AdminNavigationItem icon={<LayoutDashboard size={18} />} label="Overview" view="overview" activeView={activeView} onSelect={onSelect} />
+        <AdminNavigationItem icon={<ShieldCheck size={18} />} label="Moderation" view="moderation" activeView={activeView} onSelect={onSelect} count={moderationCount} attention={moderationCount > 0} />
+        <div className="admin-navigation-divider" />
+        <span className="admin-navigation-group-label">Marketplace</span>
+        <AdminNavigationItem icon={<Gem size={18} />} label="Listings" view="listings" activeView={activeView} onSelect={onSelect} count={listingCount} />
+        <AdminNavigationItem icon={<UsersRound size={18} />} label="Users & trials" view="users" activeView={activeView} onSelect={onSelect} count={userCount} />
+        <div className="admin-navigation-divider" />
+        <span className="admin-navigation-group-label">Finance</span>
+        <AdminNavigationItem icon={<WalletCards size={18} />} label="Payments" view="payments" activeView={activeView} onSelect={onSelect} count={paymentCount} attention={paymentCount > 0} />
+      </nav>
+    </aside>
+  );
+}
+
+function AdminNavigationItem({
+  icon,
+  label,
+  view,
+  activeView,
+  onSelect,
+  count,
+  attention = false
+}: {
+  icon: ReactNode;
+  label: string;
+  view: AdminView;
+  activeView: AdminView;
+  onSelect: (view: AdminView) => void;
+  count?: number;
+  attention?: boolean;
+}) {
+  const isActive = activeView === view;
+  return (
+    <button type="button" className={`admin-navigation-item${isActive ? " is-active" : ""}`} onClick={() => onSelect(view)} aria-current={isActive ? "page" : undefined}>
+      {icon}
+      <span>{label}</span>
+      {count !== undefined && <strong className={attention ? "needs-attention" : ""}>{count}</strong>}
+    </button>
+  );
+}
+
+function AdminOverview({
+  pendingReviews,
+  openReports,
+  checkedCertificates,
+  paidSubscriptions,
+  activeTrials,
+  liveListings,
+  totalUsers,
+  pendingPayments,
+  onNavigate
+}: {
+  pendingReviews: number;
+  openReports: number;
+  checkedCertificates: number;
+  paidSubscriptions: number;
+  activeTrials: number;
+  liveListings: number;
+  totalUsers: number;
+  pendingPayments: number;
+  onNavigate: (view: AdminView) => void;
+}) {
+  return (
+    <div className="admin-console-stack">
+      <div className="metric-grid admin-overview-metrics">
+        <Metric icon={ClipboardCheck} label="Queued listings" value={String(pendingReviews)} accent="var(--gold)" />
+        <Metric icon={Flag} label="Open reports" value={String(openReports)} accent="var(--danger)" />
         <Metric icon={BadgeCheck} label="Checked certs" value={String(checkedCertificates)} accent="var(--emerald)" />
-        <Metric icon={PackageCheck} label="Paid subscriptions" value={String(successfulPayments.length)} accent="var(--emerald)" />
+        <Metric icon={PackageCheck} label="Paid subscriptions" value={String(paidSubscriptions)} accent="var(--emerald)" />
         <Metric icon={Clock} label="Active trials" value={String(activeTrials)} accent="var(--gold)" />
       </div>
-      <div className="admin-console-stack">
-        {pendingPayments.length > 0 && (
-          <section className="data-panel admin-orders-panel card card--inset card--compact">
-            <h2>Pending Payments</h2>
-            <div className="admin-payment-status">
-              <CreditCard size={18} />
-              {pendingPayments.length} payment{pendingPayments.length > 1 ? "s" : ""} waiting for gateway confirmation.
-            </div>
-          </section>
-        )}
-        <UserTrialsPanel
-          users={snapshot.users}
-          api={api}
-          token={token}
-          activeTrials={activeTrials}
-          expiredTrials={expiredTrials}
-          terminatedTrials={terminatedTrials}
-          setLoadError={setLoadError}
-          onUserUpdate={(updated) => {
-            setSnapshot({
-              ...snapshot,
-              users: snapshot.users.map((user) => user.id === updated.id ? updated : user)
-            });
-          }}
-        />
-        <AdminSection
-          title="Review queue"
-          totalCount={pending.length}
-          visibleCount={filteredPending.length}
-          searchValue={reviewSearch}
-          onSearchChange={setReviewSearch}
-          searchPlaceholder="Search queued listings"
-          emptyMessage="No listings pending review."
-          noMatchesMessage="No queued listings match your search."
-        >
-          {filteredPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
-        </AdminSection>
-        <AdminSection
-          title="Reports"
-          totalCount={openReports.length}
-          visibleCount={filteredReports.length}
-          searchValue={reportSearch}
-          onSearchChange={setReportSearch}
-          searchPlaceholder="Search reports"
-          emptyMessage="No open reports."
-          noMatchesMessage="No reports match your search."
-        >
-          {filteredReports.map((report) => (
-              <ReportRow
-                key={report.id}
-                report={report}
-                snapshot={snapshot}
-                api={api}
-                token={token}
-                onRemoveListing={(listingId) => {
-                  setSnapshot({
-                    ...snapshot,
-                    listings: snapshot.listings.filter((listing) => listing.id !== listingId),
-                    liveListings: snapshot.liveListings.filter((listing) => listing.id !== listingId),
-                    reportedListings: snapshot.reportedListings.filter((listing) => listing.id !== listingId),
-                    reports: snapshot.reports.map((item) => item.listingId === listingId ? { ...item, status: "resolved", listingId: "" } : item)
-                  });
-                }}
-                onResolveReport={(reportId) => {
-                  setSnapshot({
-                    ...snapshot,
-                    reports: snapshot.reports.map((item) => item.id === reportId ? { ...item, status: "resolved" } : item)
-                  });
-                }}
-                setLoadError={setLoadError}
-              />
-            ))}
-        </AdminSection>
-      </div>
-      <AdminSection
-        title="Active Listings"
-        totalCount={snapshot.liveListings.length}
-        visibleCount={filteredActiveListings.length}
-        searchValue={activeListingSearch}
-        onSearchChange={setActiveListingSearch}
-        searchPlaceholder="Search active listings"
-        emptyMessage="No live listings."
-        noMatchesMessage="No active listings match your search."
-        className="admin-section-spaced"
-      >
-        {filteredActiveListings.map((listing) => (
-            <ActiveListingRow 
-              listing={listing} 
-              key={listing.id} 
-              api={api}
-              token={token}
-              payments={snapshot.payments}
-              sellers={snapshot.sellers}
-              users={snapshot.users}
-              onUpdate={(updated) => {
-                setSnapshot({
-                  ...snapshot,
-                  liveListings: snapshot.liveListings.map(l => l.id === updated.id ? updated : l)
-                });
-              }}
-              onRemove={(id) => {
-                setSnapshot({
-                  ...snapshot,
-                  listings: snapshot.listings.filter(l => l.id !== id),
-                  liveListings: snapshot.liveListings.filter(l => l.id !== id),
-                  reportedListings: snapshot.reportedListings.filter(l => l.id !== id),
-                  reports: snapshot.reports.map(report => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
-                });
-              }}
-            />
-          ))}
-      </AdminSection>
-      
-      <AdminSection
-        title="Rejected Listings"
-        totalCount={rejectedListings.length}
-        visibleCount={filteredRejectedListings.length}
-        searchValue={rejectedListingSearch}
-        onSearchChange={setRejectedListingSearch}
-        searchPlaceholder="Search rejected listings"
-        emptyMessage="No rejected listings."
-        noMatchesMessage="No rejected listings match your search."
-        className="admin-section-spaced"
-      >
-        {filteredRejectedListings.map((listing) => (
-            <ActiveListingRow 
-              listing={listing} 
-              key={listing.id} 
-              api={api}
-              token={token}
-              payments={snapshot.payments}
-              sellers={snapshot.sellers}
-              users={snapshot.users}
-              onUpdate={(updated) => {
-                setSnapshot({
-                  ...snapshot,
-                  listings: snapshot.listings.map(l => l.id === updated.id ? updated : l)
-                });
-              }}
-              onRemove={(id) => {
-                setSnapshot({
-                  ...snapshot,
-                  listings: snapshot.listings.filter(l => l.id !== id),
-                  liveListings: snapshot.liveListings.filter(l => l.id !== id),
-                  reportedListings: snapshot.reportedListings.filter(l => l.id !== id),
-                  reports: snapshot.reports.map(report => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
-                });
-              }}
-            />
-          ))}
-      </AdminSection>
 
+      <section className="data-panel card card--surface admin-attention-panel">
+        <div className="admin-panel-title-row">
+          <div>
+            <span className="admin-panel-eyebrow">Priority</span>
+            <h2>Needs attention</h2>
+          </div>
+          <span>Open a section to take action</span>
+        </div>
+        <div className="admin-attention-grid">
+          <OverviewAction icon={<ClipboardCheck size={20} />} label="Listings to review" count={pendingReviews} tone="warning" onClick={() => onNavigate("moderation")} />
+          <OverviewAction icon={<Flag size={20} />} label="Open reports" count={openReports} tone="danger" onClick={() => onNavigate("moderation")} />
+          <OverviewAction icon={<CreditCard size={20} />} label="Pending payments" count={pendingPayments} tone="neutral" onClick={() => onNavigate("payments")} />
+        </div>
+      </section>
+
+      <section className="data-panel card card--surface admin-snapshot-panel">
+        <div className="admin-panel-title-row">
+          <div>
+            <span className="admin-panel-eyebrow">Marketplace</span>
+            <h2>Platform snapshot</h2>
+          </div>
+        </div>
+        <div className="admin-snapshot-grid">
+          <button type="button" onClick={() => onNavigate("listings")}>
+            <Gem size={20} />
+            <span>Live listings</span>
+            <strong>{liveListings}</strong>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" onClick={() => onNavigate("users")}>
+            <UsersRound size={20} />
+            <span>Registered users</span>
+            <strong>{totalUsers}</strong>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" onClick={() => onNavigate("payments")}>
+            <WalletCards size={20} />
+            <span>Successful payments</span>
+            <strong>{paidSubscriptions}</strong>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OverviewAction({
+  icon,
+  label,
+  count,
+  tone,
+  onClick
+}: {
+  icon: ReactNode;
+  label: string;
+  count: number;
+  tone: "warning" | "danger" | "neutral";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`admin-attention-card tone-${tone}`} onClick={onClick}>
+      <span className="admin-attention-icon">{icon}</span>
+      <span>{label}</span>
+      <strong>{count}</strong>
+      <ChevronRight size={18} />
+    </button>
+  );
+}
+
+function PaymentsPanel({
+  payments,
+  filteredPayments,
+  pendingCount,
+  successfulCount,
+  search,
+  onSearchChange,
+  snapshot
+}: {
+  payments: PaymentIntent[];
+  filteredPayments: PaymentIntent[];
+  pendingCount: number;
+  successfulCount: number;
+  search: string;
+  onSearchChange: (value: string) => void;
+  snapshot: AdminModerationSnapshot;
+}) {
+  const failedCount = payments.filter((payment) => payment.status === "failed").length;
+  const otherCount = payments.length - pendingCount - successfulCount - failedCount;
+  return (
+    <div className="admin-console-stack">
+      <div className="metric-grid admin-view-metrics admin-payment-metrics">
+        <Metric icon={PackageCheck} label="Succeeded" value={String(successfulCount)} accent="var(--emerald)" />
+        <Metric icon={Clock} label="Pending" value={String(pendingCount)} accent="var(--gold)" />
+        <Metric icon={CircleAlert} label="Failed" value={String(failedCount)} accent="var(--danger)" />
+        <Metric icon={CreditCard} label="Other" value={String(otherCount)} accent="var(--muted)" />
+      </div>
+      {pendingCount > 0 && (
+        <section className="data-panel admin-orders-panel card card--inset card--compact">
+          <h2>Gateway confirmations</h2>
+          <div className="admin-payment-status">
+            <CreditCard size={18} />
+            {pendingCount} payment{pendingCount === 1 ? " is" : "s are"} waiting for gateway confirmation.
+          </div>
+        </section>
+      )}
       <AdminSection
-        title="Archived Listings"
-        totalCount={archivedListings.length}
-        visibleCount={filteredArchivedListings.length}
-        searchValue={archivedListingSearch}
-        onSearchChange={setArchivedListingSearch}
-        searchPlaceholder="Search archived listings"
-        emptyMessage="No archived listings."
-        noMatchesMessage="No archived listings match your search."
-        className="admin-section-spaced"
+        title="Payment history"
+        totalCount={payments.length}
+        visibleCount={filteredPayments.length}
+        searchValue={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder="Search payments, users, or listings"
+        emptyMessage="No payments found."
+        noMatchesMessage="No payments match your search."
       >
-        {filteredArchivedListings.map((listing) => (
-            <ActiveListingRow 
-              listing={listing} 
-              key={listing.id} 
-              api={api}
-              token={token}
-              payments={snapshot.payments}
-              sellers={snapshot.sellers}
-              users={snapshot.users}
-              onUpdate={(updated) => {
-                setSnapshot({
-                  ...snapshot,
-                  listings: snapshot.listings.map(l => l.id === updated.id ? updated : l)
-                });
-              }}
-              onRemove={(id) => {
-                setSnapshot({
-                  ...snapshot,
-                  listings: snapshot.listings.filter(l => l.id !== id),
-                  liveListings: snapshot.liveListings.filter(l => l.id !== id),
-                  reportedListings: snapshot.reportedListings.filter(l => l.id !== id),
-                  reports: snapshot.reports.map(report => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
-                });
-              }}
-            />
-          ))}
+        <div className="admin-payment-list">
+          {filteredPayments.map((payment) => {
+            const user = snapshot.users.find((item) => item.id === payment.userId);
+            const listing = snapshot.listings.find((item) => item.id === payment.listingId)
+              ?? snapshot.liveListings.find((item) => item.id === payment.listingId);
+            return (
+              <div className="admin-payment-row card card--inset card--compact" key={payment.id}>
+                <div className="admin-payment-identity">
+                  <strong>{listing?.title ?? "Unavailable listing"}</strong>
+                  <span>{user?.email ?? payment.userId}</span>
+                </div>
+                <div className="admin-payment-reference">
+                  <span>{payment.quote.plan.name}</span>
+                  <small>{payment.id}</small>
+                </div>
+                <div className="admin-payment-amount">
+                  <strong>{formatLkr(payment.amountLkr)}</strong>
+                  <span>{formatDate(payment.createdAt)}</span>
+                </div>
+                <span className={`admin-payment-pill status-${payment.status}`}>{payment.status}</span>
+              </div>
+            );
+          })}
+        </div>
       </AdminSection>
-    </section>
+    </div>
   );
 }
 
@@ -507,6 +787,28 @@ function matchesUserSearch(user: User, query: string) {
     user.trial?.startsAt,
     user.trial?.endsAt,
     user.trial?.terminatedAt
+  ]).includes(normalizedQuery);
+}
+
+function matchesPaymentSearch(payment: PaymentIntent, query: string, snapshot: AdminModerationSnapshot) {
+  const normalizedQuery = normalizeSearch(query);
+  if (!normalizedQuery) return true;
+  const user = snapshot.users.find((item) => item.id === payment.userId);
+  const listing = snapshot.listings.find((item) => item.id === payment.listingId)
+    ?? snapshot.liveListings.find((item) => item.id === payment.listingId);
+  return searchableText([
+    payment.id,
+    payment.status,
+    payment.purpose,
+    payment.amountLkr,
+    payment.gateway,
+    payment.gatewayReference,
+    payment.stripeInvoiceId,
+    payment.quote.plan.name,
+    user?.name,
+    user?.email,
+    listing?.title,
+    listing?.id
   ]).includes(normalizedQuery);
 }
 

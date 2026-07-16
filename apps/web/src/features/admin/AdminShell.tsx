@@ -53,15 +53,18 @@ export function AdminShell({ admin, handleLogout, theme, setTheme, children }: {
     <div className="app-shell admin-shell">
       <header className="topbar admin-topbar">
         <div className="topbar-inner admin-topbar-inner">
-          <div className="brand" aria-label="gemslanka.lk admin">
+          <div className="brand" aria-label="gemslanka.lk">
             <span className="brand-mark">
               <img src="/assets/gemslanka-logo.png" alt="" />
             </span>
-            <span className="brand-site-name">gemslanka.lk</span>
-            <span className="admin-brand-label">Admin</span>
+            <span className="brand-wordmark" aria-label="gemslanka.lk">
+              <span className="brand-wordmark-main" aria-hidden="true">
+                <span>GEMSLANKA</span>
+                <span className="brand-wordmark-domain">.LK</span>
+              </span>
+            </span>
           </div>
           <div className="admin-session">
-            <span>{admin.email}</span>
             <AdminProfileMenu admin={admin} handleLogout={handleLogout} theme={theme} setTheme={setTheme} />
           </div>
         </div>
