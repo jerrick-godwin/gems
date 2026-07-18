@@ -44,14 +44,11 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
 
   return (
     <section className="login-screen">
-      <div className="login-visual" aria-hidden="true">
-        <div className="login-visual-content">
-          <h2>Buy and sell gemstones with confidence.</h2>
-          <p>Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.</p>
-        </div>
+      <div className="login-visual-animated" aria-hidden="true">
+        <img src="/assets/auth-login.jpg" alt="" className="auth-image" />
       </div>
-      <div className="login-panel card card--spacious">
-        <div>
+      <div className="login-panel">
+        <div className="auth-header">
           <h1 className="auth-title">
             Sign in to continue
           </h1>

@@ -11,6 +11,11 @@
   background: transparent;
 }
 
+.site-header {
+  position: relative;
+  z-index: 100;
+}
+
 /* ── Topbar ───────────────────────────────────────────────── */
 
 .topbar {
@@ -88,10 +93,10 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  width: 102px;
-  min-width: 102px;
-  height: 36px;
-  min-height: 36px;
+  width: 108px;
+  min-width: 108px;
+  height: 40px;
+  min-height: 40px;
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
@@ -103,10 +108,10 @@
 
 .theme-option {
   display: grid;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  min-height: 30px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   place-items: center;
   padding: 0;
   border: 0;
@@ -1176,11 +1181,6 @@
 .nav-menu-panel .nav-menu-action {
   position: relative;
 }
-
-.nav-menu-panel #nav-post {
-  padding-inline: 16px;
-}
-
 .nav-actions > button,
 .nav-menu-panel > button,
 .nav-menu-panel > a,

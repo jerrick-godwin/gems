@@ -45,14 +45,11 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
 
   return (
     <section className="login-screen">
-      <div className="login-visual" aria-hidden="true">
-        <div className="login-visual-content">
-          <h2>Secure access to your gemstone account</h2>
-          <p>Reset your password and get back to managing listings, renewals, and reports.</p>
-        </div>
+      <div className="login-visual-animated" aria-hidden="true">
+        <img src="/assets/auth-password.jpg" alt="" className="auth-image" />
       </div>
-      <div className="login-panel card card--spacious">
-        <div>
+      <div className="login-panel">
+        <div className="auth-header">
           <h1 className="auth-title">
             Forgot password?
           </h1>

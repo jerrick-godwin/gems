@@ -78,14 +78,11 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: (dashboard:
 
   return (
     <section className="login-screen signup-screen">
-      <div className="login-visual" aria-hidden="true">
-        <div className="login-visual-content">
-          <h2>Start selling and sourcing gemstones with confidence</h2>
-          <p>Create a secure buyer or seller account with verified contact details.</p>
-        </div>
+      <div className="login-visual-animated" aria-hidden="true">
+        <img src="/assets/auth-signup.jpg" alt="" className="auth-image" />
       </div>
-      <div className="login-panel card card--spacious">
-        <div>
+      <div className="login-panel">
+        <div className="auth-header">
           <h1 className="auth-title">
             Create your account
           </h1>
