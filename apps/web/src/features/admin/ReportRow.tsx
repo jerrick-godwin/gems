@@ -1,7 +1,7 @@
 import { Eye, Flag, Trash, XCircle } from "lucide-react";
 import { useState } from "react";
 import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
-import type { Report } from "@gems/schemas";
+import type { Listing, Report } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { publicErrorMessage } from "../../shared/helpers";
 import { AdminMediaPreview } from "./AdminMediaPreview";
@@ -19,7 +19,7 @@ export function ReportRow({
   snapshot: AdminModerationSnapshot;
   api: GemsAdminApiClient;
   token: string;
-  onRemoveListing: (listingId: string) => void;
+  onRemoveListing: (listing: Listing) => void;
   onResolveReport: (reportId: string) => void;
   setLoadError: (error: string | null) => void;
 }) {
@@ -34,12 +34,12 @@ export function ReportRow({
 
   const removeListing = async () => {
     if (!listing) return;
-    if (!window.confirm(`Remove "${listing.title}" permanently? This deletes it from the database.`)) return;
+    if (!window.confirm(`Archive and unpublish "${listing.title}"? Billing and report history will be retained.`)) return;
     await rowAction.run(async () => {
       setBusy("remove");
       try {
-        await api.removeListing(token, listing.id);
-        onRemoveListing(listing.id);
+        const archived = await api.removeListing(token, listing.id);
+        onRemoveListing(archived);
         setLoadError(null);
       } catch (error) {
         setLoadError(publicErrorMessage(error, "Unable to remove listing"));

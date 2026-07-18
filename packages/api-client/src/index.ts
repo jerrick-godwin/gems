@@ -1,5 +1,7 @@
 import type {
   Cart,
+  AdminAuditLogPage,
+  BillingHistoryPage,
   CheckoutRequest,
   Conversation,
   CreateListingCheckoutSessionRequest,
@@ -8,6 +10,7 @@ import type {
   ListingCheckoutSession,
   ListingCheckoutCompletionResult,
   Listing,
+  ListingBillingSummary,
   ListingSubscription,
   ListingSubscriptionPlan,
   ListingSubscriptionPlanId,
@@ -16,6 +19,7 @@ import type {
   Order,
   OrderStatus,
   PaymentIntent,
+  PaymentAttempt,
   PaymentReceipt,
   PromotionCampaign,
   Report,
@@ -241,12 +245,46 @@ export class GemsApiClient {
     return this.authJson(`/listing-subscriptions/${subscriptionId}/payment-intent`);
   }
 
+  async createListingSubscriptionPaymentAttempt(subscriptionId: string, options: IdempotentRequestOptions = {}): Promise<PaymentAttempt> {
+    return this.authJson(`/listing-subscriptions/${subscriptionId}/payment-attempts`, { method: "POST" }, options);
+  }
+
   async convertTrialSubscription(subscriptionId: string, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
     return this.authJson(`/listing-subscriptions/${subscriptionId}/convert`, { method: "POST" }, options);
   }
 
   async getPaymentReceipt(paymentIntentId: string): Promise<PaymentReceipt> {
     return this.authJson(`/users/me/payment-intents/${paymentIntentId}/receipt`);
+  }
+
+  async billingHistory(params: { listingId?: string; cursor?: string; status?: string } = {}): Promise<BillingHistoryPage> {
+    const search = new URLSearchParams();
+    if (params.listingId) search.set("listingId", params.listingId);
+    if (params.cursor) search.set("cursor", params.cursor);
+    if (params.status) search.set("status", params.status);
+    const query = search.toString();
+    return this.authJson(`/users/me/billing${query ? `?${query}` : ""}`);
+  }
+
+  async paymentAttemptStatus(paymentAttemptId: string): Promise<PaymentAttempt> {
+    return this.authJson(`/payment-attempts/${paymentAttemptId}/status`);
+  }
+
+  async createBillingPortalSession(returnUrl?: string): Promise<{ url: string }> {
+    return this.authJson("/billing/portal-sessions", {
+      method: "POST",
+      body: JSON.stringify(returnUrl ? { returnUrl } : {})
+    });
+  }
+
+  async getBillingInvoiceReceipt(invoiceId: string): Promise<PaymentReceipt> {
+    return this.authJson(`/users/me/billing-invoices/${invoiceId}/receipt`);
+  }
+
+  async downloadBillingInvoiceReceipt(invoiceId: string): Promise<{ blob: Blob; fileName: string }> {
+    const response = await this.authRequest(`/users/me/billing-invoices/${invoiceId}/receipt-pdf`);
+    const fileName = fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "stripe-invoice.pdf";
+    return { blob: await response.blob(), fileName };
   }
 
   async downloadPaymentReceipt(paymentIntentId: string): Promise<{ blob: Blob; fileName: string }> {
@@ -473,6 +511,61 @@ export class GemsAdminApiClient {
     });
     if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load payments");
     return response.json() as Promise<PaymentIntent[]>;
+  }
+
+  async billingHistory(token: string, params: { cursor?: string; limit?: number; search?: string; status?: string } = {}): Promise<BillingHistoryPage> {
+    const query = new URLSearchParams();
+    if (params.cursor) query.set("cursor", params.cursor);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.search) query.set("search", params.search);
+    if (params.status) query.set("status", params.status);
+    const suffix = query.toString();
+    const response = await fetch(`${this.baseUrl}/admin/billing${suffix ? `?${suffix}` : ""}`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<BillingHistoryPage>;
+  }
+
+  async auditLogs(token: string, params: { cursor?: string; limit?: number } = {}): Promise<AdminAuditLogPage> {
+    const query = new URLSearchParams();
+    if (params.cursor) query.set("cursor", params.cursor);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString();
+    const response = await fetch(`${this.baseUrl}/admin/audit${suffix ? `?${suffix}` : ""}`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<AdminAuditLogPage>;
+  }
+
+  async downloadBillingInvoiceReceipt(token: string, invoiceId: string): Promise<{ blob: Blob; fileName: string }> {
+    const response = await fetch(`${this.baseUrl}/admin/billing-invoices/${invoiceId}/receipt-pdf`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return {
+      blob: await response.blob(),
+      fileName: fileNameFromContentDisposition(response.headers.get("content-disposition")) ?? "stripe-invoice.pdf"
+    };
+  }
+
+  async cancelListingSubscriptionAtPeriodEnd(token: string, subscriptionId: string): Promise<ListingBillingSummary> {
+    const response = await fetch(`${this.baseUrl}/admin/listing-subscriptions/${subscriptionId}/cancel`, {
+      method: "PATCH",
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<ListingBillingSummary>;
+  }
+
+  async reconcileBilling(token: string, subscriptionId: string): Promise<ListingBillingSummary> {
+    const response = await fetch(`${this.baseUrl}/admin/listing-subscriptions/${subscriptionId}/reconcile`, {
+      method: "POST",
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<ListingBillingSummary>;
   }
 
   async downloadPaymentReceipt(token: string, paymentIntentId: string): Promise<{ blob: Blob; fileName: string }> {

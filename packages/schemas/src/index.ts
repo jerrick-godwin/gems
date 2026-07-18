@@ -8,7 +8,8 @@ export type ListingSubscriptionPlanId = string;
 export type ListingSubscriptionStatus = "pending_payment" | "active" | "past_due" | "cancelled" | "expired";
 export type ListingSubscriptionSource = "paid" | "trial";
 export type PaymentPurpose = "listing_subscription" | "listing_subscription_renewal";
-export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled" | "expired";
+export type PaymentStatus = "pending" | "scheduled" | "succeeded" | "failed" | "cancelled" | "expired";
+export type BillingInvoiceStatus = "open" | "paid" | "failed" | "action_required" | "uncollectible" | "void";
 export type UserTrialStatus = "active" | "expired" | "terminated";
 
 export interface ListingSubscriptionPlan {
@@ -41,6 +42,10 @@ export interface ListingSubscriptionSummary {
   startsAt?: string;
   expiresAt?: string;
   cancelledAt?: string;
+  stripeStatus?: string;
+  scheduledConversionAt?: string;
+  cancelAtPeriodEnd?: boolean;
+  graceEndsAt?: string;
 }
 
 export interface PromotionCampaign {
@@ -258,11 +263,75 @@ export interface PaymentIntent {
   stripeSubscriptionId?: string;
   stripeCustomerId?: string;
   stripeInvoiceId?: string;
+  livemode?: boolean;
   paymentUrl?: string;
   policyVersion: string;
   policyAcceptedAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A checkout or renewal payment attempt. PaymentIntent remains the canonical
+ * interface name for compatibility with existing API consumers.
+ */
+export type PaymentAttempt = PaymentIntent;
+
+export interface BillingInvoice {
+  id: string;
+  userId: string;
+  listingId: string;
+  subscriptionId?: string;
+  paymentAttemptId?: string;
+  purpose: PaymentPurpose;
+  status: BillingInvoiceStatus;
+  amountLkr: number;
+  chargedAmountMinor: number;
+  chargedCurrency: string;
+  stripeInvoiceId: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  hostedInvoiceUrl?: string;
+  invoicePdfUrl?: string;
+  servicePeriodStart?: string;
+  servicePeriodEnd?: string;
+  paidAt?: string;
+  failureCode?: string;
+  failureMessage?: string;
+  livemode: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BillingHistoryPage {
+  attempts: PaymentAttempt[];
+  invoices: BillingInvoice[];
+  nextCursor?: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  actorEmail: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  result: string;
+  createdAt: string;
+}
+
+export interface AdminAuditLogPage {
+  items: AdminAuditLog[];
+  nextCursor?: string;
+}
+
+export interface ListingBillingSummary {
+  subscription?: ListingSubscription;
+  latestAttempt?: PaymentAttempt;
+  latestInvoice?: BillingInvoice;
+  graceEndsAt?: string;
+  scheduledConversionAt?: string;
 }
 
 export interface PaymentReceiptLineItem {
@@ -273,6 +342,7 @@ export interface PaymentReceiptLineItem {
 
 export interface PaymentReceipt {
   paymentIntentId: string;
+  billingInvoiceId?: string;
   receiptNumber: string;
   status: PaymentStatus;
   paidAt: string;
@@ -291,6 +361,12 @@ export interface PaymentReceipt {
     expiresAt?: string;
   };
   currency: "LKR";
+  chargedAmountMinor?: number;
+  chargedCurrency?: string;
+  servicePeriod?: {
+    startsAt?: string;
+    endsAt?: string;
+  };
   lineItems: PaymentReceiptLineItem[];
   totalLkr: number;
   stripe: {
@@ -298,6 +374,7 @@ export interface PaymentReceipt {
     subscriptionId?: string;
     customerId?: string;
     invoiceId?: string;
+    hostedInvoiceUrl?: string;
     invoicePdfUrl?: string;
   };
   createdAt: string;

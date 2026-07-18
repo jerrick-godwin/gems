@@ -14,8 +14,9 @@ import { useAccountWorkflow } from "./features/account/useAccountWorkflow";
 import { AppFrame } from "./features/shell/AppFrame";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
-import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, type View } from "./shared/types";
-import type { AccountSurfaceProps, CustomerNavigationOptions } from "./shared/customer";
+import { PAYMENT_ATTEMPT_MAX_POLLS, PAYMENT_ATTEMPT_POLL_INTERVAL_MS, paymentNoticeForAttempt, paymentReturnReferenceFromSearch, pollPaymentAttempt, removePaymentReturnParams, type PaymentReturnReference } from "./shared/billing";
+import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, viewFromPathname, type View } from "./shared/types";
+import { customerNavigationPath, type AccountSurfaceProps, type CustomerNavigationOptions } from "./shared/customer";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
 import { footerDescription, siteName } from "./shared/seo";
@@ -23,6 +24,22 @@ import { footerDescription, siteName } from "./shared/seo";
 const siteOrigin = "https://gemslanka.lk";
 const homepageTitle = `${siteName} | Buy and Sell Gemstones Worldwide`;
 const homepageDescription = footerDescription;
+
+function authReturnPath(location: Location) {
+  const value = new URLSearchParams(location.search).get("returnTo");
+  if (!value) return undefined;
+  try {
+    const target = new URL(value, location.origin);
+    if (target.origin !== location.origin) return undefined;
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function authDetourPath(view: View, returnPath: string | undefined) {
+  return returnPath ? `${pathForView(view)}?returnTo=${encodeURIComponent(returnPath)}` : pathForView(view);
+}
 
 const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
   market: {
@@ -139,6 +156,8 @@ function canonicalPathForView(view: View) {
 
 function App({ view, authState, references, navigate }: AccountSurfaceProps) {
   const [paymentNotice, setPaymentNotice] = useState<PaymentNotice | null>(null);
+  const [paymentReturn, setPaymentReturn] = useState<PaymentReturnReference | null>(() => paymentReturnReferenceFromSearch(window.location.search));
+  const [reconcilingPayment, setReconcilingPayment] = useState(() => Boolean(paymentReturnReferenceFromSearch(window.location.search)));
   const user = authState.status === "signed-in" ? authState.user : null;
   const authResolved = authState.status !== "resolving";
   const isSignedIn = user !== null;
@@ -157,6 +176,10 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   const navigateToPostEditCheckout = useCallback((token: string) => {
     navigate("post", { path: `/post?checkoutToken=${encodeURIComponent(token)}` });
+  }, [navigate]);
+
+  const navigateToReceipt = useCallback((billingInvoiceId: string) => {
+    navigate("receipt", { path: `/receipt?billingInvoiceId=${encodeURIComponent(billingInvoiceId)}` });
   }, [navigate]);
 
   useEffect(() => {
@@ -199,39 +222,75 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    const result = url.searchParams.get("payment");
-    if (!result) return;
+    const nextPaymentReturn = paymentReturnReferenceFromSearch(url.search);
+    if (!nextPaymentReturn) return;
 
-    const notice = paymentNoticeFromResult(result);
+    const notice = paymentNoticeFromResult(nextPaymentReturn.result === "succeeded" ? "success" : nextPaymentReturn.result);
     if (notice) {
       setPaymentNotice(notice);
+      setPaymentReturn(nextPaymentReturn);
+      setReconcilingPayment(true);
       url.pathname = pathForView("my_listings");
     }
 
-    url.searchParams.delete("payment");
-    navigate(notice ? "my_listings" : view, { replace: true, path: `${url.pathname}${url.search}${url.hash}` });
+    navigate(notice ? "my_listings" : view, { replace: true, path: removePaymentReturnParams(url) });
   }, [navigate, view]);
 
   useEffect(() => {
-    if (!paymentNotice || !isSignedIn) return;
+    if (!paymentReturn || !isSignedIn) return;
     let active = true;
-    api.dashboard()
-      .then((nextDashboard) => {
+    let reconciledAttempt = false;
+    const controller = new AbortController();
+
+    const reconcilePaymentReturn = async () => {
+      if ((paymentReturn.result === "pending" || paymentReturn.result === "scheduled") && paymentReturn.paymentAttemptId) {
+        try {
+          const pollResult = await pollPaymentAttempt({
+            load: () => api.paymentAttemptStatus(paymentReturn.paymentAttemptId!),
+            maxPolls: PAYMENT_ATTEMPT_MAX_POLLS,
+            intervalMs: PAYMENT_ATTEMPT_POLL_INTERVAL_MS,
+            signal: controller.signal
+          });
+          if (!active || pollResult.state === "cancelled") return;
+          if (pollResult.attempt) {
+            reconciledAttempt = true;
+            setPaymentNotice(paymentNoticeForAttempt(pollResult.attempt.status, pollResult.state === "exhausted"));
+          }
+        } catch {
+          if (active) {
+            setPaymentNotice({
+              tone: "warning",
+              message: "Payment is still being confirmed. Refresh billing details if the latest status is not visible yet."
+            });
+          }
+        }
+      }
+
+      if (active) setReconcilingPayment(false);
+      try {
+        const nextDashboard = await api.dashboard();
         if (active) account.setDashboard(nextDashboard);
-      })
-      .catch(() => {
-        if (active) {
+      } catch {
+        if (active && !reconciledAttempt) {
           setPaymentNotice({
             tone: "warning",
             message: "Payment status returned. Refresh My Listings if your latest status is not visible yet."
           });
         }
-      });
+      } finally {
+        if (active) {
+          setPaymentReturn(null);
+        }
+      }
+    };
+
+    void reconcilePaymentReturn();
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [api, account.setDashboard, isSignedIn, paymentNotice]);
+  }, [api, account.setDashboard, isSignedIn, paymentReturn]);
 
   const frameProps = {
     isSignedIn,
@@ -268,9 +327,13 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
   }
 
   if (authResolved && !isSignedIn && protectedViews.has(view)) {
+    const returnPath = customerNavigationPath(view, {}, window.location);
     return (
       <AppFrame {...frameProps}>
-        <LoginPage onSignedIn={() => navigateToView(view, { replace: true })} onNavigate={navigateToView} />
+        <LoginPage
+          onSignedIn={() => navigateToView(view, { replace: true, path: returnPath })}
+          onNavigate={(nextView) => navigateToView(nextView, { path: authDetourPath(nextView, returnPath) })}
+        />
       </AppFrame>
     );
   }
@@ -300,19 +363,22 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
   }
 
   if (view === "login" || view === "signup" || view === "forgot_password") {
+    const returnPath = authReturnPath(window.location);
+    const returnView = returnPath ? viewFromPathname(new URL(returnPath, window.location.origin).pathname) : undefined;
+    const navigateWithinAuth = (nextView: View) => navigateToView(nextView, { path: authDetourPath(nextView, returnPath) });
     return (
       <AppFrame {...frameProps}>
-        {view === "login" && <LoginPage onSignedIn={() => navigateToView("market", { replace: true })} onNavigate={navigateToView} />}
+        {view === "login" && <LoginPage onSignedIn={() => navigateToView(returnView ?? "market", { replace: true, path: returnPath })} onNavigate={navigateWithinAuth} />}
         {view === "signup" && (
           <SignupPage
             onSignedIn={(dashboard) => {
               account.setDashboard(dashboard);
-              navigateToView("my_listings", { replace: true });
+              navigateToView(returnView ?? "my_listings", { replace: true, path: returnPath });
             }}
-            onNavigate={navigateToView}
+            onNavigate={navigateWithinAuth}
           />
         )}
-        {view === "forgot_password" && <ForgotPasswordPage onNavigate={navigateToView} />}
+        {view === "forgot_password" && <ForgotPasswordPage onNavigate={navigateWithinAuth} />}
       </AppFrame>
     );
   }
@@ -376,12 +442,13 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
           isSignedIn={isSignedIn}
           authResolved={authResolved}
           dashboard={account.dashboard}
+          dashboardError={account.accountError}
           onDashboardChange={account.setDashboard}
           onNavigate={navigateToView}
           onEditListing={navigateToPostEditCheckout}
         />
       )}
-      {view === "my_listings" && paymentNotice && !account.dashboard && (
+      {view === "my_listings" && reconcilingPayment && !account.dashboard && (
         <StatusState
           title="Processing your payment"
           message="Please wait while we update your listing and payment status."
@@ -389,7 +456,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
           variant="payment"
         />
       )}
-      {view === "my_listings" && (!paymentNotice || account.dashboard) && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} />}
+      {view === "my_listings" && (!reconcilingPayment || account.dashboard) && <MyListingsView dashboard={account.dashboard} gemTypes={gemTypes} subscriptionPlans={subscriptionPlans} api={api} onDashboardChange={account.setDashboard} onNavigateToReceipt={navigateToReceipt} />}
       {view === "reports" && <MyReportsView reports={account.myReports} listings={listings} gemTypes={gemTypes} sellers={sellers} />}
       {view === "profile" && <ProfileSettings api={api} dashboard={account.dashboard} accountError={account.accountError} onDashboardChange={account.setDashboard} onMarketplaceRefresh={marketplace.refreshSnapshot} />}
     </AppFrame>

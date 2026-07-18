@@ -2,7 +2,7 @@ import { startTransition, useCallback, useEffect, useRef, useState, type Compone
 import { GemsApiClient, type MarketplaceReferences } from "@gems/api-client";
 import type { PublicRouteData } from "../public/types.js";
 import { MarketplaceRoute } from "../features/marketplace/MarketplaceRoute.js";
-import type { AccountSurfaceProps, CustomerAuthState, CustomerNavigationOptions, MarketplaceReferenceState } from "../shared/customer.js";
+import { customerNavigationPath, type AccountSurfaceProps, type CustomerAuthState, type CustomerNavigationOptions, type MarketplaceReferenceState } from "../shared/customer.js";
 import { pathForView, viewFromPathname, type View } from "../shared/types.js";
 
 type AccountSurfaceModule = { default: ComponentType<AccountSurfaceProps> };
@@ -125,7 +125,7 @@ export function CustomerRoot({
   }, []);
 
   const commitAccountNavigation = useCallback((nextView: View, options: CustomerNavigationOptions = {}) => {
-    const path = options.path ?? pathForView(nextView);
+    const path = customerNavigationPath(nextView, options, window.location);
     const state: CustomerHistoryState = { customerSurface: "account", customerEntryKey: nextEntryKey(), view: nextView };
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (options.replace) window.history.replaceState(state, "", path);
@@ -152,7 +152,7 @@ export function CustomerRoot({
       .catch(() => {
         if (sequence !== navigationSequenceRef.current) return;
         setPendingView(null);
-        window.location.assign(options.path ?? pathForView(nextView));
+        window.location.assign(customerNavigationPath(nextView, options, window.location));
       });
   }, [commitAccountNavigation, ensureAccountLoaded, ensureCurrentPublicEntry, loadReferences]);
 

@@ -12,6 +12,10 @@ const AZURE_STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STR
 const CONTAINER_NAME = process.env.AZURE_STORAGE_CONTAINER_NAME || "user-uploads";
 const uploadUrlTtlMinutes = Number(process.env.AZURE_STORAGE_UPLOAD_URL_TTL_MINUTES ?? 15);
 const readUrlTtlMinutes = Number(process.env.AZURE_STORAGE_READ_URL_TTL_MINUTES ?? 60);
+const imageContentTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const certificateContentTypes = new Set(["application/pdf"]);
+const maxImageBytes = 2 * 1024 * 1024;
+const maxCertificateBytes = 5 * 1024 * 1024;
 const localUploadRoot = process.env.LOCAL_UPLOADS_DIR
   ? resolve(process.env.LOCAL_UPLOADS_DIR)
   : fileURLToPath(new URL("../.local-uploads/", import.meta.url));
@@ -35,13 +39,14 @@ if (AZURE_STORAGE_CONNECTION_STRING) {
 }
 
 export async function createUserUploadTarget(userId: string, request: StorageUploadRequest): Promise<StorageUploadTarget> {
+  const constraint = userUploadConstraint(request);
   const blobKey = createUserBlobKey(userId, request);
   const expiresAt = new Date(Date.now() + uploadUrlTtlMinutes * 60 * 1000);
 
   if (!blobServiceClient || !sharedKeyCredential) {
     return {
       blobKey,
-      uploadUrl: createLocalUploadUrl(blobKey),
+      uploadUrl: createLocalUploadUrl(blobKey, expiresAt, request.contentType, constraint.maxBytes),
       readUrl: createLocalReadUrl(blobKey),
       expiresAt: expiresAt.toISOString()
     };
@@ -71,15 +76,16 @@ export async function createUserUploadTarget(userId: string, request: StorageUpl
 
 export async function createListingCheckoutUploadTarget(
   sessionId: string,
-  request: { kind: "photo" | "certificate"; fileName: string; contentType: string }
+  request: { kind: "photo" | "certificate"; fileName: string; contentType: string; size?: number }
 ): Promise<StorageUploadTarget> {
+  const constraint = listingCheckoutUploadConstraint(request);
   const blobKey = createListingCheckoutBlobKey(sessionId, request);
   const expiresAt = new Date(Date.now() + uploadUrlTtlMinutes * 60 * 1000);
 
   if (!blobServiceClient || !sharedKeyCredential) {
     return {
       blobKey,
-      uploadUrl: createLocalUploadUrl(blobKey),
+      uploadUrl: createLocalUploadUrl(blobKey, expiresAt, request.contentType, constraint.maxBytes),
       readUrl: createLocalReadUrl(blobKey),
       expiresAt: expiresAt.toISOString()
     };
@@ -137,16 +143,65 @@ export function localUploadPath(blobKey: string) {
   return target;
 }
 
-export async function saveLocalUpload(blobKey: string, request: IncomingMessage) {
+export interface LocalUploadCapability {
+  contentType: string;
+  maxBytes: number;
+}
+
+export function verifyLocalUploadCapability(blobKey: string, params: URLSearchParams): LocalUploadCapability | undefined {
+  const expires = params.get("expires") ?? "";
+  const contentType = params.get("contentType") ?? "";
+  const maxBytesValue = params.get("maxBytes") ?? "";
+  const signature = params.get("signature") ?? "";
+  const expiresAt = Number(expires);
+  const maxBytes = Number(maxBytesValue);
+  if (!Number.isInteger(expiresAt) || expiresAt * 1000 < Date.now() || !Number.isInteger(maxBytes) || maxBytes <= 0 || !contentType || !signature) return undefined;
+  const expected = crypto.createHmac("sha256", uploadCapabilitySecret()).update(uploadCapabilityPayload(blobKey, expires, contentType, maxBytesValue)).digest();
+  let actual: Buffer;
+  try {
+    actual = Buffer.from(signature, "base64url");
+  } catch {
+    return undefined;
+  }
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected) ? { contentType, maxBytes } : undefined;
+}
+
+export async function saveLocalUpload(blobKey: string, request: IncomingMessage, capability: LocalUploadCapability) {
+  const requestContentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
+  if (requestContentType !== capability.contentType.toLowerCase()) throw new Error("Upload content type does not match the signed capability.");
+  const contentLength = Number(request.headers["content-length"] ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > capability.maxBytes) throw new Error("Upload exceeds the signed size limit.");
   const target = localUploadPath(blobKey);
   await mkdir(dirname(target), { recursive: true });
-  await new Promise<void>((resolveUpload, rejectUpload) => {
-    const stream = createWriteStream(target);
-    request.pipe(stream);
-    request.on("error", rejectUpload);
-    stream.on("error", rejectUpload);
-    stream.on("finish", resolveUpload);
-  });
+  try {
+    await new Promise<void>((resolveUpload, rejectUpload) => {
+      const stream = createWriteStream(target);
+      let bytes = 0;
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        request.unpipe(stream);
+        stream.destroy();
+        rejectUpload(error);
+      };
+      request.on("data", (chunk: Buffer) => {
+        bytes += chunk.byteLength;
+        if (bytes > capability.maxBytes) fail(new Error("Upload exceeds the signed size limit."));
+      });
+      request.on("error", (error) => fail(error));
+      stream.on("error", (error) => fail(error));
+      stream.on("finish", () => {
+        if (settled) return;
+        settled = true;
+        resolveUpload();
+      });
+      request.pipe(stream);
+    });
+  } catch (error) {
+    await unlink(target).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function deleteBlob(blobKey: string) {
@@ -194,8 +249,41 @@ export async function ensureListingCardThumbnail(blobKey: string) {
   return { thumbnailKey, thumbnailUrl: createSignedReadUrl(thumbnailKey), width: 800, height: 600 };
 }
 
-function createLocalUploadUrl(blobKey: string) {
-  return `/api/v1/storage/local-upload?key=${encodeURIComponent(blobKey)}`;
+function createLocalUploadUrl(blobKey: string, expiresAt: Date, contentType: string, maxBytes: number) {
+  const expires = Math.floor(expiresAt.getTime() / 1000).toString();
+  const maxBytesValue = String(maxBytes);
+  const signature = crypto.createHmac("sha256", uploadCapabilitySecret())
+    .update(uploadCapabilityPayload(blobKey, expires, contentType, maxBytesValue))
+    .digest("base64url");
+  const params = new URLSearchParams({ key: blobKey, expires, contentType, maxBytes: maxBytesValue, signature });
+  return `/api/v1/storage/local-upload?${params.toString()}`;
+}
+
+function uploadCapabilityPayload(blobKey: string, expires: string, contentType: string, maxBytes: string) {
+  return `${blobKey}\n${expires}\n${contentType.toLowerCase()}\n${maxBytes}`;
+}
+
+function uploadCapabilitySecret() {
+  const configured = process.env.STORAGE_CAPABILITY_SECRET?.trim() || process.env.ADMIN_SESSION_SECRET?.trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") throw new Error("STORAGE_CAPABILITY_SECRET is required for local uploads in production.");
+  return "gems-local-upload-development-secret";
+}
+
+function userUploadConstraint(request: StorageUploadRequest) {
+  const certificate = request.scope === "listing-certificate";
+  const allowed = certificate ? certificateContentTypes : imageContentTypes;
+  if (!allowed.has(request.contentType.toLowerCase())) throw new Error("Unsupported upload content type.");
+  return { maxBytes: certificate ? maxCertificateBytes : maxImageBytes };
+}
+
+function listingCheckoutUploadConstraint(request: { kind: "photo" | "certificate"; contentType: string; size?: number }) {
+  const certificate = request.kind === "certificate";
+  const allowed = certificate ? certificateContentTypes : imageContentTypes;
+  const maxBytes = certificate ? maxCertificateBytes : maxImageBytes;
+  if (!allowed.has(request.contentType.toLowerCase())) throw new Error("Unsupported upload content type.");
+  if (request.size !== undefined && (!Number.isFinite(request.size) || request.size <= 0 || request.size > maxBytes)) throw new Error("Upload exceeds the allowed size.");
+  return { maxBytes };
 }
 
 function createLocalReadUrl(blobKey: string) {

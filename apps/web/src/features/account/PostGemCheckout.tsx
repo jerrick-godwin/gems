@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CreditCard, Eye, EyeOff, LogIn, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, CreditCard, Eye, EyeOff, LogIn, RefreshCcw, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
 import { GemsApiClient } from "@gems/api-client";
 import { formatLkr, quoteListingSubscription, type ListingCheckoutSession, type ListingSubscriptionPlan, type UserDashboard } from "@gems/schemas";
@@ -18,6 +18,7 @@ export function PostGemCheckout({
   isSignedIn,
   authResolved,
   dashboard,
+  dashboardError,
   onDashboardChange,
   onNavigate,
   onEditListing
@@ -28,6 +29,7 @@ export function PostGemCheckout({
   isSignedIn: boolean;
   authResolved: boolean;
   dashboard: UserDashboard | null;
+  dashboardError: string | null;
   onDashboardChange: (dashboard: UserDashboard) => void;
   onNavigate: (view: View) => void;
   onEditListing: (token: string) => void;
@@ -38,11 +40,13 @@ export function PostGemCheckout({
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [retryingTrialStatus, setRetryingTrialStatus] = useState(false);
   const completeAction = useSingleFlightAction();
   const activePlan = subscriptionPlans.find((plan) => plan.id === selectedPlanId) ?? subscriptionPlans[0];
   const photoCount = session?.media.filter((item) => item.kind === "photo").length ?? 0;
   const quote = useMemo(() => activePlan ? quoteListingSubscription(activePlan, photoCount) : null, [activePlan, photoCount]);
   const activeTrial = dashboard?.user.trial?.status === "active" ? dashboard.user.trial : undefined;
+  const trialStatusPending = !authResolved || (isSignedIn && !dashboard);
 
   useEffect(() => {
     let active = true;
@@ -96,6 +100,10 @@ export function PostGemCheckout({
       setStatus("Please sign in or create an account before payment.");
       return;
     }
+    if (!dashboard) {
+      setStatus("Please wait while we confirm your trial eligibility and billing status.");
+      return;
+    }
     if (!acceptedPolicies) {
       setStatus("Terms and Privacy Policy acceptance is required before payment.");
       return;
@@ -109,18 +117,19 @@ export function PostGemCheckout({
           selectedPlanId,
           acceptedPolicies
         }, { idempotencyKey: checkoutKey });
-        onDashboardChange(await api.dashboard());
+        if (result.mode === "payment" && result.paymentIntent.paymentUrl) {
+          window.location.assign(result.paymentIntent.paymentUrl);
+          return;
+        }
+
         if (result.mode === "trial") {
           setStatus("Listing submitted with your free trial.");
-          onNavigate("my_listings");
           completeAction.release();
+          onNavigate("my_listings");
+          void api.dashboard().then(onDashboardChange).catch(() => {});
           return;
         }
-        const paymentIntent = result.paymentIntent;
-        if (paymentIntent.paymentUrl) {
-          window.location.href = paymentIntent.paymentUrl;
-          return;
-        }
+
         setStatus("Payment intent created. Please contact support if you are not redirected to checkout.");
         completeAction.release();
       } catch (error) {
@@ -128,6 +137,18 @@ export function PostGemCheckout({
         completeAction.release();
       }
     }, { keepLocked: true });
+  };
+
+  const handleRetryTrialStatus = async () => {
+    setRetryingTrialStatus(true);
+    setStatus(null);
+    try {
+      onDashboardChange(await api.dashboard());
+    } catch (error) {
+      setStatus(publicErrorMessage(error, "Unable to confirm trial eligibility. Please try again."));
+    } finally {
+      setRetryingTrialStatus(false);
+    }
   };
 
   const handleLinkClick = (event: MouseEvent<HTMLAnchorElement>, view: View) => {
@@ -169,7 +190,8 @@ export function PostGemCheckout({
   }
 
   const certificate = session.media.find((item) => item.kind === "certificate");
-  const isCompleting = completeAction.busy || status === "Creating payment...";
+  const isCompleting = completeAction.busy;
+  const checkoutControlsDisabled = isCompleting || trialStatusPending;
 
   return (
     <section className="checkout-page listing-checkout-page">
@@ -192,7 +214,24 @@ export function PostGemCheckout({
             <InlineCheckoutAuth mode={authMode} setMode={setAuthMode} onDashboardChange={onDashboardChange} />
           ) : null}
 
-          <TrialStatusPanel trial={activeTrial} variant="checkout" />
+          {trialStatusPending ? (
+            <section className="checkout-panel card card--surface" aria-live="polite">
+              <h2>Confirming trial eligibility</h2>
+              <p className="checkout-muted">
+                {dashboardError
+                  ? "We could not confirm whether this listing is eligible for free-trial publishing. Payment controls stay locked until the check succeeds."
+                  : "We are checking your account before showing the authoritative amount due today."}
+              </p>
+              {dashboardError && (
+                <button type="button" className="secondary-action" onClick={() => void handleRetryTrialStatus()} disabled={retryingTrialStatus}>
+                  {retryingTrialStatus ? <span className="button-spinner" aria-hidden="true" /> : <RefreshCcw size={17} strokeWidth={2.4} />}
+                  {retryingTrialStatus ? "Checking..." : "Retry eligibility check"}
+                </button>
+              )}
+            </section>
+          ) : (
+            <TrialStatusPanel trial={dashboard?.user.trial} variant="checkout" />
+          )}
 
           <section className="checkout-panel card card--surface" aria-labelledby="checkout-plan-heading">
             <div className="checkout-panel-title">
@@ -203,7 +242,7 @@ export function PostGemCheckout({
                 const isSelected = selectedPlanId === plan.id;
                 return (
                   <label className={`plan-option plan-option-${plan.id} ${isSelected ? "selected" : ""}`} key={plan.id}>
-                    <input type="radio" name="checkout-plan" value={plan.id} checked={isSelected} onChange={() => handlePlanChange(plan.id)} disabled={isCompleting} />
+                    <input type="radio" name="checkout-plan" value={plan.id} checked={isSelected} onChange={() => handlePlanChange(plan.id)} disabled={checkoutControlsDisabled} />
                     <span className="plan-option-eyebrow">{plan.eyebrow}</span>
                     <strong>{plan.name}</strong>
                     <span className="plan-option-price">{formatLkr(plan.priceLkr)}</span>
@@ -278,12 +317,12 @@ export function PostGemCheckout({
               </div>
               <span className="listing-checkout-total-price">
                 <small>LKR</small>
-                {(activeTrial ? 0 : quote.totalLkr).toLocaleString("en-US")}
+                {trialStatusPending ? "—" : (activeTrial ? 0 : quote.totalLkr).toLocaleString("en-US")}
               </span>
             </div>
           </div>
           <label className="policy-acceptance listing-checkout-policy">
-            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => handlePolicyChange(event.target.checked)} disabled={isCompleting} required />
+            <input type="checkbox" checked={acceptedPolicies} onChange={(event) => handlePolicyChange(event.target.checked)} disabled={checkoutControlsDisabled} required />
             <span>
               I accept the{" "}
               <a href="/terms-and-conditions" target="_blank" rel="noreferrer">
@@ -296,10 +335,11 @@ export function PostGemCheckout({
               <span className="required-marker" aria-hidden="true">*</span>
             </span>
           </label>
-          <button className="checkout-submit" type="button" onClick={() => void handlePayment()} disabled={!isSignedIn || !acceptedPolicies || isCompleting}>
-            {isCompleting ? <span className="button-spinner" aria-hidden="true" /> : activeTrial ? <Check size={18} strokeWidth={2.4} /> : <CreditCard size={18} strokeWidth={2.4} />}
-            {isCompleting ? (activeTrial ? "Submitting..." : "Creating payment...") : activeTrial ? "Publish with Free Trial" : "Proceed to Payment"}
+          <button className="checkout-submit" type="button" onClick={() => void handlePayment()} disabled={!isSignedIn || !acceptedPolicies || checkoutControlsDisabled}>
+            {isCompleting || trialStatusPending ? <span className="button-spinner" aria-hidden="true" /> : activeTrial ? <Check size={18} strokeWidth={2.4} /> : <CreditCard size={18} strokeWidth={2.4} />}
+            {trialStatusPending ? "Checking trial eligibility..." : isCompleting ? (activeTrial ? "Submitting..." : "Creating payment...") : activeTrial ? "Publish with Free Trial" : "Proceed to Payment"}
           </button>
+          {status && <p className="checkout-status" role="status">{status}</p>}
         </aside>
       </div>
     </section>

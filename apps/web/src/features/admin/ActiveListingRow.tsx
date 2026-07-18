@@ -15,8 +15,7 @@ export function ActiveListingRow({
   payments,
   sellers,
   users,
-  onUpdate,
-  onRemove
+  onUpdate
 }: { 
   listing: Listing; 
   api: GemsAdminApiClient; 
@@ -25,7 +24,6 @@ export function ActiveListingRow({
   sellers: SellerProfile[];
   users: User[];
   onUpdate: (listing: Listing) => void;
-  onRemove: (id: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -40,9 +38,9 @@ export function ActiveListingRow({
     await removeAction.run(async () => {
       setBusy(true);
       try {
-        await api.removeListing(token, listing.id);
+        const archived = await api.removeListing(token, listing.id);
         setShowRemoveConfirm(false);
-        onRemove(listing.id);
+        onUpdate(archived);
       } catch (error) {
         alert("Failed to remove listing");
         setBusy(false);
@@ -208,7 +206,7 @@ export function ActiveListingRow({
                     {payment.stripeInvoiceId && (
                       <div>
                         <dt>Invoice</dt>
-                        <dd><a href={`https://dashboard.stripe.com/invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer">{payment.stripeInvoiceId}</a></dd>
+                        <dd><a href={`https://dashboard.stripe.com/${payment.livemode ? "" : "test/"}invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer">{payment.stripeInvoiceId}</a></dd>
                       </div>
                     )}
                   </dl>
@@ -317,7 +315,7 @@ export function ActiveListingRow({
               <Trash size={20} /> Remove Listing
             </h3>
             <p className="confirmation-dialog-copy">
-              Are you sure you want to completely remove <strong>"{listing.title}"</strong>? This action cannot be undone.
+              Archive and unpublish <strong>"{listing.title}"</strong>? Billing history is retained and any active renewal is scheduled to end at the current period boundary.
             </p>
             <div className="confirmation-dialog-actions">
               <button

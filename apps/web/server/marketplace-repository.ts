@@ -580,6 +580,22 @@ export async function getAllSellers() {
 
 export async function updateListingModeration(listingId: string, decision: "approve" | "reject", reason?: string) {
   const now = new Date();
+  if (!hasDatabase && decision === "approve") {
+    throw new Error("PostgreSQL billing state is required to approve a listing.");
+  }
+  if (hasDatabase && decision === "approve") {
+    const [subscription] = await db.select().from(listingSubscriptionsTable).where(eq(listingSubscriptionsTable.listingId, listingId)).limit(1);
+    const entitlementEnd = subscription?.graceEndsAt && subscription.graceEndsAt > now
+      ? subscription.graceEndsAt
+      : subscription?.expiresAt;
+    const hasEntitlement = Boolean(
+      subscription
+      && (subscription.status === "active" || subscription.status === "past_due")
+      && entitlementEnd
+      && entitlementEnd > now
+    );
+    if (!hasEntitlement) throw new Error("Listing does not have a current trial or paid entitlement.");
+  }
   const nextValues = decision === "approve"
     ? {
         status: "live" as const,
@@ -651,7 +667,18 @@ export async function getLiveListings() {
 }
 
 export async function updateListingStatus(listingId: string, status: "live" | "paused") {
+  if (!hasDatabase && status === "live") {
+    throw new Error("PostgreSQL billing state is required to publish a listing.");
+  }
   if (hasDatabase) {
+    if (status === "live") {
+      const [subscription] = await db.select().from(listingSubscriptionsTable).where(eq(listingSubscriptionsTable.listingId, listingId)).limit(1);
+      const now = new Date();
+      const entitlementEnd = subscription?.graceEndsAt && subscription.graceEndsAt > now ? subscription.graceEndsAt : subscription?.expiresAt;
+      if (!subscription || (subscription.status !== "active" && subscription.status !== "past_due") || !entitlementEnd || entitlementEnd <= now) {
+        throw new Error("Listing does not have a current trial or paid entitlement.");
+      }
+    }
     const rows = await db.update(listingTable).set({ status, updatedAt: new Date() }).where(eq(listingTable.id, listingId)).returning();
     return rows[0] ? toListing(rows[0]) : undefined;
   }
@@ -669,23 +696,20 @@ export async function removeListing(listingId: string) {
     const rows = await db.select().from(listingTable).where(eq(listingTable.id, listingId)).limit(1);
     const listing = rows[0];
     if (!listing) return undefined;
-
-    await db.delete(cartItemTable).where(eq(cartItemTable.listingId, listingId));
-    await db.delete(conversationTable).where(eq(conversationTable.listingId, listingId));
-    await db.delete(listingContactTable).where(eq(listingContactTable.listingId, listingId));
-    await db.delete(listingMediaTable).where(eq(listingMediaTable.listingId, listingId));
-    await db.update(reportTable).set({ status: "resolved", listingId: null }).where(eq(reportTable.listingId, listingId));
-    await db.delete(listingTable).where(eq(listingTable.id, listingId));
-    return toListing(listing);
+    const [archived] = await db.update(listingTable).set({
+      status: "paused",
+      publishedAt: null,
+      updatedAt: new Date()
+    }).where(eq(listingTable.id, listingId)).returning();
+    return archived ? toListing(archived) : undefined;
   }
 
   const database = await getMutableMarketplaceDatabase();
   const listing = database.listings.find((item) => item.id === listingId);
   if (!listing) return undefined;
-  database.listings = database.listings.filter((item) => item.id !== listingId);
-  database.reports = database.reports.map((report) => report.listingId === listingId ? { ...report, status: "resolved", listingId: "" } : report);
-  database.conversations = database.conversations.filter((conversation) => conversation.listingId !== listingId);
-  delete database.listingContacts[listingId];
+  listing.status = "paused";
+  listing.publishedAt = undefined;
+  listing.updatedAt = new Date().toISOString();
   return listing;
 }
 

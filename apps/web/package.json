@@ -12,7 +12,7 @@
     "build:server": "esbuild server/server.ts --bundle --platform=node --format=esm --banner:js=\"import { createRequire as __nodeCreateRequire } from 'node:module'; const require = __nodeCreateRequire(import.meta.url);\" --outfile=server-dist/server.js --external:vite",
     "start": "NODE_ENV=production node server-dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "test": "node --import tsx --test server/favicon-assets.test.ts server/indexnow.test.ts server/listing-title.test.ts server/payment-return.test.ts server/public-assets.test.ts server/public-listing-media.test.ts server/public-marketplace.test.ts server/sitemap.test.ts server/style-architecture.test.ts src/entry-server.test.tsx src/features/marketplace/Marketplace.test.ts src/shared/seo.test.ts src/shared/types.test.ts",
+    "test": "node --import tsx --test server/auth.test.ts server/billing-backend-invariants.test.ts server/billing-migration.test.ts server/favicon-assets.test.ts server/indexnow.test.ts server/listing-title.test.ts server/payment-cancel-token.test.ts server/payment-return.test.ts server/public-assets.test.ts server/public-listing-media.test.ts server/public-marketplace.test.ts server/sitemap.test.ts server/storage-capability.test.ts server/stripe.test.ts server/style-architecture.test.ts server/vercel-routing.test.ts src/entry-server.test.tsx src/features/admin/adminBilling.test.ts src/features/marketplace/Marketplace.test.ts src/shared/billing.test.ts src/shared/seo.test.ts src/shared/types.test.ts",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

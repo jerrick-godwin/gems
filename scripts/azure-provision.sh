@@ -56,6 +56,7 @@ az deployment group create \
     stripeCurrency="${STRIPE_CURRENCY:-LKR}" \
     stripeLkrPerUnit="${STRIPE_LKR_PER_UNIT:-${STRIPE_LKR_PER_USD:-}}" \
     stripeWebhookSecret="${STRIPE_WEBHOOK_SECRET:-}" \
+    stripePortalConfigurationId="${STRIPE_PORTAL_CONFIGURATION_ID:-}" \
     publicSiteUrl="${PUBLIC_SITE_URL:-}" \
   --output json > "${DEPLOYMENT_JSON}"
 

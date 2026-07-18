@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import { cert, initializeApp, type App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,11 @@ export interface FirebaseAuthClaims {
   uid: string;
   email: string;
   name: string;
+}
+
+export interface AdminAuthClaims {
+  email: string;
+  role: "admin";
 }
 
 const currentDir = fileURLToPath(new URL(".", import.meta.url));
@@ -90,10 +95,41 @@ export async function verifyAdminFirebaseIdToken(token: string): Promise<{ email
 
   const decodedToken = await getAuth(adminFirebaseApp).verifyIdToken(token);
   
-  const email = decodedToken.email;
+  return authorizeAdminClaims(decodedToken);
+}
+
+export function authorizeAdminClaims(
+  decodedToken: Pick<DecodedIdToken, "email"> & { admin?: unknown },
+  allowedEmailSetting = process.env.ADMIN_ALLOWED_EMAILS
+): AdminAuthClaims {
+  const email = decodedToken.email?.trim();
   if (!email) {
     throw new Error("Authentication token is missing email claim");
   }
+  if (decodedToken.admin !== true) {
+    throw new Error("Authentication token is missing required admin claim");
+  }
+
+  const allowedEmails = parseAdminAllowedEmails(allowedEmailSetting);
+  if (allowedEmails.size === 0) {
+    throw new Error("Admin email allowlist is not configured");
+  }
+  if (!allowedEmails.has(normalizeEmail(email))) {
+    throw new Error("Admin account is not allowed");
+  }
 
   return { email, role: "admin" };
+}
+
+export function parseAdminAllowedEmails(value: string | undefined): ReadonlySet<string> {
+  return new Set(
+    (value ?? "")
+      .split(",")
+      .map(normalizeEmail)
+      .filter(Boolean)
+  );
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLocaleLowerCase("en-US");
 }

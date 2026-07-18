@@ -35,7 +35,7 @@ export function sanitizePublicMessage(message: string, fallback = "Something wen
 }
 
 export function paymentNoticeFromResult(result: string): PaymentNotice | null {
-  if (result === "success") {
+  if (result === "success" || result === "succeeded") {
     return { tone: "success", message: "Payment received. Your listing has moved into moderation." };
   }
   if (result === "cancelled") {
@@ -43,6 +43,9 @@ export function paymentNoticeFromResult(result: string): PaymentNotice | null {
   }
   if (result === "pending") {
     return { tone: "neutral", message: "Payment is pending. We will update your listing after confirmation." };
+  }
+  if (result === "scheduled") {
+    return { tone: "neutral", message: "Payment is scheduled. My Listings will update after it is processed." };
   }
   if (result === "failed" || result === "expired") {
     return { tone: "error", message: "Payment was not completed. You can restart checkout from My Listings." };

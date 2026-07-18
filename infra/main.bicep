@@ -52,6 +52,9 @@ param stripeLkrPerUnit string = ''
 @description('Stripe webhook signing secret for /api/v1/payments/stripe/webhook.')
 param stripeWebhookSecret string = ''
 
+@description('Optional Stripe Customer Portal configuration ID.')
+param stripePortalConfigurationId string = ''
+
 @description('Public origin used for Stripe Checkout success and cancel URLs. Defaults to the Azure Web App URL.')
 param publicSiteUrl string = ''
 
@@ -230,6 +233,18 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
           value: '@Microsoft.KeyVault(SecretUri=${adminSessionSecretSecret.properties.secretUri})'
         }
         {
+          name: 'ADMIN_ALLOWED_EMAILS'
+          value: adminEmail
+        }
+        {
+          name: 'PAYMENT_RETURN_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${adminSessionSecretSecret.properties.secretUri})'
+        }
+        {
+          name: 'STORAGE_CAPABILITY_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${adminSessionSecretSecret.properties.secretUri})'
+        }
+        {
           name: 'FIREBASE_SERVICE_ACCOUNT'
           value: '@Microsoft.KeyVault(SecretUri=${firebaseServiceAccountSecret.properties.secretUri})'
         }
@@ -256,6 +271,10 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'STRIPE_WEBHOOK_SECRET'
           value: '@Microsoft.KeyVault(SecretUri=${stripeWebhookSecretSecret.properties.secretUri})'
+        }
+        {
+          name: 'STRIPE_PORTAL_CONFIGURATION_ID'
+          value: stripePortalConfigurationId
         }
         {
           name: 'PUBLIC_SITE_URL'

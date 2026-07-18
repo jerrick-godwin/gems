@@ -1,5 +1,6 @@
-import { boolean, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import type {
+  BillingInvoiceStatus,
   CheckoutDetails,
   GemAttributes,
   ListingCheckoutDraft,
@@ -24,6 +25,7 @@ import type {
 export const users = pgTable("users", {
   id: varchar("id").primaryKey(),
   firebaseUid: varchar("firebase_uid").unique(),
+  stripeCustomerId: varchar("stripe_customer_id"),
   name: varchar("name").notNull(),
   phone: varchar("phone").notNull().default(""),
   address: varchar("address").notNull().default(""),
@@ -38,7 +40,9 @@ export const users = pgTable("users", {
   trialTerminatedAt: timestamp("trial_terminated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  usersStripeCustomerIdUnique: uniqueIndex("users_stripe_customer_id_unique").on(table.stripeCustomerId)
+}));
 
 export const userSettings = pgTable("user_settings", {
   userId: varchar("user_id").references(() => users.id).primaryKey(),
@@ -144,13 +148,24 @@ export const listingSubscriptions = pgTable("listing_subscriptions", {
   status: varchar("status").$type<ListingSubscriptionStatus>().notNull().default("pending_payment"),
   source: varchar("source").$type<ListingSubscriptionSource>().notNull().default("paid"),
   autoRenew: boolean("auto_renew").notNull().default(true),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  stripeCustomerId: varchar("stripe_customer_id"),
+  stripeStatus: varchar("stripe_status"),
+  scheduledConversionAt: timestamp("scheduled_conversion_at"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+  graceEndsAt: timestamp("grace_ends_at"),
+  lastStripeEventCreated: bigint("last_stripe_event_created", { mode: "number" }),
+  lastStripeEventId: varchar("last_stripe_event_id"),
   startsAt: timestamp("starts_at"),
   expiresAt: timestamp("expires_at"),
   cancelledAt: timestamp("cancelled_at"),
   paymentIntentId: varchar("payment_intent_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  listingSubscriptionsListingIdUnique: uniqueIndex("listing_subscriptions_listing_id_unique").on(table.listingId),
+  listingSubscriptionsStripeSubscriptionIdUnique: uniqueIndex("listing_subscriptions_stripe_subscription_id_unique").on(table.stripeSubscriptionId)
+}));
 
 export const paymentIntents = pgTable("payment_intents", {
   id: varchar("id").primaryKey(),
@@ -170,13 +185,87 @@ export const paymentIntents = pgTable("payment_intents", {
   stripeSubscriptionId: varchar("stripe_subscription_id"),
   stripeCustomerId: varchar("stripe_customer_id"),
   stripeInvoiceId: varchar("stripe_invoice_id"),
+  stripeLivemode: boolean("stripe_livemode"),
   paymentUrl: text("payment_url"),
   policyVersion: varchar("policy_version").notNull(),
   policyAcceptedAt: timestamp("policy_accepted_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 }, (table) => ({
-  paymentIntentsUserListingIdempotencyUnique: uniqueIndex("payment_intents_user_listing_idempotency_unique").on(table.userId, table.listingId, table.idempotencyKey)
+  paymentIntentsUserListingIdempotencyUnique: uniqueIndex("payment_intents_user_listing_idempotency_unique").on(table.userId, table.listingId, table.idempotencyKey),
+  paymentIntentsStripeCheckoutSessionIdUnique: uniqueIndex("payment_intents_stripe_checkout_session_id_unique").on(table.stripeCheckoutSessionId)
+}));
+
+export const billingInvoices = pgTable("billing_invoices", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  subscriptionId: varchar("subscription_id").references(() => listingSubscriptions.id),
+  paymentAttemptId: varchar("payment_attempt_id").references(() => paymentIntents.id),
+  purpose: varchar("purpose").$type<PaymentPurpose>().notNull(),
+  status: varchar("status").$type<BillingInvoiceStatus>().notNull().default("open"),
+  amountLkr: integer("amount_lkr").notNull(),
+  chargedAmountMinor: integer("charged_amount_minor").notNull(),
+  chargedCurrency: varchar("charged_currency").notNull(),
+  stripeInvoiceId: varchar("stripe_invoice_id").notNull(),
+  stripeCustomerId: varchar("stripe_customer_id"),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  hostedInvoiceUrl: text("hosted_invoice_url"),
+  invoicePdfUrl: text("invoice_pdf_url"),
+  servicePeriodStart: timestamp("service_period_start"),
+  servicePeriodEnd: timestamp("service_period_end"),
+  paidAt: timestamp("paid_at"),
+  failureCode: varchar("failure_code"),
+  failureMessage: text("failure_message"),
+  livemode: boolean("livemode").notNull().default(false),
+  lastStripeEventCreated: bigint("last_stripe_event_created", { mode: "number" }),
+  lastStripeEventId: varchar("last_stripe_event_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => ({
+  billingInvoicesStripeInvoiceIdUnique: uniqueIndex("billing_invoices_stripe_invoice_id_unique").on(table.stripeInvoiceId),
+  billingInvoicesUserCreatedIdx: index("billing_invoices_user_created_idx").on(table.userId, table.createdAt),
+  billingInvoicesListingCreatedIdx: index("billing_invoices_listing_created_idx").on(table.listingId, table.createdAt)
+}));
+
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  id: varchar("id").primaryKey(),
+  type: varchar("type").notNull(),
+  objectId: varchar("object_id").notNull(),
+  eventCreated: bigint("event_created", { mode: "number" }).notNull(),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (table) => ({
+  stripeWebhookEventsObjectIdIdx: index("stripe_webhook_events_object_id_idx").on(table.objectId)
+}));
+
+export const billingOperations = pgTable("billing_operations", {
+  id: varchar("id").primaryKey(),
+  type: varchar("type").notNull(),
+  status: varchar("status").notNull(),
+  targetId: varchar("target_id").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => ({
+  billingOperationsStatusNextAttemptIdx: index("billing_operations_status_next_attempt_idx").on(table.status, table.nextAttemptAt)
+}));
+
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: varchar("id").primaryKey(),
+  actorEmail: varchar("actor_email").notNull(),
+  action: varchar("action").notNull(),
+  targetType: varchar("target_type").notNull(),
+  targetId: varchar("target_id").notNull(),
+  before: jsonb("before").$type<Record<string, unknown>>(),
+  after: jsonb("after").$type<Record<string, unknown>>(),
+  result: varchar("result").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (table) => ({
+  adminAuditLogsTargetCreatedIdx: index("admin_audit_logs_target_created_idx").on(table.targetType, table.targetId, table.createdAt)
 }));
 
 export const renewalEvents = pgTable("renewal_events", {

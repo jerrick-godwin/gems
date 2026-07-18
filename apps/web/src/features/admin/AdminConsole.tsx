@@ -9,6 +9,7 @@ import {
   CreditCard,
   Flag,
   Gem,
+  History,
   LayoutDashboard,
   PackageCheck,
   Search,
@@ -18,21 +19,24 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
-import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
+import { type Listing, type Report, type User } from "@gems/schemas";
 import { Metric } from "../../shared/Metric";
 import { publicErrorMessage } from "../../shared/helpers";
 import { ActiveListingRow } from "./ActiveListingRow";
+import { AdminBillingPanel } from "./AdminBillingPanel";
+import { AdminAuditPanel } from "./AdminAuditPanel";
 import { ReportRow } from "./ReportRow";
 import { ReviewRow } from "./ReviewRow";
 
-type AdminView = "overview" | "moderation" | "listings" | "users" | "payments";
+type AdminView = "overview" | "moderation" | "listings" | "users" | "payments" | "audit";
 
 const ADMIN_VIEW_COPY: Record<AdminView, { title: string; description: string }> = {
   overview: { title: "Overview", description: "A quick view of marketplace activity and work that needs attention." },
   moderation: { title: "Moderation", description: "Review new listings and investigate reports from the marketplace." },
   listings: { title: "Listings", description: "Manage live, rejected, and archived gem listings." },
   users: { title: "Users & trials", description: "Find users, review trial status, and manage trial access." },
-  payments: { title: "Payments", description: "Monitor subscription payments and gateway status." }
+  payments: { title: "Payments", description: "Monitor subscription payments and gateway status." },
+  audit: { title: "Audit history", description: "Inspect recorded admin actions across trials, billing, moderation, and listing archival." }
 };
 
 export function AdminConsole({
@@ -71,7 +75,6 @@ export function AdminConsole({
   const filteredActiveListings = snapshot.liveListings.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
   const filteredRejectedListings = rejectedListings.filter((listing) => matchesListingSearch(listing, rejectedListingSearch, snapshot));
   const filteredArchivedListings = archivedListings.filter((listing) => matchesListingSearch(listing, archivedListingSearch, snapshot));
-  const filteredPayments = snapshot.payments.filter((payment) => matchesPaymentSearch(payment, paymentSearch, snapshot));
   const moderateListing = async (listingId: string, decision: "approve" | "reject", reason?: string) => {
     try {
       const updated = await api.moderateListing(token, listingId, decision, reason);
@@ -90,13 +93,18 @@ export function AdminConsole({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const removeListing = (id: string) => {
+  const updateListingSnapshot = (updated: Listing) => {
     setSnapshot({
       ...snapshot,
-      listings: snapshot.listings.filter((listing) => listing.id !== id),
-      liveListings: snapshot.liveListings.filter((listing) => listing.id !== id),
-      reportedListings: snapshot.reportedListings.filter((listing) => listing.id !== id),
-      reports: snapshot.reports.map((report) => report.listingId === id ? { ...report, status: "resolved", listingId: "" } : report)
+      listings: snapshot.listings.some((listing) => listing.id === updated.id)
+        ? snapshot.listings.map((listing) => listing.id === updated.id ? updated : listing)
+        : [...snapshot.listings, updated],
+      liveListings: updated.status === "live"
+        ? snapshot.liveListings.some((listing) => listing.id === updated.id)
+          ? snapshot.liveListings.map((listing) => listing.id === updated.id ? updated : listing)
+          : [...snapshot.liveListings, updated]
+        : snapshot.liveListings.filter((listing) => listing.id !== updated.id),
+      reportedListings: snapshot.reportedListings.map((listing) => listing.id === updated.id ? updated : listing)
     });
   };
 
@@ -170,7 +178,7 @@ export function AdminConsole({
                   snapshot={snapshot}
                   api={api}
                   token={token}
-                  onRemoveListing={removeListing}
+                  onRemoveListing={updateListingSnapshot}
                   onResolveReport={(reportId) => {
                     setSnapshot({
                       ...snapshot,
@@ -210,10 +218,7 @@ export function AdminConsole({
                   payments={snapshot.payments}
                   sellers={snapshot.sellers}
                   users={snapshot.users}
-                  onUpdate={(updated) => {
-                    setSnapshot({ ...snapshot, liveListings: snapshot.liveListings.map((item) => item.id === updated.id ? updated : item) });
-                  }}
-                  onRemove={removeListing}
+                  onUpdate={updateListingSnapshot}
                 />
               ))}
             </AdminSection>
@@ -236,10 +241,7 @@ export function AdminConsole({
                   payments={snapshot.payments}
                   sellers={snapshot.sellers}
                   users={snapshot.users}
-                  onUpdate={(updated) => {
-                    setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item) });
-                  }}
-                  onRemove={removeListing}
+                  onUpdate={updateListingSnapshot}
                 />
               ))}
             </AdminSection>
@@ -262,10 +264,7 @@ export function AdminConsole({
                   payments={snapshot.payments}
                   sellers={snapshot.sellers}
                   users={snapshot.users}
-                  onUpdate={(updated) => {
-                    setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item) });
-                  }}
-                  onRemove={removeListing}
+                  onUpdate={updateListingSnapshot}
                 />
               ))}
             </AdminSection>
@@ -288,16 +287,17 @@ export function AdminConsole({
         )}
 
         {activeView === "payments" && (
-          <PaymentsPanel
+          <AdminBillingPanel
+            api={api}
+            token={token}
             payments={snapshot.payments}
-            filteredPayments={filteredPayments}
-            pendingCount={pendingPayments.length}
-            successfulCount={successfulPayments.length}
             search={paymentSearch}
             onSearchChange={setPaymentSearch}
             snapshot={snapshot}
           />
         )}
+
+        {activeView === "audit" && <AdminAuditPanel api={api} token={token} />}
       </div>
     </section>
   );
@@ -334,6 +334,7 @@ function AdminNavigation({
         <div className="admin-navigation-divider" />
         <span className="admin-navigation-group-label">Finance</span>
         <AdminNavigationItem icon={<WalletCards size={18} />} label="Payments" view="payments" activeView={activeView} onSelect={onSelect} count={paymentCount} attention={paymentCount > 0} />
+        <AdminNavigationItem icon={<History size={18} />} label="Audit history" view="audit" activeView={activeView} onSelect={onSelect} />
       </nav>
     </aside>
   );
@@ -467,81 +468,6 @@ function OverviewAction({
   );
 }
 
-function PaymentsPanel({
-  payments,
-  filteredPayments,
-  pendingCount,
-  successfulCount,
-  search,
-  onSearchChange,
-  snapshot
-}: {
-  payments: PaymentIntent[];
-  filteredPayments: PaymentIntent[];
-  pendingCount: number;
-  successfulCount: number;
-  search: string;
-  onSearchChange: (value: string) => void;
-  snapshot: AdminModerationSnapshot;
-}) {
-  const failedCount = payments.filter((payment) => payment.status === "failed").length;
-  const otherCount = payments.length - pendingCount - successfulCount - failedCount;
-  return (
-    <div className="admin-console-stack">
-      <div className="metric-grid admin-view-metrics admin-payment-metrics">
-        <Metric icon={PackageCheck} label="Succeeded" value={String(successfulCount)} accent="var(--emerald)" />
-        <Metric icon={Clock} label="Pending" value={String(pendingCount)} accent="var(--gold)" />
-        <Metric icon={CircleAlert} label="Failed" value={String(failedCount)} accent="var(--danger)" />
-        <Metric icon={CreditCard} label="Other" value={String(otherCount)} accent="var(--muted)" />
-      </div>
-      {pendingCount > 0 && (
-        <section className="data-panel admin-orders-panel card card--inset card--compact">
-          <h2>Gateway confirmations</h2>
-          <div className="admin-payment-status">
-            <CreditCard size={18} />
-            {pendingCount} payment{pendingCount === 1 ? " is" : "s are"} waiting for gateway confirmation.
-          </div>
-        </section>
-      )}
-      <AdminSection
-        title="Payment history"
-        totalCount={payments.length}
-        visibleCount={filteredPayments.length}
-        searchValue={search}
-        onSearchChange={onSearchChange}
-        searchPlaceholder="Search payments, users, or listings"
-        emptyMessage="No payments found."
-        noMatchesMessage="No payments match your search."
-      >
-        <div className="admin-payment-list">
-          {filteredPayments.map((payment) => {
-            const user = snapshot.users.find((item) => item.id === payment.userId);
-            const listing = snapshot.listings.find((item) => item.id === payment.listingId)
-              ?? snapshot.liveListings.find((item) => item.id === payment.listingId);
-            return (
-              <div className="admin-payment-row card card--inset card--compact" key={payment.id}>
-                <div className="admin-payment-identity">
-                  <strong>{listing?.title ?? "Unavailable listing"}</strong>
-                  <span>{user?.email ?? payment.userId}</span>
-                </div>
-                <div className="admin-payment-reference">
-                  <span>{payment.quote.plan.name}</span>
-                  <small>{payment.id}</small>
-                </div>
-                <div className="admin-payment-amount">
-                  <strong>{formatLkr(payment.amountLkr)}</strong>
-                  <span>{formatDate(payment.createdAt)}</span>
-                </div>
-                <span className={`admin-payment-pill status-${payment.status}`}>{payment.status}</span>
-              </div>
-            );
-          })}
-        </div>
-      </AdminSection>
-    </div>
-  );
-}
-
 function UserTrialsPanel({
   users,
   api,
@@ -632,7 +558,7 @@ function UserTrialsPanel({
                   <input
                     type="date"
                     value={trialEndDates[user.id] ?? dateInputValue(trial?.endsAt)}
-                    min={dateInputValue(trial?.endsAt)}
+                    min={minimumTrialEndDate(trial?.endsAt)}
                     onChange={(event) => setTrialEndDates((current) => ({ ...current, [user.id]: event.target.value }))}
                     disabled={busy}
                   />
@@ -718,6 +644,13 @@ function dateInputValue(value?: string) {
   return value ? new Date(value).toISOString().slice(0, 10) : "";
 }
 
+function minimumTrialEndDate(currentEnd?: string) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const current = currentEnd ? new Date(currentEnd) : tomorrow;
+  return dateInputValue(current > tomorrow ? current.toISOString() : tomorrow.toISOString());
+}
+
 function matchesListingSearch(listing: Listing, query: string, snapshot: AdminModerationSnapshot) {
   const normalizedQuery = normalizeSearch(query);
   if (!normalizedQuery) return true;
@@ -787,28 +720,6 @@ function matchesUserSearch(user: User, query: string) {
     user.trial?.startsAt,
     user.trial?.endsAt,
     user.trial?.terminatedAt
-  ]).includes(normalizedQuery);
-}
-
-function matchesPaymentSearch(payment: PaymentIntent, query: string, snapshot: AdminModerationSnapshot) {
-  const normalizedQuery = normalizeSearch(query);
-  if (!normalizedQuery) return true;
-  const user = snapshot.users.find((item) => item.id === payment.userId);
-  const listing = snapshot.listings.find((item) => item.id === payment.listingId)
-    ?? snapshot.liveListings.find((item) => item.id === payment.listingId);
-  return searchableText([
-    payment.id,
-    payment.status,
-    payment.purpose,
-    payment.amountLkr,
-    payment.gateway,
-    payment.gatewayReference,
-    payment.stripeInvoiceId,
-    payment.quote.plan.name,
-    user?.name,
-    user?.email,
-    listing?.title,
-    listing?.id
   ]).includes(normalizedQuery);
 }
 

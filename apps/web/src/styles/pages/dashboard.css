@@ -300,6 +300,18 @@
   justify-content: flex-end;
 }
 
+.seller-listings-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+.seller-listings-heading-actions .secondary-action {
+  flex: 0 0 auto;
+}
+
 .seller-listings-search {
   position: relative;
   width: min(280px, 100%);
@@ -406,8 +418,14 @@
 
 @media (max-width: 560px) {
   .seller-listings-heading,
-  .seller-listings-search {
+  .seller-listings-search,
+  .seller-listings-heading-actions {
     width: 100%;
+  }
+
+  .seller-listings-heading-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .seller-listings-pagination {

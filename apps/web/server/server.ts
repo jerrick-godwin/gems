@@ -2,6 +2,7 @@ import "./env.js";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type Stripe from "stripe";
 import { extname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ViteDevServer } from "vite";
@@ -36,6 +37,9 @@ import { publicAssetsFromViteManifest, type ViteManifestEntry } from "./public-a
 import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
 import {
   createListingPaymentIntent,
+  createListingSubscriptionPaymentAttempt,
+  createBillingPortalForUser,
+  cancelListingSubscriptionByAdmin,
   convertTrialSubscriptionToPaymentIntent,
   completeListingCheckoutSession,
   createListingCheckoutSession,
@@ -44,14 +48,24 @@ import {
   cancelListingSubscription,
   cancelListingSubscriptionsForListing,
   confirmPaymentIntent,
+  processStripeWebhookEventTransaction,
+  processPendingBillingOperations,
+  isValidPaymentCancelToken,
   isStripeCheckoutSessionForPaymentIntent,
-  markStripeSubscriptionPastDue,
-  recordStripeSubscriptionInvoicePayment,
-  syncStripeSubscriptionStatus,
+  recordStripeBillingInvoice,
+  syncStripeSubscriptionSnapshot,
   getAdminPaymentIntents,
+  getAdminBillingHistory,
+  getAdminBillingInvoiceReceipt,
+  getAdminBillingInvoiceReceiptPdf,
+  getAdminAuditLogs,
   getAdminPaymentReceipt,
   getAdminPaymentReceiptPdf,
   getPaymentIntent,
+  getPaymentAttemptStatus,
+  getBillingHistory,
+  getBillingInvoiceReceipt,
+  getBillingInvoiceReceiptPdf,
   getPaymentReceipt,
   getPaymentReceiptPdf,
   getListingCheckoutSession,
@@ -64,6 +78,8 @@ import {
   getUserProfile,
   extendUserTrial,
   terminateUserTrial,
+  reconcileListingSubscription,
+  recordAdminAudit,
   updateOrderStatus,
   updateSettings,
   updateListingCheckoutDraft,
@@ -74,8 +90,8 @@ import {
   removeUserListing,
   updateUserListing
 } from "./user-repository.js";
-import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
-import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./stripe.js";
+import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload, verifyLocalUploadCapability } from "./storage.js";
+import { constructStripeWebhookEvent, retrieveStripeCheckoutSession, stripeInvoiceSnapshot, stripeSubscriptionSnapshot } from "./stripe.js";
 import { ensureDatabaseCompatibility, requireDatabase } from "./db/index.js";
 import { indexNowKey } from "./indexnow.js";
 import { resolvePublicListingMedia } from "./public-listing-media.js";
@@ -120,6 +136,9 @@ const paymentIntentValidationErrors = new Set([
   "Listing not found.",
   "Payment collection is not configured."
 ]);
+const publicCheckoutRateLimits = new Map<string, { count: number; resetAt: number }>();
+const publicCheckoutRateLimitWindowMs = 10 * 60 * 1000;
+const publicCheckoutRateLimitMax = 10;
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -244,31 +263,70 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   requireDatabase();
   await ensureDatabaseCompatibility();
 
+  if (request.method === "GET" && path === "/api/v1/internal/billing-operations") {
+    const configuredSecret = process.env.CRON_SECRET?.trim();
+    if (!configuredSecret || readBearerToken(request) !== configuredSecret) {
+      sendJson(response, 401, { error: "Billing worker authorization required" });
+      return true;
+    }
+    sendJson(response, 200, await processPendingBillingOperations(50));
+    return true;
+  }
+
   if (request.method === "POST" && path === "/api/v1/payments/stripe/webhook") {
+    let event: ReturnType<typeof constructStripeWebhookEvent>;
     try {
-      const event = constructStripeWebhookEvent(await readRawBody(request), request.headers["stripe-signature"]);
-      await handleStripeWebhookEvent(event);
-      await broadcastMarketplaceInvalidation();
-      sendJson(response, 200, { received: true });
+      event = constructStripeWebhookEvent(await readRawBody(request), request.headers["stripe-signature"]);
+    } catch (error) {
+      console.warn("Stripe webhook signature verification failed:", error);
+      sendJson(response, 400, { error: "Invalid payment notification" });
+      return true;
+    }
+
+    const objectId = stripeObjectId(event.data.object) ?? event.id;
+    try {
+      const result = await processStripeWebhookEventTransaction(
+        { id: event.id, type: event.type, objectId, eventCreated: event.created },
+        () => handleStripeWebhookEvent(event)
+      );
+      if (result === "retry") {
+        sendJson(response, 503, { error: "Payment notification is already being processed" });
+        return true;
+      }
+      if (result === "processed") {
+        await broadcastMarketplaceInvalidation().catch((error) => console.warn("Payment marketplace invalidation failed:", error));
+      }
+      sendJson(response, 200, { received: true, duplicate: result === "duplicate" });
     } catch (error) {
       console.warn("Stripe webhook handling failed:", error);
-      sendJson(response, 400, { error: "Invalid payment notification" });
+      sendJson(response, 500, { error: "Payment notification processing failed" });
     }
     return true;
   }
 
   if (request.method === "PUT" && path === "/api/v1/storage/local-upload") {
     const blobKey = url.searchParams.get("key") ?? "";
-    if (!blobKey.startsWith("users/") && !blobKey.startsWith("listing-checkout-sessions/")) {
-      sendJson(response, 400, { error: "Invalid upload key" });
+    const capability = verifyLocalUploadCapability(blobKey, url.searchParams);
+    if ((!blobKey.startsWith("users/") && !blobKey.startsWith("listing-checkout-sessions/")) || !capability) {
+      sendJson(response, 403, { error: "Invalid or expired upload capability" });
       return true;
     }
-    await saveLocalUpload(blobKey, request);
-    sendJson(response, 201, { ok: true });
+    try {
+      await saveLocalUpload(blobKey, request, capability);
+      sendJson(response, 201, { ok: true });
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : "Upload rejected" });
+    }
     return true;
   }
 
   if (request.method === "POST" && path === "/api/v1/listing-checkout-sessions") {
+    const rateLimit = takePublicCheckoutRateLimit(request);
+    if (!rateLimit.allowed) {
+      response.setHeader("retry-after", String(Math.max(1, Math.ceil((rateLimit.resetAt - Date.now()) / 1000))));
+      sendJson(response, 429, { error: "Too many checkout attempts. Please try again later." });
+      return true;
+    }
     try {
       const body = parseObject(await readJsonBody(request).catch(() => ({})));
       sendJson(response, 201, await createListingCheckoutSession(body as any, getPublicSiteUrl(request)));
@@ -374,16 +432,24 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       const endsAt = new Date(endsAtValue);
       try {
         const user = await extendUserTrial(adminUserTrialMatch[1], endsAt);
+        await recordAdminAudit({ actorEmail: admin.email, action: "trial.extend", targetType: "user", targetId: adminUserTrialMatch[1], after: user ? JSON.parse(JSON.stringify(user)) : undefined, result: user ? "succeeded" : "not_found" });
         sendJson(response, user ? 200 : 404, user ?? { error: "User not found" });
       } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: "trial.extend", targetType: "user", targetId: adminUserTrialMatch[1], result: "failed" });
         sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to extend trial" });
       }
       return true;
     }
 
     if (adminUserTrialMatch && request.method === "DELETE") {
-      const user = await terminateUserTrial(adminUserTrialMatch[1]);
-      sendJson(response, user ? 200 : 404, user ?? { error: "User not found" });
+      try {
+        const user = await terminateUserTrial(adminUserTrialMatch[1]);
+        await recordAdminAudit({ actorEmail: admin.email, action: "trial.terminate", targetType: "user", targetId: adminUserTrialMatch[1], after: user ? JSON.parse(JSON.stringify(user)) : undefined, result: user ? "succeeded" : "not_found" });
+        sendJson(response, user ? 200 : 404, user ?? { error: "User not found" });
+      } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: "trial.terminate", targetType: "user", targetId: adminUserTrialMatch[1], result: "failed" });
+        sendJson(response, 409, { error: error instanceof Error ? error.message : "Unable to terminate trial" });
+      }
       return true;
     }
 
@@ -412,6 +478,88 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    if (request.method === "GET" && path === "/api/v1/admin/billing") {
+      sendJson(response, 200, await getAdminBillingHistory({
+        cursor: url.searchParams.get("cursor") ?? undefined,
+        limit: Number(url.searchParams.get("limit")) || undefined,
+        search: url.searchParams.get("search") ?? undefined,
+        status: url.searchParams.get("status") ?? undefined
+      }));
+      return true;
+    }
+
+    if (request.method === "GET" && path === "/api/v1/admin/audit") {
+      sendJson(response, 200, await getAdminAuditLogs({
+        cursor: url.searchParams.get("cursor") ?? undefined,
+        limit: Number(url.searchParams.get("limit")) || undefined
+      }));
+      return true;
+    }
+
+    const adminBillingInvoiceReceiptMatch = path.match(/^\/api\/v1\/admin\/billing-invoices\/([^/]+)\/receipt$/);
+    if (request.method === "GET" && adminBillingInvoiceReceiptMatch) {
+      const receipt = await getAdminBillingInvoiceReceipt(adminBillingInvoiceReceiptMatch[1]);
+      sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Billing invoice receipt not found" });
+      return true;
+    }
+
+    const adminBillingInvoiceReceiptPdfMatch = path.match(/^\/api\/v1\/admin\/billing-invoices\/([^/]+)\/receipt-pdf$/);
+    if (request.method === "GET" && adminBillingInvoiceReceiptPdfMatch) {
+      const receiptPdf = await getAdminBillingInvoiceReceiptPdf(adminBillingInvoiceReceiptPdfMatch[1]);
+      if (!receiptPdf) {
+        sendJson(response, 404, { error: "Verified invoice PDF not found" });
+        return true;
+      }
+      response.writeHead(200, {
+        "content-type": "application/pdf",
+        "content-length": receiptPdf.data.byteLength,
+        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "x-content-type-options": "nosniff"
+      });
+      response.end(receiptPdf.data);
+      return true;
+    }
+
+    const adminSubscriptionCancelMatch = path.match(/^\/api\/v1\/admin\/listing-subscriptions\/([^/]+)\/cancel$/);
+    if (request.method === "PATCH" && adminSubscriptionCancelMatch) {
+      try {
+        const summary = await cancelListingSubscriptionByAdmin(adminSubscriptionCancelMatch[1]);
+        await recordAdminAudit({
+          actorEmail: admin.email,
+          action: "billing.cancel_at_period_end",
+          targetType: "listing_subscription",
+          targetId: adminSubscriptionCancelMatch[1],
+          after: summary ? JSON.parse(JSON.stringify(summary)) : undefined,
+          result: summary ? "succeeded" : "not_found"
+        });
+        sendJson(response, summary ? 200 : 404, summary ?? { error: "Listing subscription not found" });
+      } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: "billing.cancel_at_period_end", targetType: "listing_subscription", targetId: adminSubscriptionCancelMatch[1], result: "failed" });
+        sendJson(response, 502, { error: "Unable to schedule cancellation; the operation is queued for retry" });
+      }
+      return true;
+    }
+
+    const adminSubscriptionReconcileMatch = path.match(/^\/api\/v1\/admin\/listing-subscriptions\/([^/]+)\/reconcile$/);
+    if (request.method === "POST" && adminSubscriptionReconcileMatch) {
+      try {
+        const summary = await reconcileListingSubscription(adminSubscriptionReconcileMatch[1]);
+        await recordAdminAudit({
+          actorEmail: admin.email,
+          action: "billing.reconcile",
+          targetType: "listing_subscription",
+          targetId: adminSubscriptionReconcileMatch[1],
+          after: summary ? JSON.parse(JSON.stringify(summary)) : undefined,
+          result: summary ? "succeeded" : "not_found"
+        });
+        sendJson(response, summary ? 200 : 404, summary ?? { error: "Listing subscription not found" });
+      } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: "billing.reconcile", targetType: "listing_subscription", targetId: adminSubscriptionReconcileMatch[1], result: "failed" });
+        sendJson(response, 502, { error: "Unable to reconcile billing; the operation is queued for retry" });
+      }
+      return true;
+    }
+
     const adminPaymentReceiptMatch = path.match(/^\/api\/v1\/admin\/payment-intents\/([^/]+)\/receipt$/);
     if (request.method === "GET" && adminPaymentReceiptMatch) {
       const receipt = await getAdminPaymentReceipt(adminPaymentReceiptMatch[1]);
@@ -430,7 +578,8 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       response.writeHead(200, {
         "content-type": receiptPdf.contentType,
         "content-length": receiptPdf.data.byteLength,
-        "content-disposition": `inline; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "x-content-type-options": "nosniff",
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
         "access-control-allow-headers": "authorization,content-type"
@@ -468,12 +617,25 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         sendJson(response, 400, { error: "decision must be approve or reject" });
         return true;
       }
-      const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
-      if (listing) await broadcastMarketplaceInvalidation(listing);
-      if (listing && decision === "reject") {
-        await cancelListingSubscriptionsForListing(listing.id);
+      try {
+        const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
+        if (listing) await broadcastMarketplaceInvalidation(listing);
+        if (listing && decision === "reject") {
+          await cancelListingSubscriptionsForListing(listing.id);
+        }
+        await recordAdminAudit({
+          actorEmail: admin.email,
+          action: `moderation.${decision}`,
+          targetType: "listing",
+          targetId: moderationDecisionMatch[1],
+          after: listing ? JSON.parse(JSON.stringify(listing)) : undefined,
+          result: listing ? "succeeded" : "not_found"
+        });
+        sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: `moderation.${decision}`, targetType: "listing", targetId: moderationDecisionMatch[1], result: "failed" });
+        sendJson(response, 409, { error: error instanceof Error ? error.message : "Unable to update listing moderation" });
       }
-      sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
       return true;
     }
 
@@ -484,9 +646,16 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     const adminListingMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)$/);
     if (request.method === "DELETE" && adminListingMatch) {
-      const listing = await removeListing(adminListingMatch[1]);
-      if (listing) await broadcastMarketplaceInvalidation(listing);
-      sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      try {
+        await cancelListingSubscriptionsForListing(adminListingMatch[1]);
+        const listing = await removeListing(adminListingMatch[1]);
+        if (listing) await broadcastMarketplaceInvalidation(listing);
+        await recordAdminAudit({ actorEmail: admin.email, action: "listing.archive", targetType: "listing", targetId: adminListingMatch[1], after: listing ? JSON.parse(JSON.stringify(listing)) : undefined, result: listing ? "succeeded" : "not_found" });
+        sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: "listing.archive", targetType: "listing", targetId: adminListingMatch[1], result: "failed" });
+        sendJson(response, 409, { error: error instanceof Error ? error.message : "Unable to archive listing" });
+      }
       return true;
     }
 
@@ -497,9 +666,15 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         sendJson(response, 400, { error: "Invalid status" });
         return true;
       }
-      const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
-      if (listing) await broadcastMarketplaceInvalidation(listing);
-      sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      try {
+        const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
+        if (listing) await broadcastMarketplaceInvalidation(listing);
+        await recordAdminAudit({ actorEmail: admin.email, action: `listing.${body.status}`, targetType: "listing", targetId: adminListingStatusMatch[1], after: listing ? JSON.parse(JSON.stringify(listing)) : undefined, result: listing ? "succeeded" : "not_found" });
+        sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) {
+        await recordAdminAudit({ actorEmail: admin.email, action: `listing.${body.status}`, targetType: "listing", targetId: adminListingStatusMatch[1], result: "failed" });
+        sendJson(response, 409, { error: error instanceof Error ? error.message : "Unable to update listing status" });
+      }
       return true;
     }
 
@@ -550,8 +725,8 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       response.end();
     } catch (error) {
       console.warn("Stripe checkout verification failed:", error);
-      const confirmed = await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
-      response.writeHead(302, { location: paymentReturnLocation(intent.id, confirmed?.status ?? "failed") });
+      const confirmed = await confirmPaymentIntent(intent.id, "pending", sessionId, { stripeCheckoutSessionId: sessionId });
+      response.writeHead(302, { location: paymentReturnLocation(intent.id, confirmed?.status ?? "pending") });
       response.end();
     }
     return true;
@@ -559,6 +734,10 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   const stripePaymentCancelMatch = path.match(/^\/api\/v1\/payments\/stripe\/([^/]+)\/cancel$/);
   if (request.method === "GET" && stripePaymentCancelMatch) {
+    if (!isValidPaymentCancelToken(stripePaymentCancelMatch[1], url.searchParams.get("token"))) {
+      sendJson(response, 400, { error: "Invalid or expired payment cancellation link" });
+      return true;
+    }
     await confirmPaymentIntent(stripePaymentCancelMatch[1], "cancelled", undefined);
     response.writeHead(302, { location: paymentReturnLocation(stripePaymentCancelMatch[1], "cancelled") });
     response.end();
@@ -570,7 +749,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     return true;
   }
 
-  if (path.startsWith("/api/v1/users") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/storage") || path.startsWith("/api/v1/listing-subscriptions")) {
+  if (path.startsWith("/api/v1/users") || path.startsWith("/api/v1/orders") || path.startsWith("/api/v1/storage") || path.startsWith("/api/v1/listing-subscriptions") || path.startsWith("/api/v1/payment-attempts") || path.startsWith("/api/v1/billing")) {
     const user = await authenticateUser(request);
     if (!user) {
       sendJson(response, 401, { error: "User authorization required" });
@@ -612,6 +791,32 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    if (request.method === "GET" && path === "/api/v1/users/me/billing") {
+      sendJson(response, 200, await getBillingHistory(user.id, {
+        listingId: url.searchParams.get("listingId") ?? undefined,
+        cursor: url.searchParams.get("cursor") ?? undefined,
+        status: url.searchParams.get("status") ?? undefined
+      }));
+      return true;
+    }
+
+    const paymentAttemptStatusMatch = path.match(/^\/api\/v1\/payment-attempts\/([^/]+)\/status$/);
+    if (request.method === "GET" && paymentAttemptStatusMatch) {
+      const attempt = await getPaymentAttemptStatus(user.id, paymentAttemptStatusMatch[1]);
+      sendJson(response, attempt ? 200 : 404, attempt ?? { error: "Payment attempt not found" });
+      return true;
+    }
+
+    if (request.method === "POST" && path === "/api/v1/billing/portal-sessions") {
+      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      try {
+        sendJson(response, 201, await createBillingPortalForUser(user.id, typeof body.returnUrl === "string" ? body.returnUrl : undefined));
+      } catch (error) {
+        sendJson(response, 409, { error: error instanceof Error ? error.message : "Unable to open billing management" });
+      }
+      return true;
+    }
+
     if (request.method === "GET" && path === "/api/v1/users/me/listings") {
       const page = Number(url.searchParams.get("page")) || 1;
       const limit = Number(url.searchParams.get("limit")) || 10;
@@ -639,9 +844,34 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         "content-type": receiptPdf.contentType,
         "content-length": receiptPdf.data.byteLength,
         "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "x-content-type-options": "nosniff",
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
         "access-control-allow-headers": "authorization,content-type"
+      });
+      response.end(receiptPdf.data);
+      return true;
+    }
+
+    const billingInvoiceReceiptMatch = path.match(/^\/api\/v1\/users\/me\/billing-invoices\/([^/]+)\/receipt$/);
+    if (request.method === "GET" && billingInvoiceReceiptMatch) {
+      const receipt = await getBillingInvoiceReceipt(user.id, billingInvoiceReceiptMatch[1]);
+      sendJson(response, receipt ? 200 : 404, receipt ?? { error: "Billing invoice receipt not found" });
+      return true;
+    }
+
+    const billingInvoiceReceiptPdfMatch = path.match(/^\/api\/v1\/users\/me\/billing-invoices\/([^/]+)\/receipt-pdf$/);
+    if (request.method === "GET" && billingInvoiceReceiptPdfMatch) {
+      const receiptPdf = await getBillingInvoiceReceiptPdf(user.id, billingInvoiceReceiptPdfMatch[1]);
+      if (!receiptPdf) {
+        sendJson(response, 404, { error: "Verified invoice PDF not found" });
+        return true;
+      }
+      response.writeHead(200, {
+        "content-type": "application/pdf",
+        "content-length": receiptPdf.data.byteLength,
+        "content-disposition": `attachment; filename="${receiptPdf.fileName.replace(/"/g, "")}"`,
+        "x-content-type-options": "nosniff"
       });
       response.end(receiptPdf.data);
       return true;
@@ -654,8 +884,22 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     const subscriptionPaymentMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/payment-intent$/);
     if (request.method === "GET" && subscriptionPaymentMatch) {
+      response.setHeader("deprecation", "true");
+      response.setHeader("link", `</api/v1/listing-subscriptions/${encodeURIComponent(subscriptionPaymentMatch[1])}/payment-attempts>; rel="successor-version"`);
       const intent = await getListingSubscriptionPaymentIntent(user.id, subscriptionPaymentMatch[1]);
       sendJson(response, intent ? 200 : 404, intent ?? { error: "Payment intent not found" });
+      return true;
+    }
+
+    const subscriptionPaymentAttemptsMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/payment-attempts$/);
+    if (request.method === "POST" && subscriptionPaymentAttemptsMatch) {
+      try {
+        const attempt = await createListingSubscriptionPaymentAttempt(user.id, subscriptionPaymentAttemptsMatch[1], idempotencyKey(request));
+        sendJson(response, attempt ? 201 : 404, attempt ?? { error: "Listing subscription not found" });
+      } catch (error) {
+        console.error("Unable to create payment attempt", error);
+        sendJson(response, 500, { error: "Unable to start checkout right now. Please try again in a moment." });
+      }
       return true;
     }
 
@@ -714,7 +958,11 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         sendJson(response, 400, { error: "listingId is required for listing uploads" });
         return true;
       }
-      sendJson(response, 201, await createStorageUpload(user.id, { scope, fileName, contentType, listingId }));
+      try {
+        sendJson(response, 201, await createStorageUpload(user.id, { scope, fileName, contentType, listingId }));
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to authorize upload" });
+      }
       return true;
     }
 
@@ -879,6 +1127,25 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   return true;
 }
 
+function takePublicCheckoutRateLimit(request: IncomingMessage) {
+  const forwarded = request.headers["x-forwarded-for"];
+  const key = (Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(",", 1)[0])?.trim()
+    || request.socket.remoteAddress
+    || "unknown";
+  const now = Date.now();
+  const current = publicCheckoutRateLimits.get(key);
+  if (!current || current.resetAt <= now) {
+    const next = { count: 1, resetAt: now + publicCheckoutRateLimitWindowMs };
+    publicCheckoutRateLimits.set(key, next);
+    if (publicCheckoutRateLimits.size > 10_000) {
+      for (const [entryKey, entry] of publicCheckoutRateLimits) if (entry.resetAt <= now) publicCheckoutRateLimits.delete(entryKey);
+    }
+    return { allowed: true, resetAt: next.resetAt };
+  }
+  current.count += 1;
+  return { allowed: current.count <= publicCheckoutRateLimitMax, resetAt: current.resetAt };
+}
+
 async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripeWebhookEvent>) {
   if (
     event.type === "checkout.session.completed" ||
@@ -886,45 +1153,44 @@ async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripe
     event.type === "checkout.session.async_payment_failed" ||
     event.type === "checkout.session.expired"
   ) {
-    const session = event.data.object as any;
+    const session = event.data.object as Stripe.Checkout.Session;
     const paymentIntentId = stripeCheckoutPaymentIntentId(session);
     const stripeSubscriptionId = stripeId(session.subscription);
     const status =
       event.type === "checkout.session.expired" ? "expired" :
       event.type === "checkout.session.async_payment_failed" ? "failed" :
       event.type === "checkout.session.async_payment_succeeded" || session.payment_status === "paid" ? "succeeded" :
+      event.type === "checkout.session.completed" && session.payment_status === "no_payment_required" ? "scheduled" :
       "pending";
     if (paymentIntentId) {
       await confirmPaymentIntent(paymentIntentId, status, stripeSubscriptionId ?? session.id, {
         stripeCheckoutSessionId: session.id,
         stripeSubscriptionId,
         stripeCustomerId: stripeId(session.customer),
-        stripeInvoiceId: stripeId(session.invoice)
+        stripeInvoiceId: stripeId(session.invoice),
+        livemode: session.livemode,
+        eventCreated: event.created,
+        eventId: event.id
       });
     }
     return;
   }
 
   if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
-    const invoice = event.data.object as any;
-    const stripeSubscriptionId = stripeInvoiceSubscriptionId(invoice);
-    const paymentIntentId = stripeId(invoice.payment_intent);
-    const internalPaymentIntentId = stripeInvoicePaymentIntentId(invoice);
-    if (internalPaymentIntentId && stripeSubscriptionId && invoice.billing_reason === "subscription_create") {
-      await confirmPaymentIntent(internalPaymentIntentId, "succeeded", stripeSubscriptionId, {
-        stripeSubscriptionId,
-        stripeCustomerId: stripeId(invoice.customer),
-        stripeInvoiceId: invoice.id
-      });
-    }
-    if (stripeSubscriptionId && invoice.id) {
-      await recordStripeSubscriptionInvoicePayment({
-        stripeSubscriptionId,
-        stripeInvoiceId: invoice.id,
-        stripePaymentIntentId: paymentIntentId,
-        billingReason: typeof invoice.billing_reason === "string" ? invoice.billing_reason : undefined
-      });
-    }
+    const invoice = event.data.object as Stripe.Invoice;
+    await recordStripeBillingInvoice(stripeInvoiceSnapshot(invoice, event.type), event.created, event.id);
+    return;
+  }
+
+  if (
+    event.type === "invoice.created" ||
+    event.type === "invoice.finalized" ||
+    event.type === "invoice.updated" ||
+    event.type === "invoice.voided" ||
+    event.type === "invoice.marked_uncollectible"
+  ) {
+    const invoice = event.data.object as Stripe.Invoice;
+    await recordStripeBillingInvoice(stripeInvoiceSnapshot(invoice, event.type), event.created, event.id);
     return;
   }
 
@@ -933,67 +1199,23 @@ async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripe
     event.type === "invoice.payment_action_required" ||
     event.type === "invoice.finalization_failed"
   ) {
-    const invoice = event.data.object as any;
-    const stripeSubscriptionId = stripeInvoiceSubscriptionId(invoice);
-    const internalPaymentIntentId = stripeInvoicePaymentIntentId(invoice);
-    if (internalPaymentIntentId && stripeSubscriptionId && invoice.billing_reason === "subscription_create") {
-      await confirmPaymentIntent(
-        internalPaymentIntentId,
-        event.type === "invoice.payment_action_required" ? "pending" : "failed",
-        stripeSubscriptionId,
-        {
-          stripeSubscriptionId,
-          stripeCustomerId: stripeId(invoice.customer),
-          stripeInvoiceId: invoice.id
-        }
-      );
-    }
-    if (stripeSubscriptionId && invoice.id) {
-      await markStripeSubscriptionPastDue(
-        stripeSubscriptionId,
-        invoice.id,
-        event.type,
-        event.type === "invoice.payment_action_required"
-          ? "Subscription invoice requires customer action."
-          : event.type === "invoice.finalization_failed"
-            ? "Subscription invoice finalization failed."
-            : "Subscription invoice payment failed."
-      );
-    }
+    const invoice = event.data.object as Stripe.Invoice;
+    await recordStripeBillingInvoice(stripeInvoiceSnapshot(invoice, event.type), event.created, event.id);
     return;
   }
 
-  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as any;
-    if (subscription.id) {
-      await syncStripeSubscriptionStatus({
-        stripeSubscriptionId: subscription.id,
-        status: typeof subscription.status === "string" ? subscription.status : event.type === "customer.subscription.deleted" ? "canceled" : "",
-        cancelAtPeriodEnd: typeof subscription.cancel_at_period_end === "boolean" ? subscription.cancel_at_period_end : undefined,
-        currentPeriodEnd: stripeDate(subscription.current_period_end)
-      });
-    }
+  if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    const subscription = event.data.object as Stripe.Subscription;
+    await syncStripeSubscriptionSnapshot(stripeSubscriptionSnapshot(subscription), event.created, event.id);
   }
 }
 
-function stripeCheckoutPaymentIntentId(session: any) {
+function stripeCheckoutPaymentIntentId(session: Stripe.Checkout.Session) {
   return typeof session.metadata?.paymentIntentId === "string" ? session.metadata.paymentIntentId : typeof session.client_reference_id === "string" ? session.client_reference_id : "";
 }
 
-function stripeInvoicePaymentIntentId(invoice: any) {
-  return typeof invoice.subscription_details?.metadata?.paymentIntentId === "string"
-    ? invoice.subscription_details.metadata.paymentIntentId
-    : typeof invoice.metadata?.paymentIntentId === "string"
-      ? invoice.metadata.paymentIntentId
-      : "";
-}
-
-function stripeInvoiceSubscriptionId(invoice: any) {
-  return stripeId(invoice.subscription) ?? stripeId(invoice.parent?.subscription_details?.subscription);
-}
-
-function stripeDate(value: unknown) {
-  return typeof value === "number" ? new Date(value * 1000) : undefined;
+function stripeObjectId(value: unknown) {
+  return stripeId(value);
 }
 
 function stripeId(value: unknown) {
@@ -1237,6 +1459,12 @@ async function main() {
   if (isProduction) {
     await prewarmMarketplacePages().catch((error) => console.error("Marketplace prewarm failed", error));
   }
+
+  const billingWorker = setInterval(() => {
+    void processPendingBillingOperations(20).catch((error) => console.error("Billing operation worker failed", error));
+  }, 60_000);
+  billingWorker.unref();
+  await processPendingBillingOperations(20).catch((error) => console.error("Initial billing operation sweep failed", error));
 
   server.listen(port, host, () => {
     console.log(`Gems monolith listening on http://${host}:${port}`);

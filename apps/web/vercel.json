@@ -7,6 +7,12 @@
       "includeFiles": "dist/**"
     }
   },
+  "crons": [
+    {
+      "path": "/api/v1/internal/billing-operations",
+      "schedule": "0 * * * *"
+    }
+  ],
   "routes": [
     {
       "src": "^/api/v1(?:/.*)?$",

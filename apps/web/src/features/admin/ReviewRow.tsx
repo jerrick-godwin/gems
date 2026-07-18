@@ -202,7 +202,7 @@ export function ReviewRow({
                     <div><strong>Status:</strong> <span className={`admin-payment-state status-${payment.status}`}>{payment.status.replace("_", " ")}</span></div>
                     <div><strong>Amount:</strong> <span className="admin-muted">{formatLkr(payment.amountLkr)}</span></div>
                     <div><strong>Plan:</strong> <span className="admin-muted">{payment.quote.plan.name}</span></div>
-                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <a className="admin-link" href={`https://dashboard.stripe.com/invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer">{payment.stripeInvoiceId}</a></div>}
+                    {payment.stripeInvoiceId && <div><strong>Invoice:</strong> <a className="admin-link" href={`https://dashboard.stripe.com/${payment.livemode ? "" : "test/"}invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer">{payment.stripeInvoiceId}</a></div>}
                     <div className="review-row-receipt">
                       <button
                         type="button"

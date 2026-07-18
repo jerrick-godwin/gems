@@ -109,6 +109,7 @@ Backend variables belong in the root `.env.azure.local` for local development or
 | `DATABASE_URL` | PostgreSQL connection string; required |
 | `FIREBASE_SERVICE_ACCOUNT` | Buyer/seller Firebase service-account JSON |
 | `ADMIN_FIREBASE_SERVICE_ACCOUNT` | Admin Firebase service-account JSON |
+| `ADMIN_ALLOWED_EMAILS` | Comma-separated admin allowlist; tokens must also carry `admin: true` |
 | `PUBLIC_SITE_URL` | Canonical public origin and Stripe return URL base |
 | `GOOGLE_SITE_VERIFICATION` | Optional Google Search Console URL-prefix verification token |
 | `BING_SITE_VERIFICATION` | Optional Bing Webmaster Tools verification token |
@@ -116,8 +117,11 @@ Backend variables belong in the root `.env.azure.local` for local development or
 | `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key returned to the browser |
 | `STRIPE_SECRET_KEY` | Stripe server API key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
-| `STRIPE_CURRENCY` | Charge currency; defaults to `USD` |
+| `STRIPE_CURRENCY` | Charge currency; defaults to `LKR` |
 | `STRIPE_LKR_PER_UNIT` | LKR conversion rate when charging in another currency |
+| `STRIPE_PORTAL_CONFIGURATION_ID` | Optional Stripe Customer Portal configuration |
+| `PAYMENT_RETURN_SECRET` | HMAC secret for expiring Checkout cancel callbacks |
+| `STORAGE_CAPABILITY_SECRET` | HMAC secret for local upload capabilities |
 | `AZURE_STORAGE_CONNECTION_STRING` | Enables Azure Blob Storage uploads |
 | `AZURE_STORAGE_CONTAINER_NAME` | Blob container; defaults to `user-uploads` |
 | `LOCAL_UPLOADS_DIR` | Optional local upload directory override |
@@ -166,8 +170,14 @@ invoice.payment_succeeded
 invoice.payment_failed
 invoice.payment_action_required
 invoice.finalization_failed
+invoice.created
+invoice.finalized
+invoice.updated
+invoice.voided
+invoice.marked_uncollectible
 customer.subscription.updated
 customer.subscription.deleted
+customer.subscription.created
 ```
 
 If `STRIPE_CURRENCY` is not `LKR`, set `STRIPE_LKR_PER_UNIT` so LKR listing prices can be converted to the Stripe charge currency.
