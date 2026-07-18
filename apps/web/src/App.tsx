@@ -12,7 +12,6 @@ import { ReceiptPage } from "./features/account/ReceiptPage";
 import { SignupPage } from "./features/account/SignupPage";
 import { useAccountWorkflow } from "./features/account/useAccountWorkflow";
 import { AppFrame } from "./features/shell/AppFrame";
-import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
 import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, type View } from "./shared/types";
@@ -187,7 +186,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   const api = useMemo(() => new GemsApiClient("/api/v1", { getAccessToken }), [getAccessToken]);
   const accountWorkflowEnabled = isSignedIn && (protectedViews.has(view) || view === "post_checkout");
-  const marketplaceWorkflowEnabled = view === "market" || view === "post_checkout" || view === "profile" || view === "reports" || view === "my_listings";
+  const marketplaceWorkflowEnabled = view === "post_checkout" || view === "profile" || view === "reports" || view === "my_listings";
   const account = useAccountWorkflow(api, isSignedIn, accountWorkflowEnabled);
   const marketplace = useMarketplaceWorkflow({
     api,
@@ -369,44 +368,6 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   return (
     <AppFrame {...frameProps} locations={locations}>
-      {view === "market" && (
-        <Marketplace
-          gemTypes={gemTypes}
-          sellers={sellers}
-          locations={locations}
-          selectedLocations={marketplace.selectedLocations}
-          setSelectedLocations={marketplace.setSelectedLocations}
-          sourceListingCount={marketplace.approvedListings.length}
-          filteredListings={marketplace.filteredListings}
-          page={marketplace.page}
-          setPage={marketplace.setPage}
-          totalPages={marketplace.totalPages}
-          pageSize={marketplace.pageSize}
-          setPageSize={(pageSize) => { marketplace.setPage(1); marketplace.setPageSize(pageSize); }}
-          selectedListing={marketplace.selectedListing}
-          setQuery={marketplace.setQuery}
-          query={marketplace.query}
-          gemType={marketplace.gemType}
-          setGemType={marketplace.setGemType}
-          treatment={marketplace.treatment}
-          setTreatment={marketplace.setTreatment}
-          certificate={marketplace.certificate}
-          setCertificate={marketplace.setCertificate}
-          sort={marketplace.sort}
-          setSort={marketplace.setSort}
-          selectedId={marketplace.selectedListing?.id ?? ""}
-          setSelectedId={(id) => marketplace.setSelectedId(id)}
-          previewPhone={marketplace.selectedListing ? marketplace.previewPhones[marketplace.selectedListing.id] : undefined}
-          revealedPhone={marketplace.selectedListing ? marketplace.fullPhones[marketplace.selectedListing.id] : undefined}
-          previewPhoneNumber={marketplace.handlePreviewPhone}
-          revealPhone={marketplace.handleRevealPhone}
-          isSignedIn={isSignedIn}
-          reportedListingIds={marketplace.reportedListingIds}
-          onRefresh={marketplace.refreshSnapshot}
-          onReport={marketplace.handleReportListing}
-          onRecordInteraction={marketplace.handleRecordInteraction}
-        />
-      )}
       {view === "post_checkout" && (
         <PostGemCheckout
           token={listingCheckoutToken}

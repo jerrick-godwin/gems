@@ -157,8 +157,12 @@ export function CustomerRoot({
   }, [commitAccountNavigation, ensureAccountLoaded, ensureCurrentPublicEntry, loadReferences]);
 
   const navigate = useCallback((nextView: View, options: CustomerNavigationOptions = {}) => {
+    if (nextView === "market") {
+      window.location.assign(options.path ?? pathForView(nextView));
+      return;
+    }
     if (surface === "public") {
-      if (nextView === "market" || isPublicOnlyView(nextView)) {
+      if (isPublicOnlyView(nextView)) {
         window.location.assign(options.path ?? pathForView(nextView));
         return;
       }
