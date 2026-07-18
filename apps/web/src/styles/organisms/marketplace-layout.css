@@ -1,7 +1,7 @@
 /* ── Nav active indicator ─────────────────────────────────── */
 
-.nav-actions > button.active::after,
-.nav-actions > a.active::after {
+.nav-menu-panel > button.active::after,
+.nav-menu-panel > a.active::after {
   content: none;
 }
 
@@ -21,4 +21,3 @@
   border-color: var(--emerald-subtle);
   background: var(--emerald-subtle);
 }
-

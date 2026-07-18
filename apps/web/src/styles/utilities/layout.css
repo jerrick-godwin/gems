@@ -86,6 +86,13 @@
     padding-block: 16px;
   }
 
+  .customer-topbar-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding-block: 10px;
+  }
+
   .admin-topbar-inner {
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;

@@ -455,6 +455,10 @@
   margin-left: 0;
 }
 
+.marketplace-seo-placement {
+  width: 100%;
+}
+
 .seo-sitelink-grid a {
   display: grid;
   gap: 6px;
@@ -561,5 +565,16 @@
 
   .guide-figure-scroll-note {
     display: block;
+  }
+}
+
+@media (max-width: 760px) {
+  .marketplace-seo-placement-top {
+    display: none;
+  }
+
+  .marketplace-seo-placement-bottom .marketplace-seo-intro {
+    margin-top: 22px;
+    margin-bottom: 0;
   }
 }
