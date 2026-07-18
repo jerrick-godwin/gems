@@ -134,7 +134,8 @@ export function Marketplace(props: MarketplaceProps) {
           Sort
           <select value={props.sort} onChange={(event) => props.setSort(event.target.value as SortKey)} id="sort-control">
             <option value="featured">Featured</option>
-            <option value="newest">Newest</option>
+            <option value="newest">Latest to Oldest</option>
+            <option value="oldest">Oldest to Latest</option>
             <option value="price-low">Price Low to High</option>
             <option value="price-high">Price High to Low</option>
           </select>

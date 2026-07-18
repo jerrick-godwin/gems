@@ -5,7 +5,7 @@ import { databaseClient, hasDatabase } from "./db/index.js";
 import { notifyIndexNow } from "./indexnow.js";
 
 const PAGE_SIZES = new Set<number>([10, 20, 50]);
-const SORTS = new Set<MarketplaceSort>(["featured", "newest", "price-low", "price-high"]);
+const SORTS = new Set<MarketplaceSort>(["featured", "newest", "oldest", "price-low", "price-high"]);
 const RESULT_TTL_MS = 30_000;
 const REFERENCE_TTL_MS = 5 * 60_000;
 const resultCache = new Map<string, { expiresAt: number; data: MarketplacePageData }>();
