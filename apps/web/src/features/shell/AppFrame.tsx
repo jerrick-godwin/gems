@@ -1,4 +1,4 @@
-import { AlertCircle, BadgeCheck, BookOpen, CheckCircle2, Flag, Gem, Info, LogIn, LogOut, Menu, Plus, Settings, Store, User, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, BadgeCheck, BookOpen, CheckCircle2, Flag, Gem, Info, LogIn, LogOut, Menu, Plus, Settings, Store, User, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 import type { User as AccountUser } from "@gems/schemas";
@@ -286,7 +286,10 @@ export function AppFrame({
               id="nav-mobile-context-action"
               {...viewIntentProps(mobileHeaderActionView)}
             >
-              {mobileHeaderActionLabel}
+              {isPostFlow
+                ? <ArrowLeft size={15} strokeWidth={2.5} aria-hidden="true" />
+                : <Plus size={15} strokeWidth={2.5} aria-hidden="true" />}
+              <span>{mobileHeaderActionLabel}</span>
             </a>
             <button
               type="button"

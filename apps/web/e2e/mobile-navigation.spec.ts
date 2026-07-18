@@ -32,6 +32,7 @@ test("mobile header action switches between posting and marketplace listings", a
   await expect(headerAction).toBeVisible();
   await expect(headerAction).toHaveText("Post a Gem");
   await expect(headerAction).toHaveAttribute("href", "/post");
+  await expect(headerAction.locator(".lucide-plus")).toBeVisible();
   const actionBox = await headerAction.boundingBox();
   const menuBox = await menuButton.boundingBox();
   expect((actionBox?.x ?? 0) + (actionBox?.width ?? 0)).toBeLessThanOrEqual(menuBox?.x ?? 0);
@@ -41,6 +42,7 @@ test("mobile header action switches between posting and marketplace listings", a
   await expect(page.getByRole("heading", { name: "Post a Gem Listing" })).toBeVisible();
   await expect(headerAction).toHaveText("Back to Listings");
   await expect(headerAction).toHaveAttribute("href", "/");
+  await expect(headerAction.locator(".lucide-arrow-left")).toBeVisible();
 
   await page.setViewportSize({ width: 320, height: 720 });
   const compactBrandBox = await page.locator(".customer-topbar-inner .brand").boundingBox();
