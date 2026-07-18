@@ -26,7 +26,7 @@ export async function sendPasswordResetEmail(email: string, resetLink: string) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset your Gems Lanka password</title>
+  <title>Reset your Gemslanka LK password</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f9f9f9; color: #333333;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f9f9f9; padding: 40px 20px;">
@@ -35,9 +35,9 @@ export async function sendPasswordResetEmail(email: string, resetLink: string) {
         <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto;">
           <tr>
             <td style="padding: 40px 40px 30px 40px; text-align: left;">
-              <h2 style="margin: 0 0 20px 0; font-size: 24px; color: #1a1a1a;">Gems Lanka</h2>
+              <h2 style="margin: 0 0 20px 0; font-size: 24px; color: #1a1a1a;">Gemslanka LK</h2>
               <p style="margin: 0 0 16px 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">Hello,</p>
-              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">We received a request to reset the password for your Gems Lanka account.</p>
+              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">We received a request to reset the password for your Gemslanka LK account.</p>
               <p style="margin: 0 0 32px 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">Click the button below to create a new password.</p>
               
               <table border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 32px;">
@@ -51,14 +51,14 @@ export async function sendPasswordResetEmail(email: string, resetLink: string) {
               <p style="margin: 0 0 16px 0; font-size: 14px; line-height: 1.5; color: #666666;">For your security, this password-reset link will expire after a limited period and can only be used once.</p>
               <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.5; color: #666666;">If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
               
-              <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">Thank you,<br>Gems Lanka Support Team</p>
+              <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">Thank you,<br>Gemslanka LK Support Team</p>
             </td>
           </tr>
         </table>
         <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto;">
           <tr>
             <td style="padding: 20px 40px; text-align: center;">
-              <p style="margin: 0; font-size: 12px; color: #999999;">&copy; ${new Date().getFullYear()} Gems Lanka. All rights reserved.</p>
+              <p style="margin: 0; font-size: 12px; color: #999999;">&copy; ${new Date().getFullYear()} Gemslanka LK. All rights reserved.</p>
             </td>
           </tr>
         </table>
@@ -72,7 +72,7 @@ export async function sendPasswordResetEmail(email: string, resetLink: string) {
   const textContent = `
 Hello,
 
-We received a request to reset the password for your Gems Lanka account.
+We received a request to reset the password for your Gemslanka LK account.
 
 Click the link below to create a new password:
 ${resetLink}
@@ -82,16 +82,16 @@ For your security, this password-reset link will expire after a limited period a
 If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.
 
 Thank you,
-Gems Lanka Support Team
+Gemslanka LK Support Team
   `.trim();
 
   if (resend) {
     try {
       const { data, error } = await resend.emails.send({
-        from: "Gems Lanka <noreply@gemslanka.lk>",
+        from: "Gemslanka LK <noreply@gemslanka.lk>",
         to: email,
         replyTo: "support@gemslanka.lk",
-        subject: "Reset your Gems Lanka password",
+        subject: "Reset your Gemslanka LK password",
         html: htmlContent,
         text: textContent,
       });

@@ -167,7 +167,7 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
     "@type": "Organization",
     "@id": `${props.origin}/#organization`,
     name: "Gemslanka",
-    alternateName: ["Gemslanka.lk", "Gems Lanka"],
+    alternateName: ["Gemslanka.lk", "Gemslanka LK"],
     legalName: "KRISTIANA MAGRET GEM & JEWELLERY",
     url: `${props.origin}/`,
     logo: new URL("/assets/logo-mark-512.png", props.origin).href,
@@ -225,7 +225,7 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
           "@id": `${props.origin}/#website`,
           url: `${props.origin}/`,
           name: "Gemslanka",
-          alternateName: ["Gemslanka.lk", "Gems Lanka"],
+          alternateName: ["Gemslanka.lk", "Gemslanka LK"],
           description: metadata.description,
           publisher: { "@id": organization["@id"] },
           inLanguage: "en"
