@@ -13,6 +13,7 @@ test("desktop keeps the primary navigation visible without the mobile trigger", 
   await expect(page.locator("#nav-mobile-menu")).toBeHidden();
   await expect(page.locator("#nav-mobile-menu")).toHaveAttribute("aria-controls", "nav-mobile-menu-panel");
   await expect(page.locator("#nav-mobile-menu-panel")).toHaveCount(1);
+  await expect(page.locator("#nav-mobile-context-action")).toBeHidden();
   await expect(page.locator("#nav-browse")).toBeVisible();
   await expect(page.locator("#nav-post")).toBeVisible();
   expect(await page.locator(".nav-menu-section-title").evaluateAll((elements) => elements.every((element) => element.getClientRects().length === 0))).toBe(true);
@@ -20,6 +21,39 @@ test("desktop keeps the primary navigation visible without the mobile trigger", 
   await expect(page.locator(".nav-menu-theme-dock")).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Theme preference" })).toHaveCount(1);
   expect(hydrationWarnings).toEqual([]);
+});
+
+test("mobile header action switches between posting and marketplace listings", async ({ page }) => {
+  await page.setViewportSize(phoneViewport);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  const headerAction = page.locator("#nav-mobile-context-action");
+  const menuButton = page.locator("#nav-mobile-menu");
+  await expect(headerAction).toBeVisible();
+  await expect(headerAction).toHaveText("Post a Gem");
+  await expect(headerAction).toHaveAttribute("href", "/post");
+  const actionBox = await headerAction.boundingBox();
+  const menuBox = await menuButton.boundingBox();
+  expect((actionBox?.x ?? 0) + (actionBox?.width ?? 0)).toBeLessThanOrEqual(menuBox?.x ?? 0);
+
+  await headerAction.click();
+  await expect(page).toHaveURL(/\/post$/);
+  await expect(page.getByRole("heading", { name: "Post a Gem Listing" })).toBeVisible();
+  await expect(headerAction).toHaveText("Back to Listings");
+  await expect(headerAction).toHaveAttribute("href", "/");
+
+  await page.setViewportSize({ width: 320, height: 720 });
+  const compactBrandBox = await page.locator(".customer-topbar-inner .brand").boundingBox();
+  const compactActionBox = await headerAction.boundingBox();
+  const compactMenuBox = await menuButton.boundingBox();
+  expect((compactBrandBox?.x ?? 0) + (compactBrandBox?.width ?? 0)).toBeLessThanOrEqual(compactActionBox?.x ?? 0);
+  expect((compactActionBox?.x ?? 0) + (compactActionBox?.width ?? 0)).toBeLessThanOrEqual(compactMenuBox?.x ?? 0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+
+  await headerAction.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("#marketplace-results-search-input")).toBeVisible();
+  await expect(headerAction).toHaveText("Post a Gem");
 });
 
 test("marketplace SEO banner moves below the complete marketplace only on mobile", async ({ page }) => {

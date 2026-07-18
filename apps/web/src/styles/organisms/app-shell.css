@@ -1256,6 +1256,10 @@
   display: none;
 }
 
+.mobile-header-context-action {
+  display: none;
+}
+
 .nav-actions .login-button {
   border-color: transparent;
   background: var(--emerald);

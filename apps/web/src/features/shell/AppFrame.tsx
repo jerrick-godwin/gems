@@ -263,6 +263,10 @@ export function AppFrame({
     });
   };
 
+  const isPostFlow = view === "post" || view === "post_checkout";
+  const mobileHeaderActionView: View = isPostFlow ? "market" : "post";
+  const mobileHeaderActionLabel = isPostFlow ? "Back to Listings" : "Post a Gem";
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -275,6 +279,15 @@ export function AppFrame({
           </a>
 
           <nav className="nav-actions" aria-label="Primary" data-nosnippet ref={mobileMenuRef}>
+            <a
+              className="mobile-header-context-action"
+              href={pathForView(mobileHeaderActionView)}
+              onClick={(event) => handleViewLinkClick(event, mobileHeaderActionView)}
+              id="nav-mobile-context-action"
+              {...viewIntentProps(mobileHeaderActionView)}
+            >
+              {mobileHeaderActionLabel}
+            </a>
             <button
               type="button"
               className="mobile-nav-toggle"
