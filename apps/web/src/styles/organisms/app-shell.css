@@ -142,7 +142,7 @@
 
 .profile-dropdown {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 19px);
   right: 0;
   background: var(--dropdown-bg);
   backdrop-filter: blur(24px);
@@ -996,8 +996,8 @@
 }
 
 .brand-mark-main {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
 }
 
 
@@ -1032,7 +1032,7 @@
   display: inline-flex;
   align-items: center;
   color: var(--ink);
-  font-size: clamp(17px, 1.15vw, 21px);
+  font-size: clamp(15px, 1.15vw, 18px);
   font-weight: 900;
   letter-spacing: 0.08em;
   line-height: 0.95;
@@ -1062,16 +1062,12 @@
 
 .brand-mark {
   display: grid;
-  width: 54px;
-  height: 54px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  border-radius: 14px;
+  border-radius: 10px;
   color: var(--bg);
   background: var(--brand-yellow);
-  box-shadow:
-    0 8px 24px transparent,
-    0 2px 6px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(var(--foreground-rgb), 0.4);
 }
 
 .brand-mark img {

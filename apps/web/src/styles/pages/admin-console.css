@@ -681,6 +681,8 @@
   gap: 24px;
 }
 
+
+
 .admin-workspace .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1001,28 +1003,7 @@
   }
 
   .admin-navigation {
-    position: sticky;
-    top: var(--topbar-h);
-    overflow-x: auto;
-    padding: 8px;
-  }
-
-  .admin-navigation-heading,
-  .admin-navigation-divider,
-  .admin-navigation-group-label {
     display: none;
-  }
-
-  .admin-navigation-list {
-    display: flex;
-    width: max-content;
-    min-width: 100%;
-  }
-
-  .admin-navigation-item {
-    grid-template-columns: 20px auto auto;
-    width: auto;
-    min-width: max-content;
   }
 }
 

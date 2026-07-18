@@ -40,13 +40,17 @@ export function AdminConsole({
   token,
   snapshot,
   setSnapshot,
-  setLoadError
+  setLoadError,
+  activeView,
+  setActiveView
 }: {
   api: GemsAdminApiClient;
   token: string;
   snapshot: AdminModerationSnapshot;
   setSnapshot: (snapshot: AdminModerationSnapshot) => void;
   setLoadError: (error: string | null) => void;
+  activeView: AdminView;
+  setActiveView: (view: AdminView) => void;
 }) {
   const pending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
@@ -62,7 +66,6 @@ export function AdminConsole({
   const [rejectedListingSearch, setRejectedListingSearch] = useState("");
   const [archivedListingSearch, setArchivedListingSearch] = useState("");
   const [paymentSearch, setPaymentSearch] = useState("");
-  const [activeView, setActiveView] = useState<AdminView>("overview");
   const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
   const rejectedListings = allListings.filter((listing) => listing.status === "rejected" || listing.moderationStatus === "rejected");
   const archivedListings = allListings.filter((listing) => listing.status === "expired" || listing.status === "paused");
@@ -840,3 +843,5 @@ function searchableText(values: Array<string | number | undefined | null>) {
 function normalizeSearch(value: string) {
   return value.trim().toLowerCase();
 }
+
+

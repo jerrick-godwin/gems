@@ -74,11 +74,32 @@
   }
 
   .footer-brand-col {
-    max-width: 420px;
+    max-width: none;
+    align-items: center;
+    text-align: center;
+  }
+
+  .footer-brand {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .footer-brand-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .footer-brand-text p {
+    margin: 8px auto 0;
   }
 
   .footer-links-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: clamp(48px, 8vw, 120px);
   }
 }
 
@@ -131,12 +152,12 @@
   }
 
   .customer-topbar-inner .brand-mark-main {
-    width: 44px;
-    height: 44px;
+    width: 32px;
+    height: 32px;
   }
 
   .customer-topbar-inner .brand-wordmark-main {
-    font-size: clamp(14px, 4vw, 17px);
+    font-size: clamp(13px, 4vw, 16px);
     letter-spacing: 0.055em;
   }
 
