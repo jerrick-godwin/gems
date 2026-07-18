@@ -51,7 +51,7 @@ test("SSR response contains the established marketplace UI, listing content, and
   assert.doesNotMatch(html, /class="seo-eyebrow"/);
   assert.doesNotMatch(html, /class="marketplace-search-panel/);
   assert.match(html, /class="global-search marketplace-results-search"/);
-  assert.match(html, /placeholder="Search gemstones"/);
+  assert.match(html, /placeholder="Search Gemstones"/);
   const resultsStart = html.indexOf('class="feed marketplace-results-card card card--surface"');
   const resultsEnd = html.indexOf("</section>", resultsStart);
   const results = html.slice(resultsStart, resultsEnd);

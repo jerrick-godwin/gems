@@ -19,7 +19,7 @@ export function MarketplaceSearch({ id, value, onChange, className = "" }: Marke
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Search gemstones"
+        placeholder="Search Gemstones"
         autoComplete="off"
       />
       {value && (

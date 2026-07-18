@@ -17,7 +17,7 @@ test("marketplace search stays simple and exposes an accessible clear action", (
   const empty = renderToStaticMarkup(MarketplaceSearch({ id: "empty-search", value: "", onChange: () => {} }));
 
   assert.match(populated, /class="global-search marketplace-results-search"/);
-  assert.match(populated, /placeholder="Search gemstones"/);
+  assert.match(populated, /placeholder="Search Gemstones"/);
   assert.match(populated, /aria-label="Clear search"/);
   assert.doesNotMatch(populated, /global-search--command|global-search--compact/);
   assert.doesNotMatch(empty, /aria-label="Clear search"/);
