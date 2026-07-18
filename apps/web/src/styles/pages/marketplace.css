@@ -1154,6 +1154,16 @@
   font-weight: 600;
 }
 
+.seller-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.time-ago {
+  margin-left: auto;
+}
+
 .seller-listing-card {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr) 190px;
@@ -1520,11 +1530,27 @@
   padding: 18px;
 }
 
+.spec-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin: 20px 0;
+}
+
+.spec-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
 .spec-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin: 16px 0;
+  margin: 0;
 }
 
 .spec-grid div,
@@ -1721,6 +1747,124 @@
 .phone-eye-action:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.listing-footer {
+  margin: 32px auto 0;
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  background: var(--surface-float);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.sleek-seller.seller-card {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.sleek-seller.seller-card:hover {
+  background: transparent;
+  border-color: transparent;
+}
+.sleek-seller .avatar {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, var(--gold), #f59e0b);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.sleek-seller .seller-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sleek-seller strong {
+  font-size: 16px;
+  color: var(--ink);
+  font-weight: 800;
+}
+.sleek-seller span {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.sleek-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .sleek-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sleek-actions .subtle-action,
+  .sleek-actions .phone-reveal {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.sleek-actions .phone-reveal {
+  flex: 1 0 max-content;
+  min-width: max-content;
+  padding: 0 6px 0 16px;
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  border: none;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  min-height: 44px;
+}
+.sleek-actions .phone-reveal:hover {
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  transform: translateY(-1px);
+}
+
+.subtle-action {
+  flex: 1 1 auto;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: rgba(var(--foreground-rgb), 0.03);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: all 0.2s ease;
+}
+.subtle-action:hover {
+  background: var(--danger-soft);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: var(--danger);
+  transform: translateY(-1px);
+}
+.reported-subtle {
+  color: var(--emerald);
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  pointer-events: none;
 }
 
 
