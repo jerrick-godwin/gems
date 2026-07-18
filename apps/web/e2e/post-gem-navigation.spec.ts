@@ -21,6 +21,26 @@ test("opens Post a Gem without a document reload or loading skeleton", async ({ 
   expect(documentRequests).toBe(initialDocumentRequests);
 });
 
+test("Browse returns from Post a Gem to the canonical public homepage", async ({ page }) => {
+  let documentRequests = 0;
+  page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentRequests += 1;
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".marketplace-seo-intro")).toBeVisible();
+  await page.locator("#nav-post").click();
+  await expect(page.getByRole("heading", { name: "Post a Gem Listing" })).toBeVisible();
+  const postDocumentRequests = documentRequests;
+
+  await page.locator("#nav-browse").click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator(".marketplace-seo-intro")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Buy and Sell Gemstones Worldwide with Gemslanka" })).toBeVisible();
+  expect(documentRequests).toBe(postDocumentRequests + 1);
+});
+
 test("direct Post route renders its form while only reference selects wait", async ({ page }) => {
   const unexpectedRequests: string[] = [];
   let releaseReferences: (() => void) | undefined;

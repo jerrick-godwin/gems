@@ -81,6 +81,7 @@ import { indexNowKey } from "./indexnow.js";
 import { resolvePublicListingMedia } from "./public-listing-media.js";
 import { buildSitemapXml } from "./sitemap.js";
 import { isPriorityGemSlug, seoLandingPageFromPath, seoLandingPages } from "../src/shared/seo.js";
+import { paymentReturnLocation } from "./payment-return.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -208,11 +209,6 @@ function idempotencyKey(request: IncomingMessage) {
   const value = request.headers["idempotency-key"];
   const key = Array.isArray(value) ? value[0] : value;
   return typeof key === "string" && key.trim() ? key.trim().slice(0, 180) : undefined;
-}
-
-function stripePaymentReturnLocation(paymentIntentId: string, status: "succeeded" | "pending" | "cancelled" | "expired" | "failed") {
-  if (status === "succeeded") return `/receipt?paymentIntentId=${encodeURIComponent(paymentIntentId)}`;
-  return `/?payment=${status === "pending" ? "pending" : status}`;
 }
 
 function numberBody(value: unknown, fallback: number) {
@@ -549,13 +545,13 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     try {
       const checkoutSession = await retrieveStripeCheckoutSession(sessionId);
       const confirmed = await confirmPaymentIntent(intent.id, checkoutSession.status, checkoutSession.reference, checkoutSession);
-      const location = stripePaymentReturnLocation(intent.id, confirmed?.status ?? checkoutSession.status);
+      const location = paymentReturnLocation(intent.id, confirmed?.status ?? checkoutSession.status);
       response.writeHead(302, { location });
       response.end();
     } catch (error) {
       console.warn("Stripe checkout verification failed:", error);
       const confirmed = await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
-      response.writeHead(302, { location: stripePaymentReturnLocation(intent.id, confirmed?.status ?? "failed") });
+      response.writeHead(302, { location: paymentReturnLocation(intent.id, confirmed?.status ?? "failed") });
       response.end();
     }
     return true;
@@ -564,7 +560,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const stripePaymentCancelMatch = path.match(/^\/api\/v1\/payments\/stripe\/([^/]+)\/cancel$/);
   if (request.method === "GET" && stripePaymentCancelMatch) {
     await confirmPaymentIntent(stripePaymentCancelMatch[1], "cancelled", undefined);
-    response.writeHead(302, { location: "/?payment=cancelled" });
+    response.writeHead(302, { location: paymentReturnLocation(stripePaymentCancelMatch[1], "cancelled") });
     response.end();
     return true;
   }
