@@ -94,3 +94,10 @@ test("card primitives distinguish static, interactive, media, metric, inset, and
   assert.match(cardsCss, /prefers-reduced-motion:\s*reduce/);
   assert.match(cardsCss, /\.card--interactive:focus-visible/);
 });
+
+test("marketplace listing locations stay anchored at the bottom of each card", () => {
+  const marketplaceCss = source("src/styles/pages/marketplace.css");
+
+  assert.match(marketplaceCss, /\.listing-content\s*\{[\s\S]*?flex:\s*1;/);
+  assert.match(marketplaceCss, /\.listing-card\s+\.seller-line\s*\{[\s\S]*?margin-top:\s*auto;/);
+});

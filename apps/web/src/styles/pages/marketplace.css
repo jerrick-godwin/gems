@@ -1055,10 +1055,15 @@
 
 .listing-content {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
   padding: 16px;
+}
+
+.listing-card .seller-line {
+  margin-top: auto;
 }
 
 .listing-type {
