@@ -25,7 +25,7 @@ test("CSS cascade layers and shared layout tokens are declared once", () => {
   assert.match(responsiveCss, /\.nav-menu-panel\.is-open\s*\{[\s\S]*?display:\s*grid/);
   assert.doesNotMatch(responsiveCss, /\.mobile-nav-overlay/);
   assert.match(responsiveCss, /html\.mobile-nav-open,[\s\S]*?html\.mobile-nav-open body\s*\{[^}]*overflow:\s*hidden/);
-  assert.match(responsiveCss, /\.nav-menu-panel \.theme-option\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px/);
+  assert.match(responsiveCss, /\.nav-menu-panel \.theme-option\s*\{[^}]*height:\s*36px;[^}]*min-height:\s*36px/);
   assert.match(responsiveCss, /\.mobile-nav-menu-sections\s*\{[^}]*overflow-y:\s*auto;[^}]*flex-direction:\s*column/);
   assert.match(responsiveCss, /\.nav-guide-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(responsiveCss, /\.nav-guide-card\s*\{[^}]*height:\s*92px;[^}]*min-height:\s*92px/);

@@ -1,0 +1,70 @@
+name: Release on Main Merge
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Typecheck
+        run: npm run typecheck
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Package Release Artifacts
+        run: |
+          tar -czvf release-artifacts.tar.gz \
+            apps/web/dist \
+            apps/web/server-dist \
+            package.json \
+            package-lock.json
+
+      - name: Determine Version Tag
+        id: version
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          TAG_NAME="v${BASE_VERSION}"
+          
+          # Check if tag already exists in remote/local git tags
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            TAG_NAME="v${TAG_NAME#v}.${GITHUB_RUN_NUMBER}"
+          fi
+          
+          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "release_name=Release ${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "Calculated release tag: ${TAG_NAME}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag_name }}" release-artifacts.tar.gz \
+            --target main \
+            --title "${{ steps.version.outputs.release_name }}" \
+            --generate-notes
