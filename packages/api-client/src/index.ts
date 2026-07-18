@@ -42,6 +42,11 @@ export interface MarketplaceSnapshot {
   subscriptionPlans: ListingSubscriptionPlan[];
 }
 
+export interface MarketplaceReferences {
+  gemTypes: GemType[];
+  locations: string[];
+}
+
 export interface AdminSession {
   email: string;
   role: "admin";
@@ -82,6 +87,24 @@ export class GemsApiClient {
     const response = await fetch(`${this.baseUrl}/snapshot`);
     if (!response.ok) throw new Error("Unable to load marketplace snapshot");
     return response.json() as Promise<MarketplaceSnapshot>;
+  }
+
+  async marketplaceReferences(): Promise<MarketplaceReferences> {
+    const [gemTypesResponse, locationsResponse] = await Promise.all([
+      fetch(`${this.baseUrl}/gem-types`),
+      fetch(`${this.baseUrl}/locations`)
+    ]);
+    if (!gemTypesResponse.ok || !locationsResponse.ok) {
+      throw new Error("Unable to load gem types and locations");
+    }
+    const [gemTypes, locations] = await Promise.all([
+      gemTypesResponse.json() as Promise<GemType[]>,
+      locationsResponse.json() as Promise<string[]>
+    ]);
+    if (!Array.isArray(gemTypes) || gemTypes.length === 0 || !Array.isArray(locations) || locations.length === 0) {
+      throw new Error("Gem types and locations are temporarily unavailable");
+    }
+    return { gemTypes, locations };
   }
 
   async marketplace(params: URLSearchParams | Record<string, string> = {}): Promise<MarketplaceListingPage> {

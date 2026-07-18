@@ -45,15 +45,12 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
 
   return (
     <section className="login-screen">
-      <div className="login-visual" aria-hidden="true">
-        <div className="login-visual-content">
-          <h2>Secure access to your gemstone account</h2>
-          <p>Reset your password and get back to managing listings, renewals, and reports.</p>
-        </div>
+      <div className="login-visual-animated" aria-hidden="true">
+        <img src="/assets/auth-password.jpg" alt="" className="auth-image" />
       </div>
       <div className="login-panel">
-        <div>
-          <h1 style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 34, letterSpacing: "-0.02em", fontWeight: 800, margin: "0 0 10px", color: "var(--ink)" }}>
+        <div className="auth-header">
+          <h1 className="auth-title">
             Forgot password?
           </h1>
           <p>Enter your account email and we will send a secure password reset link if an account exists.</p>
@@ -68,7 +65,7 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
         )}
         {sent && (
           <div className="auth-success-popup" role="status" aria-live="polite">
-            Check your inbox for a password reset link. It can take a minute to arrive.
+            If an account exists for this email address, a password-reset link has been sent.
           </div>
         )}
         <form className="login-form" onSubmit={sendResetLink} noValidate>

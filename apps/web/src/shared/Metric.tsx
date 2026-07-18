@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export function Metric({
@@ -12,8 +13,8 @@ export function Metric({
   accent?: string;
 }) {
   return (
-    <div className="metric-card" style={accent ? { borderTop: `3px solid ${accent}` } : undefined}>
-      <Icon size={accent ? 20 : 18} strokeWidth={2} style={accent ? { color: accent } : undefined} />
+    <div className={`metric-card card card--metric${accent ? " metric-card-accented" : ""}`} style={accent ? { "--metric-accent": accent } as CSSProperties : undefined}>
+      <Icon size={accent ? 20 : 18} strokeWidth={2} />
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

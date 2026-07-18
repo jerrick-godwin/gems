@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
+import { GemsApiClient } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
-import { authClient, type MarketplaceAuthUser } from "./firebase";
 import { ForgotPasswordPage } from "./features/account/ForgotPasswordPage";
+import { ResetPasswordPage } from "./features/account/ResetPasswordPage";
 import { LoginPage } from "./features/account/LoginPage";
 import { MyListingsView } from "./features/account/MyListingsView";
 import { MyReportsView } from "./features/account/MyReportsView";
@@ -13,36 +13,28 @@ import { ReceiptPage } from "./features/account/ReceiptPage";
 import { SignupPage } from "./features/account/SignupPage";
 import { useAccountWorkflow } from "./features/account/useAccountWorkflow";
 import { AppFrame } from "./features/shell/AppFrame";
-import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
-import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, viewFromPathname, type View } from "./shared/types";
+import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, type View } from "./shared/types";
+import type { AccountSurfaceProps, CustomerNavigationOptions } from "./shared/customer";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
-import { footerDescription, homepageKeywords, siteName } from "./shared/seo";
+import { footerDescription, siteName } from "./shared/seo";
 
 const siteOrigin = "https://gemslanka.lk";
-const homepageTitle = siteName;
+const homepageTitle = `${siteName} | Buy and Sell Gemstones Worldwide`;
 const homepageDescription = footerDescription;
 
-function readCachedMarketplaceReferences() {
-  try {
-    const value = window.sessionStorage.getItem("marketplace-reference-data");
-    if (!value) return undefined;
-    const parsed = JSON.parse(value) as { gemTypes?: MarketplaceSnapshot["gemTypes"]; locations?: string[] };
-    if (!Array.isArray(parsed.gemTypes) || !Array.isArray(parsed.locations)) return undefined;
-    return { gemTypes: parsed.gemTypes, locations: parsed.locations };
-  } catch {
-    return undefined;
-  }
-}
-
-const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow"; keywords?: string }> = {
+const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
+  reset_password: {
+    title: "Reset Password | Gemslanka.lk",
+    description: "Reset your Gemslanka.lk account password.",
+    robots: "noindex,follow"
+  },
   market: {
     title: homepageTitle,
     description: homepageDescription,
-    robots: "index,follow",
-    keywords: homepageKeywords
+    robots: "index,follow"
   },
   contact: {
     title: "Contact Gemslanka.lk | Sri Lankan Gemstone Marketplace",
@@ -52,17 +44,17 @@ const viewSeo: Record<View, { title: string; description: string; robots: "index
   terms: {
     title: "Terms and Conditions | Gemslanka.lk",
     description: "Read the Gemslanka.lk terms for gemstone listing services, seller responsibilities, subscriptions, and marketplace use.",
-    robots: "index,follow"
+    robots: "noindex,follow"
   },
   privacy: {
     title: "Privacy Policy | Gemslanka.lk",
     description: "Learn how Gemslanka.lk handles account, listing, payment metadata, moderation, and support information.",
-    robots: "index,follow"
+    robots: "noindex,follow"
   },
   refund: {
     title: "Refund Policy | Gemslanka.lk",
     description: "Review the Gemslanka.lk refund policy for listing subscriptions, renewals, and extra-photo fees.",
-    robots: "index,follow"
+    robots: "noindex,follow"
   },
   login: {
     title: "Sign In | Gemslanka.lk",
@@ -151,50 +143,27 @@ function canonicalPathForView(view: View) {
 
 
 
-function App() {
-  const [user, setUser] = useState<MarketplaceAuthUser | null>(null);
-  const [authResolved, setAuthResolved] = useState(false);
-  const [view, setView] = useState<View>(() => viewFromPathname(window.location.pathname));
+function App({ view, authState, references, navigate }: AccountSurfaceProps) {
   const [paymentNotice, setPaymentNotice] = useState<PaymentNotice | null>(null);
-  const [cachedMarketplaceReferences] = useState(readCachedMarketplaceReferences);
+  const user = authState.status === "signed-in" ? authState.user : null;
+  const authResolved = authState.status !== "resolving";
   const isSignedIn = user !== null;
   const [theme, setTheme] = useTheme("app-theme");
 
-  const navigateToView = useCallback((requestedView: View, options?: { replace?: boolean }) => {
+  const navigateToView = useCallback((requestedView: View, options?: CustomerNavigationOptions) => {
     const nextView = viewForAuthState(requestedView, isSignedIn);
-    setView(nextView);
-
-    const nextPath = pathForView(nextView);
-    const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`;
-    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (nextUrl === currentUrl) return;
-
-    if (options?.replace) {
-      window.history.replaceState({}, "", nextUrl);
-    } else {
-      window.history.pushState({}, "", nextUrl);
-    }
-  }, [isSignedIn]);
+    navigate(nextView, options);
+  }, [isSignedIn, navigate]);
 
   const navigateToListingCheckout = useCallback((token: string, checkoutUrl: string) => {
-    setView("post_checkout");
     const nextPath = `/post/checkout/${encodeURIComponent(token)}`;
     const nextUrl = checkoutUrl.startsWith(window.location.origin) ? new URL(checkoutUrl).pathname : nextPath;
-    window.history.pushState({}, "", nextUrl);
-  }, []);
+    navigate("post_checkout", { path: nextUrl });
+  }, [navigate]);
 
   const navigateToPostEditCheckout = useCallback((token: string) => {
-    setView("post");
-    window.history.pushState({}, "", `/post?checkoutToken=${encodeURIComponent(token)}`);
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = authClient.onAuthStateChanged((currentUser) => {
-      setUser(currentUser);
-      setAuthResolved(true);
-    });
-    return () => unsubscribe();
-  }, []);
+    navigate("post", { path: `/post?checkoutToken=${encodeURIComponent(token)}` });
+  }, [navigate]);
 
   useEffect(() => {
     if (!authResolved || !isSignedIn || !signedOutOnlyViews.has(view)) return;
@@ -207,11 +176,7 @@ function App() {
     document.title = seo.title;
     upsertNamedMeta("description", seo.description);
     upsertNamedMeta("robots", seo.robots);
-    if (seo.keywords) {
-      upsertNamedMeta("keywords", seo.keywords);
-    } else {
-      document.head.querySelector<HTMLMetaElement>('meta[name="keywords"]')?.remove();
-    }
+    document.head.querySelector<HTMLMetaElement>('meta[name="keywords"]')?.remove();
     upsertPropertyMeta("og:title", seo.title);
     upsertPropertyMeta("og:description", seo.description);
     upsertPropertyMeta("og:url", canonicalUrl);
@@ -220,39 +185,23 @@ function App() {
     setCanonicalUrl(canonicalUrl);
   }, [view]);
 
-  useEffect(() => {
-    const syncViewFromLocation = () => {
-      const nextView = viewFromPathname(window.location.pathname);
-      const canonicalPath = pathForView(nextView);
-      const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
-      setView(nextView);
-
-      if (nextView === "post_checkout" && currentPath.startsWith("/post/checkout/")) return;
-
-      if (currentPath !== canonicalPath) {
-        window.history.replaceState({}, "", `${canonicalPath}${window.location.search}${window.location.hash}`);
-      }
-    };
-
-    syncViewFromLocation();
-    window.addEventListener("popstate", syncViewFromLocation);
-    return () => window.removeEventListener("popstate", syncViewFromLocation);
-  }, []);
-
   const getAccessToken = useCallback(async () => {
     if (!user) return undefined;
     return await user.getIdToken();
   }, [user]);
 
   const api = useMemo(() => new GemsApiClient("/api/v1", { getAccessToken }), [getAccessToken]);
-  const account = useAccountWorkflow(api, isSignedIn);
+  const accountWorkflowEnabled = isSignedIn && (protectedViews.has(view) || view === "post_checkout");
+  const marketplaceWorkflowEnabled = view === "post_checkout" || view === "profile" || view === "reports" || view === "my_listings";
+  const account = useAccountWorkflow(api, isSignedIn, accountWorkflowEnabled);
   const marketplace = useMarketplaceWorkflow({
     api,
     myReports: account.myReports,
-    setMyReports: account.setMyReports
+    setMyReports: account.setMyReports,
+    enabled: marketplaceWorkflowEnabled
   });
-  const referenceGemTypes = marketplace.snapshot?.gemTypes ?? cachedMarketplaceReferences?.gemTypes ?? [];
-  const referenceLocations = marketplace.snapshot?.locations ?? cachedMarketplaceReferences?.locations ?? [];
+  const referenceGemTypes = references.data.gemTypes.length > 0 ? references.data.gemTypes : marketplace.snapshot?.gemTypes ?? [];
+  const referenceLocations = references.data.locations.length > 0 ? references.data.locations : marketplace.snapshot?.locations ?? [];
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -262,13 +211,12 @@ function App() {
     const notice = paymentNoticeFromResult(result);
     if (notice) {
       setPaymentNotice(notice);
-      setView("my_listings");
       url.pathname = pathForView("my_listings");
     }
 
     url.searchParams.delete("payment");
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-  }, []);
+    navigate(notice ? "my_listings" : view, { replace: true, path: `${url.pathname}${url.search}${url.hash}` });
+  }, [navigate, view]);
 
   useEffect(() => {
     if (!paymentNotice || !isSignedIn) return;
@@ -293,6 +241,7 @@ function App() {
 
   const frameProps = {
     isSignedIn,
+    authResolved,
     view,
     setView: navigateToView,
     query: marketplace.query,
@@ -300,7 +249,6 @@ function App() {
     selectedLocations: marketplace.selectedLocations,
     setSelectedLocations: marketplace.setSelectedLocations,
     locations: referenceLocations,
-    authResolved,
     theme,
     setTheme,
     user,
@@ -357,7 +305,7 @@ function App() {
     );
   }
 
-  if (view === "login" || view === "signup" || view === "forgot_password") {
+  if (view === "login" || view === "signup" || view === "forgot_password" || view === "reset_password") {
     return (
       <AppFrame {...frameProps}>
         {view === "login" && <LoginPage onSignedIn={() => navigateToView("market", { replace: true })} onNavigate={navigateToView} />}
@@ -371,6 +319,7 @@ function App() {
           />
         )}
         {view === "forgot_password" && <ForgotPasswordPage onNavigate={navigateToView} />}
+        {view === "reset_password" && <ResetPasswordPage onNavigate={navigateToView} />}
       </AppFrame>
     );
   }
@@ -383,11 +332,20 @@ function App() {
     );
   }
 
-  if (view === "post" && referenceGemTypes.length > 0 && referenceLocations.length > 0) {
+  if (view === "post") {
     const editCheckoutToken = new URLSearchParams(window.location.search).get("checkoutToken") ?? "";
     return (
       <AppFrame {...frameProps} locations={referenceLocations}>
-        <PostGem gemTypes={referenceGemTypes} locations={referenceLocations} api={api} editCheckoutToken={editCheckoutToken} onCheckoutCreated={navigateToListingCheckout} />
+        <PostGem
+          gemTypes={referenceGemTypes}
+          locations={referenceLocations}
+          referencesLoading={references.status === "idle" || references.status === "loading"}
+          referencesError={references.error}
+          onRetryReferences={references.retry}
+          api={api}
+          editCheckoutToken={editCheckoutToken}
+          onCheckoutCreated={navigateToListingCheckout}
+        />
       </AppFrame>
     );
   }
@@ -414,49 +372,9 @@ function App() {
   const locations = marketplace.snapshot.locations;
   const sellers = marketplace.snapshot.sellers;
   const listingCheckoutToken = view === "post_checkout" ? listingCheckoutTokenFromPathname(window.location.pathname) : "";
-  const editCheckoutToken = view === "post" ? new URLSearchParams(window.location.search).get("checkoutToken") ?? "" : "";
 
   return (
     <AppFrame {...frameProps} locations={locations}>
-      {view === "market" && (
-        <Marketplace
-          gemTypes={gemTypes}
-          sellers={sellers}
-          locations={locations}
-          selectedLocations={marketplace.selectedLocations}
-          setSelectedLocations={marketplace.setSelectedLocations}
-          sourceListingCount={marketplace.approvedListings.length}
-          filteredListings={marketplace.filteredListings}
-          page={marketplace.page}
-          setPage={marketplace.setPage}
-          totalPages={marketplace.totalPages}
-          pageSize={marketplace.pageSize}
-          setPageSize={(pageSize) => { marketplace.setPage(1); marketplace.setPageSize(pageSize); }}
-          selectedListing={marketplace.selectedListing}
-          setQuery={marketplace.setQuery}
-          query={marketplace.query}
-          gemType={marketplace.gemType}
-          setGemType={marketplace.setGemType}
-          treatment={marketplace.treatment}
-          setTreatment={marketplace.setTreatment}
-          certificate={marketplace.certificate}
-          setCertificate={marketplace.setCertificate}
-          sort={marketplace.sort}
-          setSort={marketplace.setSort}
-          selectedId={marketplace.selectedListing?.id ?? ""}
-          setSelectedId={(id) => marketplace.setSelectedId(id)}
-          previewPhone={marketplace.selectedListing ? marketplace.previewPhones[marketplace.selectedListing.id] : undefined}
-          revealedPhone={marketplace.selectedListing ? marketplace.fullPhones[marketplace.selectedListing.id] : undefined}
-          previewPhoneNumber={marketplace.handlePreviewPhone}
-          revealPhone={marketplace.handleRevealPhone}
-          isSignedIn={isSignedIn}
-          reportedListingIds={marketplace.reportedListingIds}
-          onRefresh={marketplace.refreshSnapshot}
-          onReport={marketplace.handleReportListing}
-          onRecordInteraction={marketplace.handleRecordInteraction}
-        />
-      )}
-      {view === "post" && <PostGem gemTypes={gemTypes} locations={locations} api={api} editCheckoutToken={editCheckoutToken} onCheckoutCreated={navigateToListingCheckout} />}
       {view === "post_checkout" && (
         <PostGemCheckout
           token={listingCheckoutToken}

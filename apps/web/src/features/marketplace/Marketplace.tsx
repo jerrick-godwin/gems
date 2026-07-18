@@ -1,13 +1,14 @@
-import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, Search, SlidersHorizontal, Star, X } from "lucide-react";
+import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, SlidersHorizontal, Star, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type CertificateStatus, type Listing, type MarketplacePageSize, type SellerProfile, type Treatment } from "@gems/schemas";
 import { MultiSelectDropdown } from "../../shared/MultiSelectDropdown";
 import { StatusState } from "../../shared/StatusState";
-import { publicErrorMessage } from "../../shared/helpers";
+import { publicErrorMessage, formatTimeAgo, formatPostedDate } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { MarketplaceSearch } from "./MarketplaceSearch";
 
 export interface MarketplaceProps {
   gemTypes: MarketplaceSnapshot["gemTypes"];
@@ -38,47 +39,60 @@ export interface MarketplaceProps {
   setSelectedId: (id: string) => void;
   previewPhone?: string;
   revealedPhone?: string;
-  previewPhoneNumber: (listingId: string) => void | Promise<void>;
-  revealPhone: (listingId: string) => void | Promise<void>;
+  previewPhoneNumber: (listingId: string) => Promise<string>;
+  revealPhone: (listingId: string) => Promise<string>;
   isSignedIn: boolean;
   reportedListingIds: string[];
   onRefresh: () => void | Promise<void>;
   onReport: (listingId: string, reason: string, notes: string) => Promise<void>;
   onRecordInteraction: (listingId: string, type: "view" | "whatsapp_click") => Promise<void>;
+  detailHeadingLevel?: 1 | 2;
 }
 
 export function Marketplace(props: MarketplaceProps) {
-  if (!props.selectedListing && props.sourceListingCount === 0) {
-    return <StatusState title="No listings available" message="Try refreshing once Ceylon gems and Sri Lankan gemstone listings have been published." onRetry={props.onRefresh} />;
+  const hasActiveDiscovery = Boolean(
+    props.query.trim()
+    || props.gemType !== "all"
+    || props.treatment !== "all"
+    || props.certificate !== "all"
+    || props.selectedLocations.length
+  );
+  if (!props.selectedListing && props.sourceListingCount === 0 && !hasActiveDiscovery) {
+    return <StatusState title="No listings available" message="Try refreshing once gemstone listings have been published." onRetry={props.onRefresh} headingLevel={2} />;
   }
 
   return (
     <section className="market-grid">
-      <section className="feed">
+      <section className="feed marketplace-results-card card card--surface" aria-label="Gemstone listings">
+        <header className="marketplace-results-header" role="search" aria-label="Search gemstone listings">
+          <MarketplaceSearch id="marketplace-results-search-input" value={props.query} onChange={props.setQuery} className="marketplace-results-search" />
+        </header>
         {props.filteredListings.length === 0 ? (
           <div className="empty-results">
             <h2>No matches found</h2>
             <p>Adjust your search or filters to browse the available listings.</p>
           </div>
         ) : (
-          <>
-            <div className="listing-list">
-              {props.filteredListings.map((listing, index) => (
-                <ListingCard
-                  key={listing.id}
-                  listing={listing}
-                  gemTypes={props.gemTypes}
-                  sellers={props.sellers}
-                  selected={props.selectedId === listing.id}
-                  eager={index < 4}
-                  priority={index === 0}
-                  onSelect={() => {
-                    props.setSelectedId(listing.id);
-                    props.onRecordInteraction(listing.id, "view");
-                  }}
-                />
-              ))}
-            </div>
+          <div className="listing-list">
+            {props.filteredListings.map((listing, index) => (
+              <ListingCard
+                key={listing.id}
+                listing={listing}
+                gemTypes={props.gemTypes}
+                sellers={props.sellers}
+                selected={props.selectedId === listing.id}
+                eager={index < 4}
+                priority={index === 0}
+                onSelect={() => {
+                  props.setSelectedId(listing.id);
+                  props.onRecordInteraction(listing.id, "view");
+                }}
+              />
+            ))}
+          </div>
+        )}
+        {(props.totalPages > 1 || (props.pageSize && props.setPageSize)) && (
+          <footer className="listing-results-footer">
             {props.totalPages > 1 && (
               <div className="pagination">
                 <a
@@ -100,25 +114,21 @@ export function Marketplace(props: MarketplaceProps) {
                 </a>
               </div>
             )}
-          </>
+            {props.pageSize && props.setPageSize && (
+              <label className="listing-page-size">
+                Items per page
+                <select value={props.pageSize} onChange={(event) => props.setPageSize?.(Number(event.target.value) as MarketplacePageSize)} id="items-per-page">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            )}
+          </footer>
         )}
-        {props.pageSize && props.setPageSize && <div className="listing-results-footer">
-          <label className="listing-page-size">
-            Items per page
-            <select value={props.pageSize} onChange={(event) => props.setPageSize?.(Number(event.target.value) as MarketplacePageSize)} id="items-per-page">
-              <option value="10">10</option>
-              <option value="20">20</option>
-              <option value="50">50</option>
-            </select>
-          </label>
-        </div>}
       </section>
 
-      <aside className="filters" aria-label="Gem filters">
-        <div className="global-search">
-          <Search size={17} strokeWidth={2} />
-          <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="Search Gems" id="global-search-input" />
-        </div>
+      <aside className="filters card card--surface" aria-label="Gem filters">
         <label className="sort-control">
           <SlidersHorizontal size={16} strokeWidth={2} />
           Sort
@@ -161,16 +171,18 @@ export function Marketplace(props: MarketplaceProps) {
         </label>
         <label>
           Origin Country
-          <MultiSelectDropdown options={props.locations} selected={props.selectedLocations} onChange={props.setSelectedLocations} placeholder="Worldwide" />
+          <MultiSelectDropdown id="marketplace-origin-options" options={props.locations} selected={props.selectedLocations} onChange={props.setSelectedLocations} placeholder="Worldwide" />
         </label>
       </aside>
 
       {props.selectedListing && (
         <div className="modal-overlay" onClick={() => props.setSelectedId("")}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => props.setSelectedId("")}>
-              <X size={18} strokeWidth={2.5} />
-            </button>
+            <div className="modal-close-container">
+              <button className="modal-close" onClick={() => props.setSelectedId("")}>
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
             <ListingDetail
               listing={props.selectedListing}
               gemTypes={props.gemTypes}
@@ -182,6 +194,7 @@ export function Marketplace(props: MarketplaceProps) {
               isSignedIn={props.isSignedIn}
               isReported={props.reportedListingIds.includes(props.selectedListing.id)}
               onReport={props.onReport}
+              headingLevel={props.detailHeadingLevel ?? 2}
             />
           </div>
         </div>
@@ -202,7 +215,7 @@ function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, on
   ]);
 
   return (
-    <article className={`listing-card${selected ? " selected" : ""}`} id={`listing-${listing.id}`}>
+    <article className={`listing-card card card--media card--interactive${selected ? " selected" : ""}`} id={`listing-${listing.id}`}>
       <a className="listing-card-link" href={`/listings/${encodeURIComponent(listing.id)}`} onClick={(event) => { event.preventDefault(); onSelect(); }}>
       <div className="listing-media">
         <img src={listing.media[0]?.thumbnailUrl ?? listing.media[0]?.url} alt={listing.media[0]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} width={listing.media[0]?.width ?? 800} height={listing.media[0]?.height ?? 600} loading={eager ? "eager" : "lazy"} {...(priority ? { fetchpriority: "high" } : {})} />
@@ -221,7 +234,10 @@ function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, on
             <span key={spec}>{spec}</span>
           ))}
         </div>
-        <div className="seller-line"><MapPin size={14} strokeWidth={2} />{listing.location}</div>
+        <div className="seller-line">
+          <span className="seller-location"><MapPin size={14} strokeWidth={2} />{listing.location}</span>
+          {formatTimeAgo(listing.publishedAt || listing.createdAt) ? <span className="time-ago">{formatTimeAgo(listing.publishedAt || listing.createdAt)}</span> : null}
+        </div>
       </div>
       </a>
     </article>
@@ -237,7 +253,17 @@ function maskPhoneNumber(phone?: string) {
   });
 }
 
-function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone, onPreviewPhone, onReveal, isSignedIn, isReported, onReport }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; previewPhone?: string; revealedPhone?: string; onPreviewPhone: () => void | Promise<void>; onReveal: () => void | Promise<void>; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; }) {
+export type PhonePreviewState = "idle" | "loading" | "available" | "unavailable" | "error";
+
+export function phonePreviewLabel(state: PhonePreviewState, phoneText: string, isLoading = false) {
+  if (phoneText) return phoneText;
+  if (state === "unavailable") return "Phone number not available";
+  if (state === "error") return "Unable to load phone number";
+  if (isLoading || state === "loading") return "Loading...";
+  return "Phone number";
+}
+
+function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone, onPreviewPhone, onReveal, isSignedIn, isReported, onReport, headingLevel }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; previewPhone?: string; revealedPhone?: string; onPreviewPhone: () => Promise<string>; onReveal: () => Promise<string>; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; headingLevel: 1 | 2; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -246,9 +272,11 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isFullRevealLoading, setIsFullRevealLoading] = useState(false);
   const [fullPhoneVisible, setFullPhoneVisible] = useState(false);
+  const [phonePreviewState, setPhonePreviewState] = useState<PhonePreviewState>(previewPhone ? "available" : "idle");
   const [reportReason, setReportReason] = useState("");
   const reportAction = useSingleFlightAction();
   const images = useMemo(() => listing.media.filter((media) => media.kind !== "certificate"), [listing.media]);
+  const certificate = listing.media.find((media) => media.kind === "certificate");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const requestedPhoneListingId = useRef<string>();
   const attributes = getListingAttributes(listing, gemType?.name);
@@ -265,6 +293,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   useEffect(() => {
     requestedPhoneListingId.current = undefined;
     setFullPhoneVisible(false);
+    setPhonePreviewState("idle");
   }, [listing.id]);
 
   useEffect(() => {
@@ -279,10 +308,16 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
     let active = true;
     requestedPhoneListingId.current = listing.id;
     setIsPreviewLoading(true);
+    setPhonePreviewState("loading");
     Promise.resolve(onPreviewPhone())
+      .then((phone) => {
+        if (!active) return;
+        setPhonePreviewState(phone.trim() ? "available" : "unavailable");
+      })
       .catch((error) => {
         if (!active) return;
         requestedPhoneListingId.current = undefined;
+        setPhonePreviewState("error");
         console.error("Unable to load phone number", error);
       })
       .finally(() => {
@@ -301,8 +336,10 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
     if (isFullRevealLoading) return;
     try {
       setIsFullRevealLoading(true);
-      await onReveal();
+      const phone = await onReveal();
+      setPhonePreviewState(phone.trim() ? "available" : "unavailable");
     } catch (error) {
+      setPhonePreviewState("error");
       alert(`Unable to load phone number: ${publicErrorMessage(error, "Unknown error")}`);
     } finally {
       setIsFullRevealLoading(false);
@@ -333,8 +370,8 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   };
 
   return (
-    <article className="detail-card" id="listing-detail">
-      <div className="detail-image-container" style={{ position: "relative", width: "100%", overflow: "hidden", borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }}>
+    <article className="detail-card card card--media" id="listing-detail">
+      <div className="detail-image-container">
         <img className="detail-image" src={images[currentImageIndex]?.url} alt={images[currentImageIndex]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} />
         {images.length > 1 && <>
           <button
@@ -354,52 +391,71 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
         </>}
       </div>
       <div className="detail-body">
-        <div className="detail-title-row"><h2>{listing.title}</h2><span>{formatLkr(listing.priceLkr)}</span></div>
-        <p style={{ fontSize: 14, lineHeight: 1.6, fontWeight: 500 }}>{listing.description}</p>
-        <dl className="spec-grid">
-          {attributes.map((attribute) => (
-            <div key={attribute.label}>
-              <dt>{attribute.label}</dt>
-              <dd>{attribute.value}</dd>
+        <div className="detail-title-row">{headingLevel === 1 ? <h1>{listing.title}</h1> : <h2>{listing.title}</h2>}<span>{formatLkr(listing.priceLkr)}</span></div>
+        <p className="listing-description">{listing.description}</p>
+        <div className="spec-sections">
+          {attributes.map((section) => (
+            <div key={section.title} className="spec-section">
+              <h3 className="spec-section-title">{section.title}</h3>
+              <dl className="spec-grid">
+                {section.items.map((attribute) => (
+                  <div key={attribute.label}>
+                    <dt>{attribute.label}</dt>
+                    <dd>{attribute.value}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           ))}
-        </dl>
-        <div className="certificate-box" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}><BadgeCheck size={17} strokeWidth={2} /><span>{listing.media.some((media) => media.kind === "certificate") ? "Gem Certificate is Provided" : "Certificate not Provided"}</span></div>
-          {listing.media.some((media) => media.kind === "certificate") && <a href={listing.media.find((media) => media.kind === "certificate")?.url} target="_blank" rel="noreferrer" className="primary-action btn-blue" style={{ padding: "4px 12px", fontSize: 13, height: "auto", minHeight: 32, borderRadius: 6, textDecoration: "none" }}><Download size={14} style={{ marginRight: 4 }} />Download</a>}
         </div>
-        <div className="seller-card"><div className="avatar">{seller?.displayName.slice(0, 1)}</div><div><strong style={{ fontWeight: 700 }}>{seller?.displayName}</strong><span style={{ display: "flex", alignItems: "center", gap: 4 }}>{sellerProfileLabel(seller?.verificationStatus)} · <MapPin size={12} /> {listing.location}</span></div></div>
-        <div className="cart-action-row">
-          <div className={`phone-reveal${phoneText ? " has-number" : ""}`}>
-            <Phone size={18} />
-            <span className="phone-reveal-text">
-              {phoneText ? (
-                <span>{phoneText}</span>
-              ) : (
-                <span>{isPreviewLoading ? "Loading..." : "Phone number"}</span>
-              )}
-            </span>
-            <button
-              type="button"
-              className="phone-eye-action"
-              onClick={handlePhoneToggle}
-              disabled={isFullRevealLoading || (!phoneText && isPreviewLoading)}
-              aria-label={fullPhoneVisible && revealedPhone ? "Hide phone number" : "Show full phone number"}
-            >
-              {fullPhoneVisible && revealedPhone ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
+        {certificate && (
+          <div className="certificate-box certificate-row">
+            <div className="certificate-label"><BadgeCheck size={17} strokeWidth={2} /><span>Gem Certificate is Provided</span></div>
+            <a href={certificate.url} target="_blank" rel="noreferrer" className="primary-action btn-blue certificate-download"><Download size={14} />Download</a>
           </div>
-          {isReported || reported ? <div className="primary-action" aria-label="Listing already reported" style={{ flex: "1 1 120px", background: "var(--line-subtle)", color: "var(--sage)", cursor: "default" }}><Check size={16} strokeWidth={2.5} />Reported</div> : <button className="primary-action btn-red" id="report-listing" onClick={handleReportClick} aria-label="Report listing" style={{ flex: "1 1 120px" }}><Flag size={16} strokeWidth={2} />Report</button>}
+        )}
+        <div className="listing-footer">
+          <div className="seller-card sleek-seller">
+            <div className="avatar">{seller?.displayName.slice(0, 1)}</div>
+            <div className="seller-info">
+              <strong>{seller?.displayName}</strong>
+              <span>{sellerProfileLabel(seller?.verificationStatus)} · <MapPin size={12} /> {listing.location}</span>
+            </div>
+          </div>
+          <div className="sleek-actions">
+            <div className={`phone-reveal${phoneText ? " has-number" : ""}`}>
+              <Phone size={18} />
+              <span className="phone-reveal-text" aria-live="polite">
+                <span>{phonePreviewLabel(phonePreviewState, phoneText, isPreviewLoading)}</span>
+              </span>
+              {phonePreviewState !== "unavailable" && (
+                <button
+                  type="button"
+                  className="phone-eye-action"
+                  onClick={handlePhoneToggle}
+                  disabled={isFullRevealLoading || (!phoneText && isPreviewLoading)}
+                  aria-label={phonePreviewState === "error" ? "Retry loading phone number" : fullPhoneVisible && revealedPhone ? "Hide phone number" : "Show full phone number"}
+                >
+                  {fullPhoneVisible && revealedPhone ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              )}
+            </div>
+            {isReported || reported ? (
+              <button className="subtle-action reported-subtle" aria-label="Listing already reported"><Check size={14} strokeWidth={2.5} /> Listing Reported</button>
+            ) : (
+              <button className="subtle-action" id="report-listing" onClick={handleReportClick} aria-label="Report listing"><Flag size={14} strokeWidth={2} /> Report Listing</button>
+            )}
+          </div>
         </div>
       </div>
       {reportModalOpen && createPortal(
-        <div className="modal-overlay" onClick={() => setReportModalOpen(false)} style={{ zIndex: 10000 }}>
-          <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 420, width: "100%", padding: 24, borderRadius: "var(--radius-lg)" }}>
-            <h3 style={{ margin: "0 0 20px 0", fontSize: 22, fontWeight: 800 }}>Report Listing</h3>
-            <form className="post-form" style={{ display: "flex", flexDirection: "column", gap: 16 }} onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void handleReportSubmit(data.get("reason") as string, data.get("notes") as string); }}>
+        <div className="modal-overlay report-modal-overlay" onClick={() => setReportModalOpen(false)}>
+          <div className="modal-content report-modal" onClick={(event) => event.stopPropagation()}>
+            <h3>Report Listing</h3>
+            <form className="post-form report-modal-form" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void handleReportSubmit(data.get("reason") as string, data.get("notes") as string); }}>
               <label>Reason for reporting *<select name="reason" required value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option value="">Select a reason...</option><option value="fake_certificate">Fake Certificate</option><option value="misrepresented_gem">Misrepresented Gem</option><option value="scam_attempt">Scam Attempt</option><option value="duplicate">Duplicate Listing</option><option value="wrong_details">Wrong Details</option><option value="abusive_seller">Abusive Seller</option><option value="other">Other</option></select></label>
               <label>{reportReason === "other" ? "Additional Notes *" : "Additional Notes (optional)"}<textarea name="notes" rows={4} placeholder="Please provide any additional details..." required={reportReason === "other"} /></label>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}><button type="button" onClick={() => setReportModalOpen(false)} disabled={reportAction.busy || isReporting} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: 40, padding: "0 16px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "transparent", color: "var(--ink)", fontSize: 14, fontWeight: 700, cursor: reportAction.busy || isReporting ? "not-allowed" : "pointer" }}>Cancel</button><button type="submit" disabled={reportAction.busy || isReporting} className="primary-action btn-red" style={{ flex: "none", width: "auto", padding: "0 16px", cursor: reportAction.busy || isReporting ? "not-allowed" : "pointer" }}>{isReporting ? "Submitting..." : "Submit Report"}</button></div>
+              <div className="report-modal-actions"><button className="report-modal-cancel" type="button" onClick={() => setReportModalOpen(false)} disabled={reportAction.busy || isReporting}>Cancel</button><button type="submit" disabled={reportAction.busy || isReporting} className="primary-action btn-red report-modal-submit">{isReporting ? "Submitting..." : "Submit Report"}</button></div>
             </form>
           </div>
         </div>,
@@ -415,24 +471,40 @@ function sellerProfileLabel(status?: SellerProfile["verificationStatus"]) {
   return "Seller profile";
 }
 
-function getListingAttributes(listing: Listing, gemTypeName?: string) {
-  const rawAttributes: Array<[string, string | undefined] | undefined> = [
-    gemTypeName ? ["Gem type", gemTypeName] : undefined,
-    ["Location", listing.location],
-    ["Carat", `${listing.attributes.carat} ct`],
-    ["Dimensions", listing.attributes.dimensions],
-    ["Shape", listing.attributes.shape],
-    ["Cut", listing.attributes.cut],
-    ["Color", listing.attributes.color],
-    ["Clarity", listing.attributes.clarity],
-    ["Origin", listing.attributes.origin],
-    ["Treatment", formatTreatment(listing.attributes.treatment)]
-  ];
+type AttributeGroup = { title: string; items: { label: string; value: string }[] };
 
-  return rawAttributes.filter(isDisplayAttribute).map(([label, value]) => ({
-    label,
-    value
-  }));
+function getListingAttributes(listing: Listing, gemTypeName?: string): AttributeGroup[] {
+  const processGroup = (group: Array<[string, string | undefined] | undefined>) =>
+    group.filter(isDisplayAttribute).map(([label, value]) => ({ label, value }));
+
+  return [
+    {
+      title: "General Information",
+      items: processGroup([
+        gemTypeName ? ["Gem type", gemTypeName] : undefined,
+        ["Location", listing.location],
+        ["Posted", formatPostedDate(listing.publishedAt || listing.createdAt) ?? undefined]
+      ])
+    },
+    {
+      title: "Gem Specifications",
+      items: processGroup([
+        ["Carat", `${listing.attributes.carat} ct`],
+        ["Color", listing.attributes.color],
+        ["Clarity", listing.attributes.clarity],
+        ["Shape", listing.attributes.shape],
+        ["Cut", listing.attributes.cut],
+        ["Dimensions", listing.attributes.dimensions]
+      ])
+    },
+    {
+      title: "Origin & Treatment",
+      items: processGroup([
+        ["Origin", listing.attributes.origin],
+        ["Treatment", formatTreatment(listing.attributes.treatment)]
+      ])
+    }
+  ].filter(group => group.items.length > 0);
 }
 
 function isDisplayAttribute(attribute: [string, string | undefined] | undefined): attribute is [string, string] {

@@ -1,0 +1,115 @@
+.layout-container,
+.app-main-inner,
+.topbar-inner,
+.admin-topbar-inner {
+  width: min(var(--layout-wide), calc(100% - (2 * var(--layout-gutter))));
+  margin-inline: auto;
+}
+
+.layout-prose {
+  width: min(var(--layout-prose), 100%);
+  margin-inline: auto;
+}
+
+.app-main {
+  flex: 1;
+  padding: var(--layout-gutter) 0;
+}
+
+.app-main-inner {
+  min-width: 0;
+}
+
+.topbar {
+  display: block;
+  padding-inline: 0;
+}
+
+.topbar-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: var(--topbar-h);
+}
+
+.admin-topbar-inner {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.payment-notice {
+  width: min(var(--layout-wide), calc(100% - (2 * var(--layout-gutter))));
+}
+
+.site-footer-inner,
+.footer-bottom-bar,
+.dashboard,
+.workspace-grid,
+.checkout-page,
+.seo-page,
+.marketplace-seo-intro,
+.category-seo-intro,
+.policy-page,
+.seo-prose,
+.gemstone-directory-card,
+.seo-marketplace-notice,
+.market-grid {
+  width: 100%;
+  max-width: var(--layout-wide);
+  margin-inline: auto;
+}
+
+.site-footer-inner,
+.footer-bottom-bar {
+  width: min(var(--layout-wide), calc(100% - (2 * var(--layout-gutter))));
+  padding-inline: 0;
+}
+
+.seo-section,
+.seo-card,
+.seo-sitelink-grid a,
+.listing-card,
+.data-panel,
+.checkout-panel,
+.checkout-summary-panel,
+.metric-card,
+.report-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .topbar-inner {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 16px;
+    padding-block: 16px;
+  }
+
+  .customer-topbar-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding-block: 10px;
+  }
+
+  .admin-topbar-inner {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+}
+.u-hidden {
+  display: none !important;
+}
+
+.u-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}

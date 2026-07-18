@@ -8,12 +8,12 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
 
   return (
     <main className="admin-login-screen">
-      <section className="admin-login-card">
+      <section className="admin-login-card card card--spacious">
         <div className="brand-mark login-logo admin-login-logo">
           <img src="/assets/gemslanka-logo.png" alt="gemslanka.lk" />
         </div>
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ marginBottom: 6 }}>Admin Sign In</h1>
+        <div className="admin-login-heading">
+          <h1>Admin Sign In</h1>
         </div>
         <form
           className="admin-login-form"

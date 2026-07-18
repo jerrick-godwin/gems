@@ -7,11 +7,13 @@ import type { SortKey } from "../../shared/types";
 export function useMarketplaceWorkflow({
   api,
   myReports,
-  setMyReports
+  setMyReports,
+  enabled = true
 }: {
   api: GemsApiClient;
   myReports: Report[];
   setMyReports: (reports: Report[]) => void;
+  enabled?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState<MarketplaceSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export function useMarketplaceWorkflow({
   }, [api, certificate, gemType, page, pageSize, query, selectedLocations, sort, treatment]);
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     api
       .snapshot()
@@ -78,7 +81,7 @@ export function useMarketplaceWorkflow({
     return () => {
       active = false;
     };
-  }, [api, pageSize]);
+  }, [api, enabled, pageSize]);
 
   const listings = snapshot?.listings ?? [];
   const approvedListings = useMemo(() => listings.filter((listing) => listing.moderationStatus === "approved"), [listings]);
@@ -88,6 +91,7 @@ export function useMarketplaceWorkflow({
   }, [query, gemType, selectedLocations, treatment, certificate, sort]);
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     const timeout = setTimeout(() => {
       api
@@ -113,18 +117,20 @@ export function useMarketplaceWorkflow({
       active = false;
       clearTimeout(timeout);
     };
-  }, [api, query, gemType, selectedLocations, treatment, certificate, sort, page, pageSize]);
+  }, [api, certificate, enabled, gemType, page, pageSize, query, selectedLocations, sort, treatment]);
 
   const selectedListing = filteredListings.find((listing) => listing.id === selectedId);
 
   const handlePreviewPhone = async (listingId: string) => {
     const result = await api.previewPhone(listingId);
     setPreviewPhones((current) => ({ ...current, [listingId]: result.phone }));
+    return result.phone;
   };
 
   const handleRevealPhone = async (listingId: string) => {
     const result = await api.revealPhone(listingId);
     setFullPhones((current) => ({ ...current, [listingId]: result.phone }));
+    return result.phone;
   };
 
   const handleReportListing = async (listingId: string, reason: string, notes: string) => {

@@ -62,3 +62,33 @@ export function parsePriceInput(value: string) {
 export function isUploadableUrl(uploadUrl: string) {
   return uploadUrl.startsWith("http") || uploadUrl.startsWith("/");
 }
+
+export function formatTimeAgo(dateString: string | undefined): string | null {
+  if (!dateString) return null;
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
+  const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+  const diffMinutes = Math.floor(diffTime / (1000 * 60));
+
+  if (diffDays > 0) {
+    return `${diffDays} Day${diffDays > 1 ? 's' : ''} ago`;
+  }
+  if (diffHours > 0) {
+    return `${diffHours} Hour${diffHours > 1 ? 's' : ''} ago`;
+  }
+  if (diffMinutes > 0) {
+    return `${diffMinutes} Minute${diffMinutes > 1 ? 's' : ''} ago`;
+  }
+  return "Just now";
+}
+
+export function formatPostedDate(dateString: string | undefined): string | null {
+  if (!dateString) return null;
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }).format(new Date(dateString));
+}

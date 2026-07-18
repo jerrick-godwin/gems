@@ -36,6 +36,7 @@ import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type 
 import type { FirebaseAuthClaims } from "./auth.js";
 import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
+import { normalizeListingTitle } from "./listing-title.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob, ensureListingCardThumbnail } from "./storage.js";
 import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
@@ -1015,7 +1016,7 @@ export async function createListing(userId: string, input: ListingInput, idempot
     id: normalizedIdempotencyKey ? stableIdFromKey("gem", `${seller.id}:${normalizedIdempotencyKey}`) : `gem-${randomUUID()}`,
     sellerId: seller.id,
     gemTypeId: input.gemTypeId ?? "sapphire",
-    title: input.title ?? "Untitled gem listing",
+    title: normalizeListingTitle(input.title ?? "Untitled gem listing"),
     description: input.description ?? "",
     priceLkr: Number(input.priceLkr ?? 0),
     negotiable: Boolean(input.negotiable),
@@ -1483,7 +1484,7 @@ export async function updateUserListing(userId: string, listingId: string, input
     const updatedAttributes = { ...existing.attributes, ...input.attributes };
     
     const updates: any = {};
-    if (input.title !== undefined) updates.title = input.title;
+    if (input.title !== undefined) updates.title = normalizeListingTitle(input.title);
     if (input.description !== undefined) updates.description = input.description;
     if (input.priceLkr !== undefined) updates.priceLkr = Number(input.priceLkr);
     if (input.location !== undefined) updates.location = input.location;
@@ -1505,7 +1506,7 @@ export async function updateUserListing(userId: string, listingId: string, input
   const listing = state.database.listings.find((l) => l.id === listingId && l.sellerId === seller.id);
   if (!listing) return undefined;
   
-  if (input.title !== undefined) listing.title = input.title;
+  if (input.title !== undefined) listing.title = normalizeListingTitle(input.title);
   if (input.description !== undefined) listing.description = input.description;
   if (input.priceLkr !== undefined) listing.priceLkr = Number(input.priceLkr);
   if (input.location !== undefined) listing.location = input.location;
@@ -2091,7 +2092,7 @@ function normalizeOptionalString(value: string | undefined) {
 function normalizeListingCheckoutDraft(input: Partial<ListingCheckoutDraft> | undefined): ListingCheckoutDraft {
   const attributes: Partial<GemAttributes> = input?.attributes ?? {};
   const draft: ListingCheckoutDraft = {
-    title: normalizeRequiredString(input?.title, "Listing title is required."),
+    title: normalizeListingTitle(normalizeRequiredString(input?.title, "Listing title is required.")),
     gemTypeId: normalizeRequiredString(input?.gemTypeId, "Gem type is required."),
     description: normalizeRequiredString(input?.description, "Description is required."),
     priceLkr: normalizePositiveNumber(input?.priceLkr, "Price must be greater than zero."),
