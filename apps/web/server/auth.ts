@@ -97,3 +97,16 @@ export async function verifyAdminFirebaseIdToken(token: string): Promise<{ email
 
   return { email, role: "admin" };
 }
+
+export async function generatePasswordResetLink(email: string, redirectUrl: string): Promise<string> {
+  if (!firebaseApp) {
+    throw new Error("Authentication service is not initialized.");
+  }
+  
+  const actionCodeSettings = {
+    url: redirectUrl,
+    handleCodeInApp: true,
+  };
+
+  return await getAuth(firebaseApp).generatePasswordResetLink(email, actionCodeSettings);
+}

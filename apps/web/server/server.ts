@@ -33,7 +33,8 @@ import {
 } from "./marketplace-repository.js";
 import { broadcastMarketplaceInvalidation, loadMarketplacePage, pageSizeFromCookie, parseMarketplaceFilters, prewarmMarketplacePages, startMarketplaceInvalidationListener } from "./public-marketplace.js";
 import { publicAssetsFromViteManifest, type ViteManifestEntry } from "./public-assets.js";
-import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken } from "./auth.js";
+import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken, generatePasswordResetLink } from "./auth.js";
+import { sendPasswordResetEmail } from "./email.js";
 import {
   createListingPaymentIntent,
   convertTrialSubscriptionToPaymentIntent,
@@ -90,6 +91,40 @@ const currentDir = fileURLToPath(new URL(".", import.meta.url));
 const webRoot = isProduction ? resolve(currentDir, "../dist") : resolve(currentDir, "..");
 const staticRoot = isProduction ? resolve(webRoot, "client") : resolve(webRoot, "dist/client");
 const ssrRoot = isProduction ? resolve(webRoot, "ssr") : resolve(webRoot, "dist/ssr");
+
+const passwordResetRateLimiter = new Map<string, number[]>();
+const MAX_RESETS_PER_HOUR = 5;
+const RESET_WINDOW_MS = 60 * 60 * 1000;
+const RESET_COOLDOWN_MS = 60 * 1000;
+
+function canRequestPasswordReset(email: string): boolean {
+  const now = Date.now();
+  const requests = passwordResetRateLimiter.get(email) || [];
+  
+  // Clean up old requests
+  const recentRequests = requests.filter(time => now - time < RESET_WINDOW_MS);
+  
+  if (recentRequests.length > 0 && now - recentRequests[recentRequests.length - 1] < RESET_COOLDOWN_MS) {
+    return false; // Less than 1 minute since last request
+  }
+  
+  if (recentRequests.length >= MAX_RESETS_PER_HOUR) {
+    return false; // Too many requests in the last hour
+  }
+  
+  recentRequests.push(now);
+  passwordResetRateLimiter.set(email, recentRequests);
+  
+  // Optional cleanup of map over time (if it grows too large)
+  if (passwordResetRateLimiter.size > 10000) {
+    const expiredKeys = Array.from(passwordResetRateLimiter.entries())
+      .filter(([_, times]) => times.every(time => now - time >= RESET_WINDOW_MS))
+      .map(([key]) => key);
+    expiredKeys.forEach(key => passwordResetRateLimiter.delete(key));
+  }
+  
+  return true;
+}
 
 const mimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -727,6 +762,50 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   if (request.method === "GET" && path === "/api/v1/snapshot") {
     sendJson(response, 200, await getMarketplaceSnapshot());
+    return true;
+  }
+
+  if (request.method === "POST" && path === "/api/v1/auth/password-reset") {
+    try {
+      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+      
+      if (!email || !email.includes("@")) {
+        sendJson(response, 400, { error: "Invalid email address" });
+        return true;
+      }
+
+      if (!canRequestPasswordReset(email)) {
+        // Return success even if rate limited to prevent enumeration/abuse
+        sendJson(response, 202, { accepted: true });
+        return true;
+      }
+
+      const siteUrl = getPublicSiteUrl(request);
+      // We don't await the link generation and email sending to return quickly
+      // and prevent timing attacks indicating if the user exists.
+      generatePasswordResetLink(email, `${siteUrl}/reset-password`)
+        .then(link => {
+          const parsed = new URL(link);
+          const oobCode = parsed.searchParams.get("oobCode");
+          if (!oobCode) throw new Error("Could not parse oobCode from reset link");
+          const customLink = `${siteUrl}/reset-password?oobCode=${oobCode}`;
+          return sendPasswordResetEmail(email, customLink);
+        })
+        .catch(err => {
+          // Log error but don't expose it to the client.
+          // In Firebase, "auth/user-not-found" is a common error here if the user doesn't exist.
+          if (err && typeof err === "object" && 'code' in err && (err as any).code === "auth/user-not-found") {
+            return;
+          }
+          console.error("Error sending password reset email:", err);
+        });
+
+      sendJson(response, 202, { accepted: true });
+    } catch (error) {
+      console.error("Password reset error:", error);
+      sendJson(response, 202, { accepted: true }); // Always return success
+    }
     return true;
   }
 

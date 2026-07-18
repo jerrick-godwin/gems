@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile, type Auth, type User } from "firebase/auth";
+import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, signInWithEmailAndPassword, updateProfile, type Auth, type User } from "firebase/auth";
 
 export interface MarketplaceAuthUser {
   uid: string;
@@ -182,21 +182,28 @@ class MarketplaceAuthClient {
   }
 
   async sendPasswordReset({ email }: { email: string }) {
+    const response = await fetch("/api/v1/auth/password-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      // In a real scenario, this might be due to validation or rate limits
+      throw new Error("Unable to send a reset link at this time.");
+    }
+  }
+
+  async confirmPasswordReset({ code, password }: { code: string; password: string }) {
     if (this.auth) {
-      try {
-        await sendPasswordResetEmail(this.auth, email);
-      } catch (error) {
-        const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "";
-        if (code === "auth/user-not-found") return;
-        throw error;
-      }
+      await confirmPasswordReset(this.auth, code, password);
       return;
     }
 
     if (!canUseLocalAuth) throw createMissingConfigError();
 
-    void email;
-    throw createLocalPasswordResetUnavailableError();
+    // Local dev fallback
+    console.info("Simulated password reset for code:", code);
   }
 
   async signOut() {
