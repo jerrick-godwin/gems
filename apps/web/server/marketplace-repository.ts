@@ -137,6 +137,7 @@ function marketplaceOrder(sort: MarketplaceFilters["sort"]) {
   if (sort === "price-low") return [asc(listingTable.priceLkr), desc(listingTable.publishedAt), asc(listingTable.id)];
   if (sort === "price-high") return [desc(listingTable.priceLkr), desc(listingTable.publishedAt), asc(listingTable.id)];
   if (sort === "newest") return [desc(listingTable.publishedAt), asc(listingTable.id)];
+  if (sort === "oldest") return [asc(listingTable.publishedAt), asc(listingTable.id)];
   return [sql`jsonb_array_length(${listingTable.promoted}) DESC`, desc(listingTable.publishedAt), asc(listingTable.id)];
 }
 
@@ -362,6 +363,7 @@ export async function searchListings(params: {
     if (params.sort === "price-low") orderByClause = asc(listingTable.priceLkr);
     if (params.sort === "price-high") orderByClause = desc(listingTable.priceLkr);
     if (params.sort === "newest") orderByClause = desc(listingTable.publishedAt);
+    if (params.sort === "oldest") orderByClause = asc(listingTable.publishedAt);
     if (params.sort === "featured" || !params.sort) {
       orderByClause = sql`jsonb_array_length(promoted) DESC, (stats->>'views')::int DESC`;
     }
@@ -415,6 +417,7 @@ export async function searchListings(params: {
     if (params.sort === "price-low") return a.priceLkr - b.priceLkr;
     if (params.sort === "price-high") return b.priceLkr - a.priceLkr;
     if (params.sort === "newest") return String(b.publishedAt).localeCompare(String(a.publishedAt));
+    if (params.sort === "oldest") return String(a.publishedAt).localeCompare(String(b.publishedAt));
     // Default / featured
     return (b.promoted?.length || 0) - (a.promoted?.length || 0) || (b.stats?.views || 0) - (a.stats?.views || 0);
   });

@@ -542,7 +542,7 @@ export interface PaginatedResponse<T> {
   totalPages: number;
 }
 
-export type MarketplaceSort = "featured" | "newest" | "price-low" | "price-high";
+export type MarketplaceSort = "featured" | "newest" | "oldest" | "price-low" | "price-high";
 export type MarketplacePageSize = 10 | 20 | 50;
 
 export interface MarketplaceFilters {
