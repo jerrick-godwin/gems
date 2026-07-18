@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { GemsApiClient } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
 import { ForgotPasswordPage } from "./features/account/ForgotPasswordPage";
+import { ResetPasswordPage } from "./features/account/ResetPasswordPage";
 import { LoginPage } from "./features/account/LoginPage";
 import { MyListingsView } from "./features/account/MyListingsView";
 import { MyReportsView } from "./features/account/MyReportsView";
@@ -25,6 +26,11 @@ const homepageTitle = `${siteName} | Buy and Sell Gemstones Worldwide`;
 const homepageDescription = footerDescription;
 
 const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
+  reset_password: {
+    title: "Reset Password | Gemslanka.lk",
+    description: "Reset your Gemslanka.lk account password.",
+    robots: "noindex,follow"
+  },
   market: {
     title: homepageTitle,
     description: homepageDescription,
@@ -299,7 +305,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
     );
   }
 
-  if (view === "login" || view === "signup" || view === "forgot_password") {
+  if (view === "login" || view === "signup" || view === "forgot_password" || view === "reset_password") {
     return (
       <AppFrame {...frameProps}>
         {view === "login" && <LoginPage onSignedIn={() => navigateToView("market", { replace: true })} onNavigate={navigateToView} />}
@@ -313,6 +319,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
           />
         )}
         {view === "forgot_password" && <ForgotPasswordPage onNavigate={navigateToView} />}
+        {view === "reset_password" && <ResetPasswordPage onNavigate={navigateToView} />}
       </AppFrame>
     );
   }

@@ -1,14 +1,15 @@
-export type View = "market" | "login" | "signup" | "forgot_password" | "post" | "post_checkout" | "profile" | "reports" | "my_listings" | "receipt" | "terms" | "privacy" | "refund" | "contact";
+export type View = "market" | "login" | "signup" | "forgot_password" | "reset_password" | "post" | "post_checkout" | "profile" | "reports" | "my_listings" | "receipt" | "terms" | "privacy" | "refund" | "contact";
 export type SortKey = "featured" | "newest" | "price-low" | "price-high";
 
 export const protectedViews = new Set<View>(["profile", "my_listings", "reports", "receipt"]);
-export const signedOutOnlyViews = new Set<View>(["login", "signup", "forgot_password"]);
+export const signedOutOnlyViews = new Set<View>(["login", "signup", "forgot_password", "reset_password"]);
 
 export const viewPaths: Record<View, string> = {
   market: "/",
   login: "/login",
   signup: "/signup",
   forgot_password: "/forgot-password",
+  reset_password: "/reset-password",
   post: "/post",
   post_checkout: "/post/checkout",
   profile: "/profile",

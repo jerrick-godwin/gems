@@ -68,7 +68,7 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
         )}
         {sent && (
           <div className="auth-success-popup" role="status" aria-live="polite">
-            Check your inbox for a password reset link. It can take a minute to arrive.
+            If an account exists for this email address, a password-reset link has been sent.
           </div>
         )}
         <form className="login-form" onSubmit={sendResetLink} noValidate>
