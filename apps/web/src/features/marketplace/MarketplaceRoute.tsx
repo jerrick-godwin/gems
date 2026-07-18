@@ -30,6 +30,7 @@ export function MarketplaceRoute({
   onPublicUrlChange?: (href: string) => void;
 }) {
   const [theme, setThemeState] = useState<"system" | "light" | "dark">(initialTheme);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const setTheme = (next: "system" | "light" | "dark") => {
     const resolved = next === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : next;
     document.documentElement.dataset.theme = resolved;
@@ -60,6 +61,14 @@ export function MarketplaceRoute({
     onRouteStateChange?.(initialRoute);
   }, [initialRoute, onRouteStateChange]);
 
+  useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 760px)");
+    const syncMobileViewport = () => setIsMobileViewport(mobileQuery.matches);
+    syncMobileViewport();
+    mobileQuery.addEventListener("change", syncMobileViewport);
+    return () => mobileQuery.removeEventListener("change", syncMobileViewport);
+  }, []);
+
   if (initialRoute.kind === "content") {
     const page = initialRoute.page === "terms" ? <TermsAndConditions />
       : initialRoute.page === "privacy" ? <PrivacyPolicy />
@@ -78,6 +87,7 @@ export function MarketplaceRoute({
       <InteractiveMarketplace
         initialRoute={initialRoute}
         initialData={initialData}
+        isMobileViewport={isMobileViewport}
         onRouteStateChange={onRouteStateChange}
         onPublicUrlChange={onPublicUrlChange}
       />
@@ -88,11 +98,13 @@ export function MarketplaceRoute({
 function InteractiveMarketplace({
   initialRoute,
   initialData,
+  isMobileViewport,
   onRouteStateChange,
   onPublicUrlChange
 }: {
   initialRoute: Extract<PublicRouteData, { kind: "marketplace" | "category" | "listing" }>;
   initialData: MarketplacePageData;
+  isMobileViewport: boolean;
   onRouteStateChange?: (route: PublicRouteData) => void;
   onPublicUrlChange?: (href: string) => void;
 }) {
@@ -182,7 +194,11 @@ function InteractiveMarketplace({
   };
 
   return <>
-    {initialRoute.kind === "marketplace" && <MarketplaceSeoIntro />}
+    {initialRoute.kind === "marketplace" && !isMobileViewport && (
+      <div className="marketplace-seo-placement marketplace-seo-placement-top">
+        <MarketplaceSeoIntro />
+      </div>
+    )}
     {initialRoute.kind === "category" && <CategorySeoIntro gemType={initialRoute.gemType} />}
     <Marketplace
       gemTypes={data.gemTypes}
@@ -227,6 +243,11 @@ function InteractiveMarketplace({
       onRecordInteraction={async () => {}}
       detailHeadingLevel={initialRoute.kind === "listing" ? 1 : 2}
     />
+    {initialRoute.kind === "marketplace" && isMobileViewport && (
+      <div className="marketplace-seo-placement marketplace-seo-placement-bottom">
+        <MarketplaceSeoIntro />
+      </div>
+    )}
   </>;
 }
 

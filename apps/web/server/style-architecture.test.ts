@@ -20,7 +20,17 @@ test("CSS cascade layers and shared layout tokens are declared once", () => {
   assert.match(foundationCss, /--layout-gutter:\s*clamp\(14px,\s*2vw,\s*24px\)/);
   assert.match(foundationCss, /--section-gap:\s*clamp\(24px,\s*4vw,\s*48px\)/);
   assert.match(foundationCss, /--topbar-h:\s*80px/);
-  assert.match(responsiveCss, /@media \(max-width:\s*520px\)[\s\S]*?\.nav-actions\s*\{[\s\S]*?width:\s*100%/);
+  assert.match(responsiveCss, /@media \(max-width:\s*760px\)[\s\S]*?\.nav-actions\s*>\s*\.mobile-nav-toggle\s*\{[\s\S]*?display:\s*inline-flex/);
+  assert.match(responsiveCss, /\.nav-menu-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*var\(--topbar-h\) 0 0;[\s\S]*?display:\s*none[\s\S]*?width:\s*100vw/);
+  assert.match(responsiveCss, /\.nav-menu-panel\.is-open\s*\{[\s\S]*?display:\s*grid/);
+  assert.doesNotMatch(responsiveCss, /\.mobile-nav-overlay/);
+  assert.match(responsiveCss, /html\.mobile-nav-open,[\s\S]*?html\.mobile-nav-open body\s*\{[^}]*overflow:\s*hidden/);
+  assert.match(responsiveCss, /\.nav-menu-panel \.theme-option\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px/);
+  assert.match(responsiveCss, /\.mobile-nav-menu-sections\s*\{[^}]*overflow-y:\s*auto;[^}]*flex-direction:\s*column/);
+  assert.match(responsiveCss, /\.nav-guide-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(responsiveCss, /\.nav-guide-card\s*\{[^}]*height:\s*92px;[^}]*min-height:\s*92px/);
+  assert.match(responsiveCss, /\.nav-menu-theme-dock\s*\{[^}]*justify-content:\s*center;[^}]*border-top:\s*1px solid var\(--line-subtle\)/);
+  assert.match(responsiveCss, /\.customer-topbar-inner\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto/);
   const wideLayoutRule = layoutCss.match(/\.site-footer-inner,[\s\S]*?\n\}/)?.[0] ?? "";
   for (const selector of [
     ".seo-page",
@@ -38,9 +48,16 @@ test("CSS cascade layers and shared layout tokens are declared once", () => {
   const appShellCss = source("src/styles/organisms/app-shell.css");
   assert.match(seoCss, /\.seo-hero\s*\{[\s\S]*?text-align:\s*left/);
   assert.match(seoCss, /\.seo-actions\s*\{[\s\S]*?justify-content:\s*center/);
+  assert.match(seoCss, /\.marketplace-seo-intro\s*\{[^}]*display:\s*grid;[^}]*gap:\s*22px/);
+  assert.match(seoCss, /@media \(max-width:\s*760px\)[\s\S]*?\.marketplace-seo-placement-top\s*\{[^}]*display:\s*none/);
+  assert.match(seoCss, /\.marketplace-seo-placement-bottom \.marketplace-seo-intro\s*\{[^}]*margin-top:\s*22px/);
+  assert.doesNotMatch(seoCss, /marketplace-seo-mobile-summary|marketplace-seo-content/);
   assert.match(seoCss, /\.seo-prose\s*>\s*h2,[\s\S]*?width:\s*min\(var\(--layout-prose\),\s*100%\);[\s\S]*?margin-inline:\s*0 auto/);
   assert.match(seoCss, /\.seo-marketplace-notice\s*>\s*strong,[\s\S]*?width:\s*min\(var\(--layout-prose\),\s*100%\);[\s\S]*?margin-inline:\s*0 auto/);
   assert.match(appShellCss, /\.policy-section\s*\{[\s\S]*?width:\s*min\(var\(--layout-prose\),\s*100%\);[\s\S]*?margin-inline:\s*0 auto/);
+  assert.match(appShellCss, /\.profile-dropdown\s*\{[^}]*display:\s*flex/);
+  assert.match(appShellCss, /\.customer-profile-dropdown\s*\{[^}]*display:\s*none/);
+  assert.match(appShellCss, /\.nav-menu-section-guides,[\s\S]*?\.nav-menu-theme-dock\s*\{[^}]*display:\s*none/);
   for (const stylesheet of [
     source("src/styles/organisms/account-shell.css"),
     source("src/styles/pages/auth.css"),

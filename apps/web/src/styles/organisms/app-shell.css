@@ -11,7 +11,6 @@
   background: transparent;
 }
 
-
 /* ── Topbar ───────────────────────────────────────────────── */
 
 .topbar {
@@ -159,6 +158,14 @@
   flex-direction: column;
   gap: 4px;
   animation: slide-down var(--duration-normal) var(--ease-out);
+}
+
+.customer-profile-dropdown {
+  display: none;
+}
+
+.customer-profile-dropdown.is-open {
+  display: flex;
 }
 
 .profile-menu-container {
@@ -1150,22 +1157,46 @@
   flex-wrap: wrap;
 }
 
-.nav-actions > a {
+.nav-menu-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mobile-nav-menu-sections,
+.nav-menu-section,
+.desktop-nav-theme {
+  display: contents;
+}
+
+.nav-menu-section-title,
+.nav-menu-section-guides,
+.nav-menu-theme-dock {
+  display: none;
+}
+
+.nav-menu-panel .nav-menu-action {
   position: relative;
 }
 
-.nav-actions #nav-post {
+.nav-menu-panel #nav-post {
   padding-inline: 16px;
 }
 
 .nav-actions > button,
-.nav-actions > a,
+.nav-menu-panel > button,
+.nav-menu-panel > a,
+.nav-menu-panel .nav-menu-action,
 .profile-menu-container > .avatar-button {
   flex-shrink: 0;
 }
 
 .nav-actions > button,
-.nav-actions > a,
+.nav-menu-panel > button,
+.nav-menu-panel > a,
+.nav-menu-panel .nav-menu-action,
 .profile-menu-container > .avatar-button,
 .post-button,
 .contact-row button,
@@ -1194,7 +1225,9 @@
 }
 
 .nav-actions > button:hover:not(:disabled),
-.nav-actions > a:hover,
+.nav-menu-panel > button:hover:not(:disabled),
+.nav-menu-panel > a:hover,
+.nav-menu-panel .nav-menu-action:hover,
 .profile-menu-container > .avatar-button:hover:not(:disabled),
 .post-button:hover:not(:disabled),
 .contact-row button:hover:not(:disabled),
@@ -1211,10 +1244,20 @@
 
 
 .nav-actions > button,
-.nav-actions > a,
+.nav-menu-panel > button,
+.nav-menu-panel > a,
+.nav-menu-panel .nav-menu-action,
 .profile-menu-container > .avatar-button {
   padding: 0 14px;
   text-decoration: none;
+}
+
+.nav-actions > .mobile-nav-toggle {
+  display: none;
+}
+
+.mobile-header-context-action {
+  display: none;
 }
 
 .nav-actions .login-button {
@@ -1260,8 +1303,9 @@
     inset 0 1px 0 rgba(var(--foreground-rgb), 0.2);
 }
 
-.nav-actions > button.active,
-.nav-actions > a.active {
+.nav-menu-panel > button.active,
+.nav-menu-panel > a.active,
+.nav-menu-panel .nav-menu-action.active {
   background: var(--ink);
   color: var(--canvas);
   box-shadow:
@@ -1269,8 +1313,9 @@
     inset 0 1px 0 rgba(var(--foreground-rgb), 0.1);
 }
 
-.nav-actions > button.active:hover,
-.nav-actions > a.active:hover {
+.nav-menu-panel > button.active:hover,
+.nav-menu-panel > a.active:hover,
+.nav-menu-panel .nav-menu-action.active:hover {
   box-shadow:
     0 10px 26px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(var(--foreground-rgb), 0.14);
