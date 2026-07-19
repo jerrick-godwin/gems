@@ -93,8 +93,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  width: 108px;
-  min-width: 108px;
+  width: max-content;
   height: 40px;
   min-height: 40px;
   padding: 3px;

@@ -341,17 +341,11 @@ export class GemsAdminApiClient {
   }
 
   async moderationSnapshot(token: string): Promise<AdminModerationSnapshot> {
-    const [listings, reports, liveListings, orders, payments, reportedListings, users, sellers] = await Promise.all([
-      this.moderationListings(token),
-      this.reports(token),
-      this.liveListings(token),
-      this.orders(token),
-      this.payments(token),
-      this.reportedListings(token),
-      this.users(token),
-      this.sellers(token)
-    ]);
-    return { listings, reports, liveListings, orders, payments, reportedListings, users, sellers };
+    const response = await fetch(`${this.baseUrl}/admin/snapshot`, {
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load admin snapshot");
+    return response.json() as Promise<AdminModerationSnapshot>;
   }
 
   async users(token: string): Promise<User[]> {

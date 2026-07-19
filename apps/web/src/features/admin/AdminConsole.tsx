@@ -14,11 +14,13 @@ import {
   Search,
   ShieldCheck,
   UsersRound,
-  WalletCards
+  WalletCards,
+  LogOut
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
+import { ThemeSwitcher, type ThemePreference } from "@gems/ui";
 import { Metric } from "../../shared/Metric";
 import { publicErrorMessage } from "../../shared/helpers";
 import { ActiveListingRow } from "./ActiveListingRow";
@@ -42,7 +44,10 @@ export function AdminConsole({
   setSnapshot,
   setLoadError,
   activeView,
-  setActiveView
+  setActiveView,
+  handleLogout,
+  theme,
+  setTheme
 }: {
   api: GemsAdminApiClient;
   token: string;
@@ -51,6 +56,9 @@ export function AdminConsole({
   setLoadError: (error: string | null) => void;
   activeView: AdminView;
   setActiveView: (view: AdminView) => void;
+  handleLogout: () => void;
+  theme: ThemePreference;
+  setTheme: (theme: ThemePreference) => void;
 }) {
   const pending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
@@ -112,6 +120,9 @@ export function AdminConsole({
         listingCount={allListings.length}
         userCount={snapshot.users.length}
         paymentCount={pendingPayments.length}
+        handleLogout={handleLogout}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       <div className="admin-workspace-content">
@@ -312,7 +323,10 @@ function AdminNavigation({
   moderationCount,
   listingCount,
   userCount,
-  paymentCount
+  paymentCount,
+  handleLogout,
+  theme,
+  setTheme
 }: {
   activeView: AdminView;
   onSelect: (view: AdminView) => void;
@@ -320,6 +334,9 @@ function AdminNavigation({
   listingCount: number;
   userCount: number;
   paymentCount: number;
+  handleLogout: () => void;
+  theme: ThemePreference;
+  setTheme: (theme: ThemePreference) => void;
 }) {
   return (
     <aside className="admin-navigation card card--surface">
@@ -337,7 +354,14 @@ function AdminNavigation({
         <div className="admin-navigation-divider" />
         <span className="admin-navigation-group-label">Finance</span>
         <AdminNavigationItem icon={<WalletCards size={18} />} label="Payments" view="payments" activeView={activeView} onSelect={onSelect} count={paymentCount} attention={paymentCount > 0} />
+        <button type="button" className="admin-navigation-item signout-action" onClick={handleLogout}>
+          <LogOut size={18} />
+          <span>Sign Out</span>
+        </button>
       </nav>
+      <div style={{ marginTop: "auto", padding: "16px", display: "flex", justifyContent: "center" }}>
+        <ThemeSwitcher theme={theme} setTheme={setTheme} />
+      </div>
     </aside>
   );
 }
