@@ -17,13 +17,23 @@
   position: relative;
   width: 100%;
   max-width: 800px;
-  max-height: 90vh;
+  max-height: calc(100vh - 48px); /* Fallback */
+  max-height: calc(100dvh - 48px);
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
   animation: rise-in var(--duration-normal) var(--ease-spring);
+}
+
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 16px;
+  }
+  .modal-content {
+    max-height: calc(100dvh - 32px);
+  }
 }
 
 .modal-overlay--priority {

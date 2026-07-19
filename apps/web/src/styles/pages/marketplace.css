@@ -873,6 +873,20 @@
   border-radius: var(--card-radius) var(--card-radius) 0 0;
 }
 
+.image-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--panel-strong);
+  z-index: 1;
+}
+
+.icon-spinner {
+  animation: button-spin 0.72s linear infinite;
+}
+
 .listing-description {
   margin: 0;
   font-size: 14px;
@@ -1036,7 +1050,11 @@
   object-fit: contain;
   padding: 18px;
   background: transparent;
-  transition: transform var(--duration-slow) var(--ease-out);
+  transition: transform var(--duration-slow) var(--ease-out), opacity var(--duration-normal) ease;
+}
+
+.listing-card img.loading {
+  opacity: 0;
 }
 
 .listing-card:hover img {
@@ -1511,7 +1529,11 @@
   object-fit: cover;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: #1e293b;
-  transition: transform var(--duration-slow) var(--ease-out);
+  transition: transform var(--duration-slow) var(--ease-out), opacity var(--duration-normal) ease;
+}
+
+.detail-image.loading {
+  opacity: 0;
 }
 
 .detail-card:hover .detail-image {
@@ -1586,8 +1608,11 @@
 }
 
 .certificate-box {
-  color: var(--emerald-dark);
-  font-weight: 700;
+  background: var(--gold-soft);
+  border-color: rgba(253, 212, 4, 0.4);
+  color: var(--gold-dark);
+  font-weight: 800;
+  font-size: 15px;
 }
 
 .seller-card {
@@ -1769,8 +1794,26 @@
   background: transparent;
   box-shadow: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 30px;
+}
+
+.sleek-seller .seller-badge-title {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+  width: 100%;
+}
+
+.sleek-seller .seller-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 .sleek-seller.seller-card:hover {
   background: transparent;
@@ -1792,6 +1835,7 @@
 .sleek-seller .seller-info {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
 }
 .sleek-seller strong {

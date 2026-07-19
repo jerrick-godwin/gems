@@ -1,4 +1,4 @@
-import { Calendar, XCircle } from "lucide-react";
+import { Calendar, XCircle, LoaderCircle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
@@ -18,7 +18,7 @@ export function CampaignDialog({
   onClose: () => void;
   onUpdate: (listing: Listing) => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | false>(false);
   const [type, setType] = useState<PromotionCampaign["type"]>("featured");
   const defaultStartsAt = new Date().toISOString().split("T")[0];
   const defaultEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
@@ -29,7 +29,7 @@ export function CampaignDialog({
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     await campaignAction.run(async () => {
-      setBusy(true);
+      setBusy("create");
       const startsAt = new Date(startsAtInput);
       const endsAt = new Date(endsAtInput);
       endsAt.setHours(23, 59, 59, 999);
@@ -51,7 +51,7 @@ export function CampaignDialog({
 
   const handleAction = async (campaignId: string, action: "pause" | "resume" | "stop" | "extend") => {
     await campaignAction.run(async () => {
-      setBusy(true);
+      setBusy(campaignId);
       try {
         let updates: Partial<PromotionCampaign> = {};
         if (action === "pause") updates.status = "paused";
@@ -102,7 +102,10 @@ export function CampaignDialog({
               <span>End Date</span>
               <input type="date" value={endsAtInput} onChange={e => setEndsAtInput(e.target.value)} required min={startsAtInput} />
             </label>
-            <button type="submit" className="campaign-dialog-create-button" disabled={campaignAction.busy || busy}>Create</button>
+            <button type="submit" className="campaign-dialog-create-button" disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}>
+              {(campaignAction.busy || busy) ? <LoaderCircle className="icon-spinner" size={16} /> : null}
+              Create
+            </button>
           </form>
         </div>
 
@@ -125,15 +128,23 @@ export function CampaignDialog({
                   </div>
                   <div className="campaign-dialog-actions">
                     {campaign.status === "active" && (
-                      <button onClick={() => void handleAction(campaign.id, "pause")} disabled={campaignAction.busy || busy}>Pause</button>
+                      <button onClick={() => void handleAction(campaign.id, "pause")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                        {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} Pause
+                      </button>
                     )}
                     {campaign.status === "paused" && (
-                      <button onClick={() => void handleAction(campaign.id, "resume")} disabled={campaignAction.busy || busy}>Resume</button>
+                      <button onClick={() => void handleAction(campaign.id, "resume")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                        {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} Resume
+                      </button>
                     )}
                     {(campaign.status === "active" || campaign.status === "paused") && (
                       <>
-                        <button onClick={() => void handleAction(campaign.id, "extend")} disabled={campaignAction.busy || busy}>+7 Days</button>
-                        <button className="tone-danger" onClick={() => void handleAction(campaign.id, "stop")} disabled={campaignAction.busy || busy}>Stop</button>
+                        <button onClick={() => void handleAction(campaign.id, "extend")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                          {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} +7 Days
+                        </button>
+                        <button className="tone-danger" onClick={() => void handleAction(campaign.id, "stop")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                          {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} Stop
+                        </button>
                       </>
                     )}
                   </div>

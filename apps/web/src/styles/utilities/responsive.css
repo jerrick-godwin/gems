@@ -503,7 +503,7 @@
   }
 
   .nav-menu-panel .profile-dropdown-header {
-    padding-inline: 12px;
+    display: none;
   }
 
   .nav-menu-panel .profile-theme-row {
@@ -520,11 +520,51 @@
     min-height: 44px;
   }
 
+  .nav-menu-panel .profile-dropdown-links-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
   .nav-menu-panel .menu-item {
-    height: 52px;
-    min-height: 52px;
-    gap: 12px;
-    padding-inline: 16px;
+    display: grid;
+    align-content: center;
+    justify-items: start;
+    height: 92px;
+    min-height: 92px;
+    gap: 9px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel-strong) 62%, transparent);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.25;
+    text-decoration: none;
+    white-space: normal;
+  }
+
+  .nav-menu-panel .menu-item:hover,
+  .nav-menu-panel .menu-item.active {
+    border-color: color-mix(in srgb, var(--emerald) 30%, var(--line));
+    background: var(--emerald-subtle);
+  }
+
+  .nav-menu-panel .menu-item svg {
+    color: var(--emerald-dark);
+  }
+
+  .nav-menu-panel .menu-item.danger {
+    color: var(--danger);
+  }
+
+  .nav-menu-panel .menu-item.danger svg {
+    color: var(--danger);
+  }
+
+  .nav-menu-panel .profile-menu-divider {
+    display: none;
   }
 
   .site-footer-inner {
