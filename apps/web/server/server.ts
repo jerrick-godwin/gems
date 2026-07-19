@@ -392,6 +392,21 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    if (request.method === "GET" && path === "/api/v1/admin/snapshot") {
+      const [listings, reports, liveListings, orders, payments, reportedListings, users, sellers] = await Promise.all([
+        getModerationListings(),
+        getReports(),
+        getLiveListings(),
+        getAdminOrders(),
+        getAdminPaymentIntents(),
+        getReportedListings(),
+        getAllUsers(),
+        getAllSellers()
+      ]);
+      sendJson(response, 200, { listings, reports, liveListings, orders, payments, reportedListings, users, sellers });
+      return true;
+    }
+
     if (request.method === "GET" && path === "/api/v1/admin/moderation/listings") {
       sendJson(response, 200, await getModerationListings());
       return true;
