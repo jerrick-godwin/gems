@@ -1,4 +1,4 @@
-import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt, Search, ChevronLeft, ChevronRight, LoaderCircle } from "lucide-react";
 import { useState, useEffect, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
@@ -181,7 +181,10 @@ export function MyListingsView({
       <TrialStatusPanel trial={dashboard?.user.trial} variant="compact" />
       <section className={`data-panel seller-listings-panel card card--surface ${isLoadingListings ? "is-loading" : ""}`}>
         {isLoadingListings && listings.length === 0 ? (
-          <p className="seller-listings-state">Loading listings...</p>
+          <div className="seller-listings-state loading-state">
+            <LoaderCircle className="icon-spinner" size={24} />
+            <p>Loading listings...</p>
+          </div>
         ) : listings.length === 0 ? (
           <p className="seller-listings-state">No listings found.</p>
         ) : (
@@ -292,7 +295,7 @@ export function MyListingsView({
                         disabled={payAction.busy || payingSubscriptionId === subscription.id}
                         className="seller-listing-action-button seller-listing-pay-button"
                       >
-                        <CreditCard size={16} strokeWidth={2.5} />
+                        {payingSubscriptionId === subscription.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <CreditCard size={16} strokeWidth={2.5} />}
                         {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
                       </button>
                     )}
@@ -302,7 +305,7 @@ export function MyListingsView({
                         disabled={downloadingPaymentId === payment.id}
                         className="seller-listing-action-button seller-listing-secondary-button"
                       >
-                        <Download size={16} strokeWidth={2.5} />
+                        {downloadingPaymentId === payment.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <Download size={16} strokeWidth={2.5} />}
                         {downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}
                       </button>
                     )}
@@ -312,7 +315,7 @@ export function MyListingsView({
                         disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
                         className="seller-listing-action-button seller-listing-secondary-button"
                       >
-                        <RefreshCcw size={16} strokeWidth={2.5} />
+                        {cancellingSubscriptionId === subscription.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <RefreshCcw size={16} strokeWidth={2.5} />}
                         {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
                       </button>
                     )}
@@ -321,7 +324,7 @@ export function MyListingsView({
                       disabled={deleteAction.busy || deletingId === listing.id}
                       className="seller-listing-action-button seller-listing-danger-button"
                     >
-                      <Trash2 size={16} strokeWidth={2.5} />
+                      {deletingId === listing.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <Trash2 size={16} strokeWidth={2.5} />}
                       {deletingId === listing.id ? "Deleting..." : "Delete"}
                       </button>
                     </div>
@@ -385,6 +388,7 @@ export function MyListingsView({
                 disabled={deleteAction.busy || deletingId !== null}
                 className="confirmation-dialog-button tone-danger"
               >
+                {deletingId === confirmDeleteId ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : null}
                 {deletingId === confirmDeleteId ? "Processing..." : confirmDeleteRemovesAtExpiry ? "Cancel Renewal" : "Proceed to Delete"}
               </button>
             </div>
@@ -414,6 +418,7 @@ export function MyListingsView({
                 disabled={cancelAction.busy || cancellingSubscriptionId !== null}
                 className="confirmation-dialog-button tone-danger"
               >
+                {cancellingSubscriptionId === confirmCancelSubscriptionId ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : null}
                 {cancellingSubscriptionId === confirmCancelSubscriptionId ? "Cancelling..." : "Proceed to Cancel"}
               </button>
             </div>

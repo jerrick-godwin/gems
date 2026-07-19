@@ -138,8 +138,11 @@ export function MyReportsView({
                         <div className="report-seller-pill">
                           <div className="avatar">{seller?.displayName.slice(0, 1) ?? "S"}</div>
                           <div>
+                            <span className="seller-badge">{sellerProfileLabel(seller?.verificationStatus)}</span>
                             <strong>{seller?.displayName ?? "Seller"}</strong>
-                            <span>{sellerProfileLabel(seller?.verificationStatus)} · {listing.location}</span>
+                            <span>
+                              {listing.location}
+                            </span>
                           </div>
                         </div>
                       </div>

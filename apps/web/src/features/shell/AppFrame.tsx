@@ -82,58 +82,60 @@ function ProfileMenu({
             </div>
           )}
         </div>
-        <a
-          href={pathForView("my_listings")}
-          className={`menu-item ${view === "my_listings" ? "active" : ""}`}
-          onClick={(event) => {
-            if (!isClientNavigationClick(event)) return;
-            event.preventDefault();
-            navigateToView("my_listings");
-            setIsOpen(false);
-            onAction();
-          }}
-        >
-          <Store size={16} /> My Listings
-        </a>
-        <a
-          href={pathForView("reports")}
-          className={`menu-item ${view === "reports" ? "active" : ""}`}
-          onClick={(event) => {
-            if (!isClientNavigationClick(event)) return;
-            event.preventDefault();
-            navigateToView("reports");
-            setIsOpen(false);
-            onAction();
-          }}
-        >
-          <Flag size={16} /> My Reports
-        </a>
-        <a
-          href={pathForView("profile")}
-          className={`menu-item ${view === "profile" ? "active" : ""}`}
-          onClick={(event) => {
-            if (!isClientNavigationClick(event)) return;
-            event.preventDefault();
-            navigateToView("profile");
-            setIsOpen(false);
-            onAction();
-          }}
-        >
-          <Settings size={16} /> Profile
-        </a>
-        {showTheme && (
-          <div className="profile-theme-row">
-            <span>Theme</span>
-            <ThemeSwitcher theme={theme} setTheme={setTheme} />
-          </div>
-        )}
-        <div className="profile-menu-divider" />
-        <button
-          className="menu-item danger"
-          onClick={() => { onAction(); handleLogout(); setIsOpen(false); }}
-        >
-          <LogOut size={16} /> Sign Out
-        </button>
+        <div className="profile-dropdown-links-grid">
+          <a
+            href={pathForView("my_listings")}
+            className={`menu-item ${view === "my_listings" ? "active" : ""}`}
+            onClick={(event) => {
+              if (!isClientNavigationClick(event)) return;
+              event.preventDefault();
+              navigateToView("my_listings");
+              setIsOpen(false);
+              onAction();
+            }}
+          >
+            <Store size={16} /> My Listings
+          </a>
+          <a
+            href={pathForView("reports")}
+            className={`menu-item ${view === "reports" ? "active" : ""}`}
+            onClick={(event) => {
+              if (!isClientNavigationClick(event)) return;
+              event.preventDefault();
+              navigateToView("reports");
+              setIsOpen(false);
+              onAction();
+            }}
+          >
+            <Flag size={16} /> My Reports
+          </a>
+          <a
+            href={pathForView("profile")}
+            className={`menu-item ${view === "profile" ? "active" : ""}`}
+            onClick={(event) => {
+              if (!isClientNavigationClick(event)) return;
+              event.preventDefault();
+              navigateToView("profile");
+              setIsOpen(false);
+              onAction();
+            }}
+          >
+            <Settings size={16} /> Profile
+          </a>
+          {showTheme && (
+            <div className="profile-theme-row">
+              <span>Theme</span>
+              <ThemeSwitcher theme={theme} setTheme={setTheme} />
+            </div>
+          )}
+          <div className="profile-menu-divider" />
+          <button
+            className="menu-item danger"
+            onClick={() => { onAction(); handleLogout(); setIsOpen(false); }}
+          >
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
       </div>
     </div>
   );

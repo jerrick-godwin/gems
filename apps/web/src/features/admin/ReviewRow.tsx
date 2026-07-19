@@ -1,4 +1,4 @@
-import { ReceiptText, XCircle, CheckCircle2 } from "lucide-react";
+import { ReceiptText, XCircle, CheckCircle2, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-client";
@@ -134,7 +134,9 @@ export function ReviewRow({
                 onClick={() => void runModeration("reject")}
                 disabled={moderationAction.busy || busy !== null || !rejectReason.trim()}
                 className="confirmation-dialog-button tone-danger"
+                style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}
               >
+                {busy === "reject" ? <LoaderCircle className="icon-spinner" size={16} /> : null}
                 {busy === "reject" ? "Rejecting..." : "Confirm Rejection"}
               </button>
             </div>
@@ -165,7 +167,9 @@ export function ReviewRow({
                 onClick={() => void runModeration("approve")}
                 disabled={moderationAction.busy || busy !== null}
                 className="confirmation-dialog-button tone-success"
+                style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}
               >
+                {busy === "approve" ? <LoaderCircle className="icon-spinner" size={16} /> : null}
                 {busy === "approve" ? "Approving..." : "Confirm Approval"}
               </button>
             </div>

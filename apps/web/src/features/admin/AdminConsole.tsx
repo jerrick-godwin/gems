@@ -530,6 +530,11 @@ function PaymentsPanel({
                 <div className="admin-payment-reference">
                   <span>{payment.quote.plan.name}</span>
                   <small>{payment.id}</small>
+                  {payment.stripeInvoiceId && (
+                    <a href={`https://dashboard.stripe.com/invoices/${payment.stripeInvoiceId}`} target="_blank" rel="noopener noreferrer" className="admin-payment-stripe-link">
+                      {payment.stripeInvoiceId}
+                    </a>
+                  )}
                 </div>
                 <div className="admin-payment-amount">
                   <strong>{formatLkr(payment.amountLkr)}</strong>

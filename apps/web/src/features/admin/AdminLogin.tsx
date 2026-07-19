@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 
 export function AdminLogin({ error, loading, onLogin }: { error: string | null; loading: boolean; onLogin: (email: string, password: string) => void | Promise<void> }) {
@@ -47,8 +48,9 @@ export function AdminLogin({ error, loading, onLogin }: { error: string | null; 
             />
           </label>
           {error && <p className="admin-error">{error}</p>}
-          <button type="submit" disabled={loginAction.busy || loading}>
-            {loading ? "Signing in..." : "Sign in to console"}
+          <button type="submit" disabled={loginAction.busy || loading} style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}>
+            {(loginAction.busy || loading) && <LoaderCircle className="icon-spinner" size={18} />}
+            {loginAction.busy || loading ? "Signing in..." : "Sign in to console"}
           </button>
         </form>
       </section>
