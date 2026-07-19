@@ -3,48 +3,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { AdminSession } from "@gems/api-client";
 import { ThemeSwitcher, useOutsideClick, type ThemePreference } from "@gems/ui";
 
-function AdminProfileMenu({ admin, handleLogout, theme, setTheme }: { admin: AdminSession, handleLogout: () => void, theme: ThemePreference, setTheme: (theme: ThemePreference) => void }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuId = useId();
-  const menuRef = useRef<HTMLDivElement>(null);
-  useOutsideClick(menuRef, () => setIsOpen(false), isOpen);
 
-  return (
-    <div className="profile-menu-container" ref={menuRef}>
-      <button
-        className="avatar-button admin-avatar-button"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label="Profile menu"
-        aria-expanded={isOpen}
-        aria-controls={menuId}
-      >
-        {admin.email.slice(0, 1).toUpperCase()}
-      </button>
-      
-      {isOpen && (
-        <div className="profile-dropdown admin-profile-dropdown" id={menuId}>
-          <div className="admin-profile-header">
-            <div className="admin-profile-title">Admin</div>
-            <div className="admin-profile-email">{admin.email}</div>
-          </div>
-          <div className="admin-profile-theme-row">
-            <span>Theme</span>
-            <ThemeSwitcher theme={theme} setTheme={setTheme} />
-          </div>
-          <div className="profile-menu-divider" />
-          <div className="admin-profile-actions">
-            <button
-              className="menu-item"
-              onClick={() => { handleLogout(); setIsOpen(false); }}
-            >
-              <LogOut size={18} /> Sign Out
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 type AdminView = "overview" | "moderation" | "listings" | "users" | "payments";
 
@@ -157,13 +116,18 @@ export function AdminShell({
                 <section className="nav-menu-section nav-menu-section-account" aria-labelledby="nav-menu-account-heading">
                   <h2 className="nav-menu-section-title" id="nav-menu-account-heading">Finance</h2>
                   <AdminNavigationItem icon={<WalletCards size={18} />} label="Payments" view="payments" activeView={activeView} onSelect={handleSelect} count={paymentCount} attention={paymentCount > 0} />
+                  <button type="button" className="nav-menu-action signout-action" onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}>
+                    <LogOut size={18} />
+                    <span>Sign Out</span>
+                  </button>
                 </section>
+              </div>
+              <div className="mobile-nav-theme-switcher" style={{ display: "flex", justifyContent: "center", marginTop: "auto", padding: "16px" }}>
+                <ThemeSwitcher theme={theme} setTheme={setTheme} />
               </div>
             </div>
             
-            <div className="admin-session">
-              <AdminProfileMenu admin={admin} handleLogout={handleLogout} theme={theme} setTheme={setTheme} />
-            </div>
+
           </nav>
         </div>
       </header>

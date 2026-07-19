@@ -55,7 +55,7 @@ function AdminApp() {
         <StatusState title="Loading admin console" message="Checking admin session and moderation data." loading variant="admin" />
       )}
       {!session.loading && !moderation.loading && moderation.snapshot && (
-        <AdminConsole api={api} token={session.token} snapshot={moderation.snapshot} setSnapshot={moderation.setSnapshot} setLoadError={session.setLoadError} activeView={activeView} setActiveView={setActiveView} />
+        <AdminConsole api={api} token={session.token} snapshot={moderation.snapshot} setSnapshot={moderation.setSnapshot} setLoadError={session.setLoadError} activeView={activeView} setActiveView={setActiveView} handleLogout={session.handleLogout} theme={session.theme} setTheme={session.setTheme} />
       )}
     </AdminShell>
   );
