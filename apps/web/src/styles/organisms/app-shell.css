@@ -177,6 +177,10 @@
   position: relative;
 }
 
+.profile-dropdown-links-grid {
+  display: contents;
+}
+
 .profile-dropdown-header {
   padding: 8px 12px;
   margin-bottom: 4px;

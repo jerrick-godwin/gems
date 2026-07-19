@@ -22,7 +22,6 @@ export function metricIcon(label: string) {
 
 export function sellerProfileLabel(status?: SellerProfile["verificationStatus"]) {
   if (status === "business_verified") return "Business profile";
-  if (status === "identity_verified") return "Seller profile";
   return "Seller profile";
 }
 

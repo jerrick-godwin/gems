@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import type { GemsApiClient } from "@gems/api-client";
 import type { UserDashboard } from "@gems/schemas";
+import type { MarketplaceAuthUser } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { publicErrorMessage } from "../../shared/helpers";
 import { TrialStatusPanel } from "./TrialStatusPanel";
@@ -12,12 +13,14 @@ export function ProfileSettings({
   api,
   dashboard,
   accountError,
+  authUser,
   onDashboardChange,
   onMarketplaceRefresh
 }: {
   api: GemsApiClient;
   dashboard: UserDashboard | null;
   accountError: string | null;
+  authUser?: MarketplaceAuthUser | null;
   onDashboardChange: (dashboard: UserDashboard) => void;
   onMarketplaceRefresh: () => Promise<void>;
 }) {
@@ -26,7 +29,12 @@ export function ProfileSettings({
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; phone?: string }>({});
   const saveAction = useSingleFlightAction();
   const user = dashboard?.user;
-  const emailError = useMemo(() => user ? validateEmail(user.email) : undefined, [user]);
+  const email = user?.email ?? authUser?.email ?? "";
+  const emailError = useMemo(() => user ? validateEmail(email) : undefined, [user, email]);
+
+  const accountName = user?.name?.trim();
+  const authName = authUser?.displayName?.trim();
+  const fallbackName = accountName && accountName !== email ? accountName : authName || (email.split("@")[0]?.trim()) || "";
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,7 +42,6 @@ export function ProfileSettings({
     const name = String(form.get("name") ?? "").trim();
     const phone = String(form.get("phone") ?? "").trim();
     const address = String(form.get("address") ?? "").trim();
-    const email = user?.email ?? "";
     const nextErrors = validateProfileContact(email, phone);
     const profilePatch = user ? getChangedProfileFields(user, { name, phone, address }) : {};
 
@@ -77,11 +84,11 @@ export function ProfileSettings({
           <div className="settings-grid">
             <label>
               Name
-              <input name="name" defaultValue={user?.name ?? ""} />
+              <input name="name" defaultValue={user?.name ?? fallbackName} />
             </label>
             <label>
               Email
-              <input value={user?.email ?? ""} readOnly aria-readonly="true" aria-invalid={Boolean(fieldErrors.email || emailError)} />
+              <input value={email} readOnly aria-readonly="true" aria-invalid={Boolean(fieldErrors.email || emailError)} />
               {(fieldErrors.email || emailError) && <span className="field-error">{fieldErrors.email ?? emailError}</span>}
             </label>
             <label>
