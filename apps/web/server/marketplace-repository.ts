@@ -19,6 +19,7 @@ import {
 } from "./db/schema.js";
 import { createSignedReadUrl } from "./storage.js";
 import { descriptiveListingImageAlt, publicListingPhotoPath } from "../src/shared/seo.js";
+import { cancelListingSubscriptionsForListing } from "./user-repository.js";
 
 export interface ListingContact {
   phone: string;
@@ -613,6 +614,9 @@ export async function updateListingModeration(listingId: string, decision: "appr
       };
 
   if (hasDatabase) {
+    if (decision === "reject") {
+      await cancelListingSubscriptionsForListing(listingId);
+    }
     const [updated] = await db.update(listingTable).set(nextValues).where(eq(listingTable.id, listingId)).returning();
     return updated ? toListing(updated) : undefined;
   }
@@ -625,6 +629,7 @@ export async function updateListingModeration(listingId: string, decision: "appr
     listing.moderationStatus = "approved";
     listing.publishedAt = now.toISOString();
   } else {
+    await cancelListingSubscriptionsForListing(listingId);
     listing.status = "rejected";
     listing.moderationStatus = "rejected";
     listing.rejectionReason = reason;

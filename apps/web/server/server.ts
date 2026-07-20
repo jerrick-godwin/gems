@@ -692,7 +692,9 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       const page = Number(url.searchParams.get("page")) || 1;
       const limit = Number(url.searchParams.get("limit")) || 10;
       const search = url.searchParams.get("search") || "";
-      sendJson(response, 200, await getMyListings(user.id, search, page, limit));
+      const status = url.searchParams.get("status") || undefined;
+      const gemTypeId = url.searchParams.get("gemTypeId") || undefined;
+      sendJson(response, 200, await getMyListings(user.id, search, page, limit, status, gemTypeId));
       return true;
     }
 
