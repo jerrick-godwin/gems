@@ -68,8 +68,7 @@
 /* ── Table / message / review rows ────────────────────────── */
 
 .table-row,
-.message-row,
-.review-row {
+.message-row {
   display: grid;
   gap: 10px;
   align-items: center;
@@ -81,8 +80,7 @@
 }
 
 .table-row:hover,
-.message-row:hover,
-.review-row:hover {
+.message-row:hover {
   background: rgba(238, 244, 241, 0.5);
   padding-left: 8px;
   border-radius: var(--radius-sm);
@@ -93,8 +91,7 @@
 }
 
 .table-row span,
-.message-row span,
-.review-row span {
+.message-row span {
   min-width: 0;
   color: var(--muted);
   font-weight: 500;
@@ -334,6 +331,12 @@
 .seller-listings-state {
   color: var(--sage);
   font-weight: 600;
+}
+
+.seller-listings-state.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .seller-listings-stack {

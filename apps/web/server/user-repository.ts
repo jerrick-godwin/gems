@@ -34,6 +34,7 @@ import type {
 } from "@gems/schemas";
 import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type ListingSubscriptionPlan } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
+import { sendPasswordResetEmail, sendAdminNotificationEmail } from "./email.js";
 import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { normalizeListingTitle } from "./listing-title.js";
@@ -282,6 +283,51 @@ export async function terminateUserTrial(userId: string) {
   user.updatedAt = now.toISOString();
   await expireTrialBackedListings(userId, now);
   return user;
+}
+
+export async function extendSitewideTrial(endsAt: Date) {
+  const now = new Date();
+  if (!Number.isFinite(endsAt.getTime())) throw new Error("Valid trial end date is required.");
+
+  if (hasDatabase) {
+    await db.update(users).set({
+      trialEndsAt: endsAt,
+      trialTerminatedAt: null,
+      updatedAt: now
+    });
+    await refreshSitewideTrialBackedListings(endsAt);
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const user of state.users) {
+    user.trialEndsAt = endsAt.toISOString();
+    user.trialTerminatedAt = undefined;
+    user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
+    user.updatedAt = now.toISOString();
+  }
+  await refreshSitewideTrialBackedListings(endsAt);
+}
+
+export async function terminateSitewideTrial() {
+  const now = new Date();
+
+  if (hasDatabase) {
+    await db.update(users).set({
+      trialTerminatedAt: now,
+      updatedAt: now
+    });
+    await expireSitewideTrialBackedListings(now);
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const user of state.users) {
+    user.trialTerminatedAt = now.toISOString();
+    user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
+    user.updatedAt = now.toISOString();
+  }
+  await expireSitewideTrialBackedListings(now);
 }
 
 export async function getUserProfile(userId: string) {
@@ -945,7 +991,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
   };
 }
 
-export async function getMyListings(userId: string, search: string = "", page: number = 1, limit: number = 10): Promise<{ items: Listing[], total: number, page: number, limit: number, totalPages: number }> {
+export async function getMyListings(userId: string, search: string = "", page: number = 1, limit: number = 10, status?: string, gemTypeId?: string): Promise<{ items: Listing[], total: number, page: number, limit: number, totalPages: number }> {
   const offset = (page - 1) * limit;
 
   if (hasDatabase) {
@@ -954,18 +1000,16 @@ export async function getMyListings(userId: string, search: string = "", page: n
     if (sellerIds.length === 0) {
       return { items: [], total: 0, page, limit, totalPages: 0 };
     }
-    let countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(inArray(listings.sellerId, sellerIds));
-    if (search) {
-      countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)));
-    }
-    const countResult = await countQuery;
+    
+    const conditions = [inArray(listings.sellerId, sellerIds)];
+    if (search) conditions.push(ilike(listings.title, `%${search}%`));
+    if (status) conditions.push(eq(listings.status, status as any));
+    if (gemTypeId) conditions.push(eq(listings.gemTypeId, gemTypeId));
+
+    const countResult = await db.select({ count: sql<number>`count(*)` }).from(listings).where(and(...conditions));
     const total = Number(countResult[0]?.count || 0);
 
-    const baseQuery = search
-      ? db.select().from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)))
-      : db.select().from(listings).where(inArray(listings.sellerId, sellerIds));
-
-    const rows = await baseQuery.limit(limit).offset(offset).orderBy(desc(listings.createdAt));
+    const rows = await db.select().from(listings).where(and(...conditions)).limit(limit).offset(offset).orderBy(desc(listings.createdAt));
     const totalPages = Math.ceil(total / limit);
     return { items: rows.map(toListing), total, page, limit, totalPages };
   }
@@ -981,6 +1025,12 @@ export async function getMyListings(userId: string, search: string = "", page: n
   if (search) {
     const searchLower = search.toLowerCase();
     allListings = allListings.filter(l => l.title.toLowerCase().includes(searchLower));
+  }
+  if (status) {
+    allListings = allListings.filter(l => l.status === status);
+  }
+  if (gemTypeId) {
+    allListings = allListings.filter(l => l.gemTypeId === gemTypeId);
   }
   allListings.sort((a, b) => {
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -1081,6 +1131,13 @@ export async function createListing(userId: string, input: ListingInput, idempot
       remainingReveals: 0
     };
   }
+  
+  void sendAdminNotificationEmail("Listing Created", {
+    "Listing ID": listing.id,
+    "Seller ID": listing.sellerId,
+    "Title": listing.title
+  }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/listings/${listing.id}`);
+
   return listing;
 }
 
@@ -1763,6 +1820,13 @@ export async function recordStripeSubscriptionInvoicePayment(input: {
   if (!inserted) return intent;
   await updatePaymentStripeState(intent.id, { stripeSubscriptionId: input.stripeSubscriptionId, stripeInvoiceId: input.stripeInvoiceId });
   await extendListingSubscription(intent.subscriptionId, intent.id);
+  
+  void sendAdminNotificationEmail("Subscription Renewed", {
+    "Subscription ID": intent.subscriptionId,
+    "Stripe Subscription ID": input.stripeSubscriptionId,
+    "Payment Intent ID": intent.id
+  }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/subscriptions/${intent.subscriptionId}`);
+
   return getPaymentIntent(intent.id);
 }
 
@@ -1812,6 +1876,8 @@ export async function syncStripeSubscriptionStatus(input: {
     updates.cancelledAt = now;
   }
 
+  let finalSubscription: ListingSubscription | undefined;
+
   if (hasDatabase) {
     const [updated] = await db
       .update(listingSubscriptions)
@@ -1821,26 +1887,36 @@ export async function syncStripeSubscriptionStatus(input: {
     if ((nextStatus === "cancelled" || nextStatus === "expired") && updated) {
       await db.update(listings).set({ status: "expired", expiresAt: input.currentPeriodEnd ?? now, updatedAt: now }).where(eq(listings.id, updated.listingId));
     }
-    return updated ? toListingSubscription(updated) : undefined;
-  }
-
-  const state = await getMemoryState();
-  const subscription = state.listingSubscriptions.find((item) => item.id === intent.subscriptionId);
-  if (!subscription) return undefined;
-  if (nextStatus) subscription.status = nextStatus;
-  if (input.cancelAtPeriodEnd !== undefined) subscription.autoRenew = !input.cancelAtPeriodEnd;
-  if (input.currentPeriodEnd) subscription.expiresAt = input.currentPeriodEnd.toISOString();
-  if (nextStatus === "cancelled" || nextStatus === "expired") {
-    subscription.autoRenew = false;
-    subscription.cancelledAt = now.toISOString();
-    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
-    if (listing) {
-      listing.status = "expired";
-      listing.expiresAt = (input.currentPeriodEnd ?? now).toISOString();
+    finalSubscription = updated ? toListingSubscription(updated) : undefined;
+  } else {
+    const state = await getMemoryState();
+    const subscription = state.listingSubscriptions.find((item) => item.id === intent.subscriptionId);
+    if (subscription) {
+      if (nextStatus) subscription.status = nextStatus;
+      if (input.cancelAtPeriodEnd !== undefined) subscription.autoRenew = !input.cancelAtPeriodEnd;
+      if (input.currentPeriodEnd) subscription.expiresAt = input.currentPeriodEnd.toISOString();
+      if (nextStatus === "cancelled" || nextStatus === "expired") {
+        subscription.autoRenew = false;
+        subscription.cancelledAt = now.toISOString();
+        const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+        if (listing) {
+          listing.status = "expired";
+          listing.expiresAt = (input.currentPeriodEnd ?? now).toISOString();
+        }
+      }
+      subscription.updatedAt = now.toISOString();
+      finalSubscription = subscription;
     }
   }
-  subscription.updatedAt = now.toISOString();
-  return subscription;
+
+  if (nextStatus === "cancelled" && finalSubscription) {
+    void sendAdminNotificationEmail("Subscription Cancelled", {
+      "Subscription ID": intent.subscriptionId,
+      "Stripe Subscription ID": input.stripeSubscriptionId
+    }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/subscriptions/${intent.subscriptionId}`);
+  }
+
+  return finalSubscription;
 }
 
 export async function cancelListingSubscription(userId: string, subscriptionId: string) {
@@ -2366,7 +2442,7 @@ async function refreshTrialBackedListings(userId: string, expiresAt: Date) {
       updatedAt: now
     }).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial")));
     const listingUpdate = nextStatus === "active"
-      ? { status: "pending_review" as const, moderationStatus: "queued" as const, expiresAt, updatedAt: now }
+      ? { status: sql<Listing["status"]>`CASE WHEN moderation_status = 'approved' THEN 'live' WHEN moderation_status = 'rejected' THEN 'rejected' ELSE 'pending_review' END`, expiresAt, updatedAt: now }
       : { status: "expired" as const, expiresAt, updatedAt: now };
     await db.update(listings).set(listingUpdate).where(inArray(listings.id, listingIds));
     return;
@@ -2381,8 +2457,7 @@ async function refreshTrialBackedListings(userId: string, expiresAt: Date) {
     subscription.updatedAt = now.toISOString();
     const listing = state.database.listings.find((item) => item.id === subscription.listingId);
     if (listing) {
-      listing.status = nextStatus === "active" ? "pending_review" : "expired";
-      if (nextStatus === "active") listing.moderationStatus = "queued";
+      listing.status = nextStatus === "active" ? (listing.moderationStatus === "approved" ? "live" : listing.moderationStatus === "rejected" ? "rejected" : "pending_review") : "expired";
       listing.expiresAt = expiresAt.toISOString();
     }
   }
@@ -2409,6 +2484,85 @@ async function expireTrialBackedListings(userId: string, expiredAt: Date) {
 
   const state = await getMemoryState();
   for (const subscription of state.listingSubscriptions.filter((item) => item.userId === userId && item.source === "trial")) {
+    subscription.status = "expired";
+    subscription.autoRenew = false;
+    subscription.expiresAt = expiredAt.toISOString();
+    subscription.cancelledAt = expiredAt.toISOString();
+    subscription.updatedAt = expiredAt.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = "expired";
+      listing.expiresAt = expiredAt.toISOString();
+    }
+  }
+}
+
+async function refreshSitewideTrialBackedListings(expiresAt: Date) {
+  const now = new Date();
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.source, "trial"));
+    if (subscriptions.length === 0) return;
+    const nextStatus = expiresAt > now ? "active" : "expired";
+    const listingIds = subscriptions.map((subscription) => subscription.listingId);
+    
+    await db.update(listingSubscriptions).set({
+      status: nextStatus,
+      expiresAt,
+      cancelledAt: null,
+      updatedAt: now
+    }).where(eq(listingSubscriptions.source, "trial"));
+    
+    const listingUpdate = nextStatus === "active"
+      ? { status: sql<Listing["status"]>`CASE WHEN moderation_status = 'approved' THEN 'live' WHEN moderation_status = 'rejected' THEN 'rejected' ELSE 'pending_review' END`, expiresAt, updatedAt: now }
+      : { status: "expired" as const, expiresAt, updatedAt: now };
+    
+    if (listingIds.length > 0) {
+      await db.update(listings).set(listingUpdate).where(inArray(listings.id, listingIds));
+    }
+    return;
+  }
+
+  const state = await getMemoryState();
+  const nextStatus = expiresAt > now ? "active" : "expired";
+  for (const subscription of state.listingSubscriptions.filter((item) => item.source === "trial")) {
+    subscription.status = nextStatus;
+    subscription.expiresAt = expiresAt.toISOString();
+    subscription.cancelledAt = undefined;
+    subscription.updatedAt = now.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = nextStatus === "active" ? (listing.moderationStatus === "approved" ? "live" : listing.moderationStatus === "rejected" ? "rejected" : "pending_review") : "expired";
+      listing.expiresAt = expiresAt.toISOString();
+    }
+  }
+}
+
+async function expireSitewideTrialBackedListings(expiredAt: Date) {
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.source, "trial"));
+    if (subscriptions.length === 0) return;
+    
+    await db.update(listingSubscriptions).set({
+      status: "expired",
+      autoRenew: false,
+      expiresAt: expiredAt,
+      cancelledAt: expiredAt,
+      updatedAt: expiredAt
+    }).where(eq(listingSubscriptions.source, "trial"));
+    
+    const listingIds = subscriptions.map((subscription) => subscription.listingId);
+    if (listingIds.length > 0) {
+      await db.update(listings).set({
+        status: "expired",
+        expiresAt: expiredAt,
+        updatedAt: expiredAt
+      }).where(inArray(listings.id, listingIds));
+    }
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const subscription of state.listingSubscriptions.filter((item) => item.source === "trial")) {
     subscription.status = "expired";
     subscription.autoRenew = false;
     subscription.expiresAt = expiredAt.toISOString();
@@ -2855,6 +3009,8 @@ function toListing(row: typeof listings.$inferSelect): Listing {
     rejectionReason: (row as any).rejectionReason ?? undefined,
     publishedAt: row.publishedAt?.toISOString(),
     expiresAt: row.expiresAt?.toISOString(),
+    createdAt: row.createdAt?.toISOString(),
+    updatedAt: row.updatedAt?.toISOString(),
     attributes: row.attributes as any,
     media: media as any,
     promoted: Array.from(activePromotions),

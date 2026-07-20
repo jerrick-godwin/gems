@@ -1,5 +1,6 @@
 import type { Conversation, Listing, ListingSearchItem, MarketplaceContent, MarketplaceFilters, MarketplaceListingPage, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
 import { eq, ne, and, or, ilike, desc, asc, sql, inArray } from "drizzle-orm";
+import { sendAdminNotificationEmail } from "./email.js";
 import { db, hasDatabase } from "./db/index.js";
 import {
   cartItems as cartItemTable,
@@ -18,6 +19,7 @@ import {
 } from "./db/schema.js";
 import { createSignedReadUrl } from "./storage.js";
 import { descriptiveListingImageAlt, publicListingPhotoPath } from "../src/shared/seo.js";
+import { cancelListingSubscriptionsForListing } from "./user-repository.js";
 
 export interface ListingContact {
   phone: string;
@@ -559,6 +561,8 @@ export async function createReport(reporterId: string, listingId: string, reason
     notes
   };
 
+  let finalReport: Report;
+
   if (hasDatabase) {
     const [inserted] = await db.insert(reportTable).values({
       id: newReport.id,
@@ -568,12 +572,22 @@ export async function createReport(reporterId: string, listingId: string, reason
       status: newReport.status,
       notes: newReport.notes
     }).returning();
-    return inserted ? toReport(inserted) : newReport;
+    finalReport = inserted ? toReport(inserted) : newReport;
+  } else {
+    const database = await getMutableMarketplaceDatabase();
+    database.reports.push(newReport);
+    finalReport = newReport;
   }
 
-  const database = await getMutableMarketplaceDatabase();
-  database.reports.push(newReport);
-  return newReport;
+  void sendAdminNotificationEmail("Report Created", {
+    "Report ID": finalReport.id,
+    "Reporter ID": reporterId,
+    "Listing ID": listingId,
+    "Reason": reason,
+    "Notes": notes
+  }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/reports/${finalReport.id}`);
+
+  return finalReport;
 }
 
 export async function getAllSellers() {
@@ -600,6 +614,9 @@ export async function updateListingModeration(listingId: string, decision: "appr
       };
 
   if (hasDatabase) {
+    if (decision === "reject") {
+      await cancelListingSubscriptionsForListing(listingId);
+    }
     const [updated] = await db.update(listingTable).set(nextValues).where(eq(listingTable.id, listingId)).returning();
     return updated ? toListing(updated) : undefined;
   }
@@ -612,6 +629,7 @@ export async function updateListingModeration(listingId: string, decision: "appr
     listing.moderationStatus = "approved";
     listing.publishedAt = now.toISOString();
   } else {
+    await cancelListingSubscriptionsForListing(listingId);
     listing.status = "rejected";
     listing.moderationStatus = "rejected";
     listing.rejectionReason = reason;
@@ -778,6 +796,8 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
     rejectionReason: (row as any).rejectionReason ?? undefined,
     publishedAt: row.publishedAt instanceof Date ? row.publishedAt.toISOString() : (row.publishedAt as string | undefined),
     expiresAt: row.expiresAt instanceof Date ? row.expiresAt.toISOString() : (row.expiresAt as string | undefined),
+    createdAt: (row as any).createdAt instanceof Date ? (row as any).createdAt.toISOString() : ((row as any).createdAt as string | undefined),
+    updatedAt: (row as any).updatedAt instanceof Date ? (row as any).updatedAt.toISOString() : ((row as any).updatedAt as string | undefined),
     attributes: row.attributes as any,
     media: media as any,
     promoted: Array.from(activePromotions),

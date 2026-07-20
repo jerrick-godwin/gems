@@ -110,3 +110,20 @@ export async function generatePasswordResetLink(email: string, redirectUrl: stri
 
   return await getAuth(firebaseApp).generatePasswordResetLink(email, actionCodeSettings);
 }
+
+export async function getActiveAdminEmails(): Promise<string[]> {
+  if (!adminFirebaseApp) {
+    console.warn("Admin authentication service is not initialized, cannot fetch admin emails.");
+    return [];
+  }
+
+  try {
+    const listUsersResult = await getAuth(adminFirebaseApp).listUsers();
+    return listUsersResult.users
+      .filter((user) => !user.disabled && user.email)
+      .map((user) => user.email as string);
+  } catch (error) {
+    console.error("Failed to fetch admin users:", error);
+    return [];
+  }
+}

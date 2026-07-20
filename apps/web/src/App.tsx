@@ -288,6 +288,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
           title="Checking account"
           message="Confirming your sign-in status."
           loading
+          variant="simple"
         />
       </AppFrame>
     );

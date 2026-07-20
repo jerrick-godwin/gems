@@ -16,6 +16,7 @@ export function useTheme(storageKey: string) {
 
     const applyTheme = (nextTheme: "light" | "dark") => {
       document.documentElement.dataset.theme = nextTheme;
+      document.cookie = `theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax`;
     };
 
     if (theme === "light" || theme === "dark") {

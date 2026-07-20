@@ -23,8 +23,11 @@ export function MyListingsView({
   const [listings, setListings] = useState<Listing[]>([]);
   const [totalListings, setTotalListings] = useState(0);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterGemType, setFilterGemType] = useState("");
   const [isLoadingListings, setIsLoadingListings] = useState(true);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -50,7 +53,7 @@ export function MyListingsView({
     const fetchListings = async () => {
       setIsLoadingListings(true);
       try {
-        const response = await api.getMyListings(page, 10, debouncedSearchQuery);
+        const response = await api.getMyListings(page, limit, debouncedSearchQuery, filterStatus || undefined, filterGemType || undefined);
         if (active) {
           if (response.items.length === 0 && page > 1) {
             setPage(page - 1);
@@ -67,7 +70,7 @@ export function MyListingsView({
     };
     fetchListings();
     return () => { active = false; };
-  }, [api, page, debouncedSearchQuery, dashboard]);
+  }, [api, page, limit, debouncedSearchQuery, filterStatus, filterGemType, dashboard]);
 
   const getStatusLabel = (listing: Listing) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
@@ -166,8 +169,8 @@ export function MyListingsView({
 
   return (
     <section className="dashboard">
-      <div className="section-heading seller-listings-heading">
-        <label className="seller-listings-search">
+      <div className="section-heading seller-listings-heading" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+        <label className="seller-listings-search" style={{ flex: 1, minWidth: "200px" }}>
           <Search size={18} aria-hidden="true" />
           <input
             type="text"
@@ -177,6 +180,31 @@ export function MyListingsView({
             aria-label="Search your listings"
           />
         </label>
+        <select
+          value={filterStatus}
+          onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+          className="seller-listing-secondary-button"
+          aria-label="Filter by status"
+          style={{ padding: "0.5rem", borderRadius: "8px" }}
+        >
+          <option value="">All Statuses</option>
+          <option value="draft">Draft</option>
+          <option value="pending_review">Pending Review</option>
+          <option value="live">Live</option>
+          <option value="paused">Paused</option>
+          <option value="rejected">Rejected</option>
+          <option value="expired">Closed</option>
+        </select>
+        <select
+          value={filterGemType}
+          onChange={(e) => { setFilterGemType(e.target.value); setPage(1); }}
+          className="seller-listing-secondary-button"
+          aria-label="Filter by gem type"
+          style={{ padding: "0.5rem", borderRadius: "8px" }}
+        >
+          <option value="">All Types</option>
+          {gemTypes.map(gt => <option key={gt.id} value={gt.id}>{gt.name}</option>)}
+        </select>
       </div>
       <TrialStatusPanel trial={dashboard?.user.trial} variant="compact" />
       <section className={`data-panel seller-listings-panel card card--surface ${isLoadingListings ? "is-loading" : ""}`}>
@@ -198,32 +226,59 @@ export function MyListingsView({
               const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
               const paymentLines = payment ? paymentBreakdown(payment) : [];
               const canDownloadReceipt = Boolean(payment?.stripeInvoiceId && payment.status === "succeeded");
-              const summarySpecs = compactValues([
-                `${listing.attributes.carat} ct`,
-                listing.attributes.color,
-                listing.attributes.shape,
-                listing.attributes.treatment
-              ]);
               const isRejected = listing.status === "rejected" || listing.moderationStatus === "rejected";
               const hasPaidSubscriptionAccess = isSubscriptionInPaidAccess(subscription);
               const canCancelRenewal = Boolean(subscription?.source === "paid" && subscription.autoRenew && hasPaidSubscriptionAccess && !isRejected);
               const canConvertTrial = Boolean(subscription?.source === "trial" && !hasPaidSubscriptionAccess && !isRejected);
-              const renewalStatus = getSubscriptionRenewalStatus(subscription);
+              const renewalStatus = getSubscriptionRenewalStatus(subscription, isRejected);
 
               return (
                 <article key={listing.id} className="seller-listing-card card card--surface card--compact">
                   {listing.media[0] && (
-                    <img src={listing.media[0].url} alt={listing.title} className="seller-listing-image" />
+                    <div className="seller-listing-image-wrapper">
+                      <img src={listing.media[0].url} alt={listing.title} className="seller-listing-image" />
+                    </div>
                   )}
                   <div className="seller-listing-body">
-                    <h3 className="seller-listing-title">{listing.title}</h3>
-                    <div className="seller-listing-summary">
-                      {summarySpecs.join(" · ")}
+                      <div className="seller-listing-header">
+                        <h3 className="seller-listing-title">{listing.title}</h3>
+                        <strong className="seller-listing-price">{formatLkr(listing.priceLkr)}</strong>
+                      </div>
+                      <div className="seller-listing-summary">
+                        {(isRejected ? listing.updatedAt : listing.createdAt) && (
+                          <span className="seller-listing-posted-date">
+                            {isRejected ? "Rejected Date" : "Posted"}: {formatDate(isRejected ? (listing.updatedAt || "") : (listing.createdAt || ""))}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <strong className="seller-listing-price">
-                      {formatLkr(listing.priceLkr)}
-                    </strong>
+                  
+                  <div className="seller-listing-finance-row">
+                    {subscription && plan && (
+                      <div className={`seller-listing-finance-pill ${canCancelRenewal ? "is-renewing" : "is-muted"}`}>
+                        <ShieldCheck size={14} />
+                        <span>{subscription.source === "trial" ? `${plan.name} Trial` : plan.name}</span>
+                        {renewalStatus && (
+                          <span className="seller-listing-finance-status" style={{ color: renewalStatus.color }}>
+                            · {renewalStatus.label}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <details className="seller-listing-details-panel">
+                    <summary>
+                      <ChevronRight size={16} className="seller-listing-details-icon" />
+                      View Details
+                    </summary>
                     <dl className="seller-listing-attributes">
+                      {(isRejected ? listing.updatedAt : listing.createdAt) && (
+                        <div>
+                          <dt>{isRejected ? "Rejected Date" : "Posted Date"}</dt>
+                          <dd>{formatDate(isRejected ? (listing.updatedAt || "") : (listing.createdAt || ""))}</dd>
+                        </div>
+                      )}
                       {attributes.map((attribute) => (
                         <div key={attribute.label}>
                           <dt>{attribute.label}</dt>
@@ -231,131 +286,90 @@ export function MyListingsView({
                         </div>
                       ))}
                     </dl>
-                    <div className="seller-listing-meta-panel">
-                      <div className="seller-listing-finance-grid">
-                        {subscription && plan && (
-                          <div className={`seller-listing-finance-card ${canCancelRenewal ? "is-renewing" : "is-muted"}`}>
-                            <div className="seller-listing-finance-title">
-                              <ShieldCheck size={16} />
-                              {subscription.source === "trial" ? `${plan.name} Trial Access` : `${plan.name} Subscription`}
-                            </div>
-                            <div className="seller-listing-finance-line">
-                              Status: <span className="seller-listing-finance-value">{subscription.status.replace("_", " ")}</span>
-                            </div>
-                            {subscription.expiresAt && (
-                              <div className="seller-listing-finance-line">
-                                Valid until {formatDate(subscription.expiresAt)}
-                              </div>
-                            )}
-                            {renewalStatus && (
-                              <div className="seller-listing-finance-note is-status" style={{ "--status-foreground": renewalStatus.color } as CSSProperties}>
-                                {renewalStatus.label}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {payment && (
-                          <div className={`seller-listing-finance-card ${payment.status === "succeeded" ? "is-paid" : "is-pending"}`}>
-                            <div className="seller-listing-finance-title">
-                              <Receipt size={16} />
-                              Payment details
-                            </div>
-                            <div className="seller-listing-finance-line">
-                              Amount: <strong className="seller-listing-finance-value">{formatLkr(payment.amountLkr)}</strong> ({payment.status})
-                            </div>
-                            {payment.stripeInvoiceId && (
-                              <div className="seller-listing-finance-line is-small">
-                                Invoice: <code>{shortRef(payment.stripeInvoiceId)}</code>
-                              </div>
-                            )}
-                            {paymentLines.length > 0 && (
-                              <div className="seller-listing-finance-note">
-                                {paymentLines.join(" · ")}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="seller-listing-status-row">
-                        <span className="seller-listing-status" style={{ "--status-background": statusInfo.bg, "--status-foreground": statusInfo.color } as CSSProperties}>
-                          {statusInfo.label}
-                        </span>
-                      </div>
-                      {isRejected && listing.rejectionReason && (
-                        <div className="seller-listing-rejection">
-                          <strong>Reason:</strong> {listing.rejectionReason}
-                        </div>
+                  </details>
+                  {isRejected && listing.rejectionReason && (
+                    <div className="seller-listing-rejection">
+                      <strong>Reason:</strong> {listing.rejectionReason}
+                    </div>
+                  )}
+                  <div className="seller-listing-footer">
+                    <div className="seller-listing-actions-row">
+                      {subscription && (isAwaitingInitialPayment(subscription) || canConvertTrial) && (
+                        <button
+                          onClick={() => void handlePayNow(subscription.id)}
+                          disabled={payAction.busy || payingSubscriptionId === subscription.id}
+                          className="seller-listing-action-button seller-listing-pay-button"
+                        >
+                          {payingSubscriptionId === subscription.id ? <LoaderCircle className="icon-spinner" size={14} strokeWidth={2.5} /> : <CreditCard size={14} strokeWidth={2.5} />}
+                          <span>{payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}</span>
+                        </button>
                       )}
+                      {payment && canDownloadReceipt && (
+                        <button
+                          onClick={() => void handleDownloadReceipt(payment)}
+                          disabled={downloadingPaymentId === payment.id}
+                          className="seller-listing-action-button seller-listing-ghost-button"
+                        >
+                          {downloadingPaymentId === payment.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <Download size={16} strokeWidth={2.5} />}
+                          <span>{downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}</span>
+                        </button>
+                      )}
+                      {canCancelRenewal && subscription && (
+                        <button
+                          onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
+                          disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
+                          className="seller-listing-action-button seller-listing-ghost-button"
+                        >
+                          {cancellingSubscriptionId === subscription.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <RefreshCcw size={16} strokeWidth={2.5} />}
+                          <span>{cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}</span>
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => setConfirmDeleteId(listing.id)}
+                        disabled={deleteAction.busy || deletingId === listing.id}
+                        className="seller-listing-action-button seller-listing-ghost-danger-button"
+                      >
+                        {deletingId === listing.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <Trash2 size={16} strokeWidth={2.5} />}
+                        <span>{deletingId === listing.id ? "Deleting..." : "Delete"}</span>
+                      </button>
                     </div>
                   </div>
-                  <div className="seller-listing-actions">
-                    {subscription && (isAwaitingInitialPayment(subscription) || canConvertTrial) && (
-                      <button
-                        onClick={() => void handlePayNow(subscription.id)}
-                        disabled={payAction.busy || payingSubscriptionId === subscription.id}
-                        className="seller-listing-action-button seller-listing-pay-button"
-                      >
-                        {payingSubscriptionId === subscription.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <CreditCard size={16} strokeWidth={2.5} />}
-                        {payingSubscriptionId === subscription.id ? "Opening..." : "Pay Now"}
-                      </button>
-                    )}
-                    {payment && canDownloadReceipt && (
-                      <button
-                        onClick={() => void handleDownloadReceipt(payment)}
-                        disabled={downloadingPaymentId === payment.id}
-                        className="seller-listing-action-button seller-listing-secondary-button"
-                      >
-                        {downloadingPaymentId === payment.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <Download size={16} strokeWidth={2.5} />}
-                        {downloadingPaymentId === payment.id ? "Preparing..." : "Download Receipt"}
-                      </button>
-                    )}
-                    {canCancelRenewal && subscription && (
-                      <button
-                        onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
-                        disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
-                        className="seller-listing-action-button seller-listing-secondary-button"
-                      >
-                        {cancellingSubscriptionId === subscription.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <RefreshCcw size={16} strokeWidth={2.5} />}
-                        {cancellingSubscriptionId === subscription.id ? "Cancelling..." : "Cancel Renewal"}
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => setConfirmDeleteId(listing.id)}
-                      disabled={deleteAction.busy || deletingId === listing.id}
-                      className="seller-listing-action-button seller-listing-danger-button"
-                    >
-                      {deletingId === listing.id ? <LoaderCircle className="icon-spinner" size={16} strokeWidth={2.5} /> : <Trash2 size={16} strokeWidth={2.5} />}
-                      {deletingId === listing.id ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  </article>
+                </article>
                 );
               })}
             </div>
           )}
           
-          {listings.length > 0 && totalListings > 10 && (
-            <div className="seller-listings-pagination">
-              <span>
-                Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, totalListings)} of {totalListings} listings
-              </span>
-              <div className="seller-listings-pagination-actions">
-                <button 
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="seller-listing-secondary-button seller-listings-page-button"
+          {listings.length > 0 && totalListings > limit && (
+            <footer className="listing-results-footer">
+              <div className="pagination">
+                <a
+                  className="pagination-btn"
+                  aria-disabled={page <= 1}
+                  href="#"
+                  onClick={(event) => { event.preventDefault(); if (page > 1) setPage(page - 1); }}
                 >
-                  <ChevronLeft size={16} /> Prev
-                </button>
-                <button 
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={page * 10 >= totalListings}
-                  className="seller-listing-secondary-button seller-listings-page-button"
+                  Previous
+                </a>
+                <span className="pagination-info">Page {page} of {Math.ceil(totalListings / limit)}</span>
+                <a
+                  className="pagination-btn"
+                  aria-disabled={page >= Math.ceil(totalListings / limit)}
+                  href="#"
+                  onClick={(event) => { event.preventDefault(); if (page < Math.ceil(totalListings / limit)) setPage(page + 1); }}
                 >
-                  Next <ChevronRight size={16} />
-                </button>
+                  Next
+                </a>
               </div>
-            </div>
+              <label className="listing-page-size">
+                Items per page
+                <select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} id="items-per-page">
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+            </footer>
           )}
         </section>
 
@@ -503,8 +517,12 @@ function isAwaitingInitialPayment(subscription: ListingSubscriptionSummary | und
   );
 }
 
-function getSubscriptionRenewalStatus(subscription: ListingSubscriptionSummary | undefined) {
+function getSubscriptionRenewalStatus(subscription: ListingSubscriptionSummary | undefined, isRejected?: boolean) {
   if (!subscription) return undefined;
+
+  if (isRejected) {
+    return { label: "Subscription cancelled", color: "var(--danger)" };
+  }
 
   if (subscription.source === "trial") {
     const activeAccess = Boolean(subscription.expiresAt && new Date(subscription.expiresAt) > new Date() && (subscription.status === "active" || subscription.status === "past_due"));

@@ -62,6 +62,7 @@
   --gold-dark: #9b6b00;
   --gold-light: #ffe45c;
   --gold-soft: rgba(253, 212, 4, 0.16);
+  --gold-text: var(--gold);
 
   /* Semantic */
   --red: var(--brand-ruby);
@@ -154,6 +155,7 @@
   --gold-dark: #8a5e00;
   --gold-light: #fdd404;
   --gold-soft: rgba(253, 212, 4, 0.24);
+  --gold-text: var(--gold-dark);
 
   /* Semantic */
   --red: #df0008;

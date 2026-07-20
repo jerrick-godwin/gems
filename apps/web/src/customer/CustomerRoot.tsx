@@ -262,7 +262,6 @@ export function CustomerRoot({
       <MarketplaceRoute
         key={`public-${publicRevision}`}
         initialRoute={activePublicRoute}
-        initialTheme={initialTheme}
         authState={authState}
         pendingView={pendingView}
         onNavigate={navigate}

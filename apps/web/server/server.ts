@@ -65,6 +65,8 @@ import {
   getUserProfile,
   extendUserTrial,
   terminateUserTrial,
+  extendSitewideTrial,
+  terminateSitewideTrial,
   updateOrderStatus,
   updateSettings,
   updateListingCheckoutDraft,
@@ -437,6 +439,30 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    if (path === "/api/v1/admin/sitewide-trial" && request.method === "PATCH") {
+      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const endsAtValue = typeof body.endsAt === "string" ? body.endsAt : "";
+      const endsAt = new Date(endsAtValue);
+      try {
+        await extendSitewideTrial(endsAt);
+        sendJson(response, 200, { success: true });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to extend sitewide trial" });
+      }
+      return true;
+    }
+
+    if (path === "/api/v1/admin/sitewide-trial" && request.method === "DELETE") {
+      try {
+        await terminateSitewideTrial();
+        sendJson(response, 200, { success: true });
+      } catch (error) {
+        sendJson(response, 500, { error: "Unable to terminate sitewide trial" });
+      }
+      return true;
+    }
+
+
     if (request.method === "GET" && path === "/api/v1/admin/sellers") {
       sendJson(response, 200, await getAllSellers());
       return true;
@@ -666,7 +692,9 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       const page = Number(url.searchParams.get("page")) || 1;
       const limit = Number(url.searchParams.get("limit")) || 10;
       const search = url.searchParams.get("search") || "";
-      sendJson(response, 200, await getMyListings(user.id, search, page, limit));
+      const status = url.searchParams.get("status") || undefined;
+      const gemTypeId = url.searchParams.get("gemTypeId") || undefined;
+      sendJson(response, 200, await getMyListings(user.id, search, page, limit, status, gemTypeId));
       return true;
     }
 

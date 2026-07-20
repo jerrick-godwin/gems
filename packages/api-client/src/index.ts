@@ -173,11 +173,13 @@ export class GemsApiClient {
     return this.authJson("/users/me/dashboard");
   }
 
-  async getMyListings(page: number, limit: number, search: string = ""): Promise<PaginatedResponse<Listing>> {
+  async getMyListings(page: number, limit: number, search: string = "", status?: string, gemTypeId?: string): Promise<PaginatedResponse<Listing>> {
     const params = new URLSearchParams();
     params.set("page", page.toString());
     params.set("limit", limit.toString());
     if (search) params.set("search", search);
+    if (status) params.set("status", status);
+    if (gemTypeId) params.set("gemTypeId", gemTypeId);
     return this.authJson(`/users/me/listings?${params.toString()}`);
   }
 
@@ -377,6 +379,29 @@ export class GemsAdminApiClient {
     if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
     return response.json() as Promise<User>;
   }
+
+  async extendSitewideTrial(token: string, endsAt: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${this.baseUrl}/admin/sitewide-trial`, {
+      method: "PATCH",
+      headers: {
+        ...adminHeaders(token),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ endsAt })
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<{ success: boolean }>;
+  }
+
+  async terminateSitewideTrial(token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${this.baseUrl}/admin/sitewide-trial`, {
+      method: "DELETE",
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<{ success: boolean }>;
+  }
+
 
   async sellers(token: string): Promise<SellerProfile[]> {
     const response = await fetch(`${this.baseUrl}/admin/sellers`, {

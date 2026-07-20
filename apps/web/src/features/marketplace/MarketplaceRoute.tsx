@@ -1,3 +1,4 @@
+import { useTheme } from "@gems/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Listing, ListingSearchItem, MarketplaceFilters, MarketplacePageData, MarketplacePageSize, SellerProfile } from "@gems/schemas";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "../account/PolicyPages.js";
@@ -12,7 +13,6 @@ import { CategorySeoIntro, MarketplaceSeoIntro, SeoLandingPage } from "./SeoPage
 
 export function MarketplaceRoute({
   initialRoute,
-  initialTheme,
   authState,
   pendingView,
   onNavigate,
@@ -21,7 +21,6 @@ export function MarketplaceRoute({
   onPublicUrlChange
 }: {
   initialRoute: PublicRouteData;
-  initialTheme: "light" | "dark";
   authState: CustomerAuthState;
   pendingView?: View | null;
   onNavigate: (view: View) => void;
@@ -29,15 +28,8 @@ export function MarketplaceRoute({
   onRouteStateChange?: (route: PublicRouteData) => void;
   onPublicUrlChange?: (href: string) => void;
 }) {
-  const [theme, setThemeState] = useState<"system" | "light" | "dark">(initialTheme);
+  const [theme, setTheme] = useTheme("app-theme");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const setTheme = (next: "system" | "light" | "dark") => {
-    const resolved = next === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : next;
-    document.documentElement.dataset.theme = resolved;
-    document.cookie = `theme=${resolved}; Path=/; Max-Age=31536000; SameSite=Lax`;
-    localStorage.setItem("app-theme", next);
-    setThemeState(next);
-  };
   const initialData = useMemo(() => routePageData(initialRoute), [initialRoute]);
   const user = authState.status === "signed-in" ? authState.user : null;
   const frameProps = {

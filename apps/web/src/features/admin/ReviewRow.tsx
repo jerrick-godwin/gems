@@ -85,13 +85,18 @@ export function ReviewRow({
         <div className="review-row-identity">
           <strong>{listing.title}</strong>
           <span className="review-row-meta">
-            {listing.attributes.carat} ct ·
-            {listing.attributes.certificateStatus !== "none" && (
+            Seller Name: {seller?.displayName || user?.name || "Unknown"}
+          </span>
+          <span className="review-row-meta">
+            Requested Date: {listing.createdAt ? new Date(listing.createdAt).toLocaleDateString() : "Unknown"}
+          </span>
+          {listing.attributes.certificateStatus !== "none" && (
+            <span className="review-row-meta">
               <span className="review-row-certificate">
                 {listing.attributes.certificateStatus.replace("_", " ")}
               </span>
-            )}
-          </span>
+            </span>
+          )}
         </div>
         <button className="review-row-action" onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide Details" : "View Details"}

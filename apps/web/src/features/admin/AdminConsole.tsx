@@ -18,6 +18,7 @@ import {
   LogOut
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
 import { ThemeSwitcher, type ThemePreference } from "@gems/ui";
@@ -60,7 +61,10 @@ export function AdminConsole({
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
 }) {
-  const pending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
+  const allPending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
+  const paidPending = allPending.filter((listing) => listing.subscription?.status === "active");
+  const unpaidPending = allPending.filter((listing) => listing.subscription?.status !== "active");
+  const pending = paidPending; // Legacy naming for backwards compatibility
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
   const successfulPayments = snapshot.payments.filter((payment) => payment.status === "succeeded");
@@ -69,6 +73,7 @@ export function AdminConsole({
   const expiredTrials = snapshot.users.filter((user) => user.trial?.status === "expired").length;
   const terminatedTrials = snapshot.users.filter((user) => user.trial?.status === "terminated").length;
   const [reviewSearch, setReviewSearch] = useState("");
+  const [pendingPaymentSearch, setPendingPaymentSearch] = useState("");
   const [reportSearch, setReportSearch] = useState("");
   const [activeListingSearch, setActiveListingSearch] = useState("");
   const [rejectedListingSearch, setRejectedListingSearch] = useState("");
@@ -77,7 +82,8 @@ export function AdminConsole({
   const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
   const rejectedListings = allListings.filter((listing) => listing.status === "rejected" || listing.moderationStatus === "rejected");
   const archivedListings = allListings.filter((listing) => listing.status === "expired" || listing.status === "paused");
-  const filteredPending = pending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
+  const filteredPending = paidPending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
+  const filteredUnpaidPending = unpaidPending.filter((listing) => matchesListingSearch(listing, pendingPaymentSearch, snapshot));
   const filteredReports = openReports.filter((report) => matchesReportSearch(report, reportSearch, snapshot));
   const filteredActiveListings = snapshot.liveListings.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
   const filteredRejectedListings = rejectedListings.filter((listing) => matchesListingSearch(listing, rejectedListingSearch, snapshot));
@@ -116,7 +122,7 @@ export function AdminConsole({
       <AdminNavigation
         activeView={activeView}
         onSelect={selectView}
-        moderationCount={pending.length + openReports.length}
+        moderationCount={allPending.length + openReports.length}
         listingCount={allListings.length}
         userCount={snapshot.users.length}
         paymentCount={pendingPayments.length}
@@ -136,7 +142,7 @@ export function AdminConsole({
 
         {activeView === "overview" && (
           <AdminOverview
-            pendingReviews={pending.length}
+            pendingReviews={allPending.length}
             openReports={openReports.length}
             checkedCertificates={checkedCertificates}
             paidSubscriptions={successfulPayments.length}
@@ -151,13 +157,14 @@ export function AdminConsole({
         {activeView === "moderation" && (
           <div className="admin-console-stack">
             <div className="metric-grid admin-view-metrics">
-              <Metric icon={ClipboardCheck} label="Queued listings" value={String(pending.length)} accent="var(--gold)" />
+              <Metric icon={ClipboardCheck} label="Queued listings" value={String(paidPending.length)} accent="var(--gold)" />
+              <Metric icon={CreditCard} label="Pending payment" value={String(unpaidPending.length)} accent="var(--muted)" />
               <Metric icon={Flag} label="Open reports" value={String(openReports.length)} accent="var(--danger)" />
               <Metric icon={BadgeCheck} label="Checked certs" value={String(checkedCertificates)} accent="var(--emerald)" />
             </div>
             <AdminSection
-              title="Review queue"
-              totalCount={pending.length}
+              title="Review Queue"
+              totalCount={paidPending.length}
               visibleCount={filteredPending.length}
               searchValue={reviewSearch}
               onSearchChange={setReviewSearch}
@@ -166,6 +173,18 @@ export function AdminConsole({
               noMatchesMessage="No queued listings match your search."
             >
               {filteredPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
+            </AdminSection>
+            <AdminSection
+              title="Pending Payment"
+              totalCount={unpaidPending.length}
+              visibleCount={filteredUnpaidPending.length}
+              searchValue={pendingPaymentSearch}
+              onSearchChange={setPendingPaymentSearch}
+              searchPlaceholder="Search unpaid listings"
+              emptyMessage="No listings pending payment."
+              noMatchesMessage="No unpaid listings match your search."
+            >
+              {filteredUnpaidPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
             </AdminSection>
             <AdminSection
               title="Reports"
@@ -297,6 +316,15 @@ export function AdminConsole({
             setLoadError={setLoadError}
             onUserUpdate={(updated) => {
               setSnapshot({ ...snapshot, users: snapshot.users.map((user) => user.id === updated.id ? updated : user) });
+            }}
+            refreshSnapshot={async () => {
+              try {
+                setLoadError(null);
+                const refreshed = await api.moderationSnapshot(token);
+                setSnapshot(refreshed);
+              } catch (e) {
+                setLoadError("Unable to refresh snapshot");
+              }
             }}
           />
         )}
@@ -582,7 +610,8 @@ function UserTrialsPanel({
   expiredTrials,
   terminatedTrials,
   setLoadError,
-  onUserUpdate
+  onUserUpdate,
+  refreshSnapshot
 }: {
   users: User[];
   api: GemsAdminApiClient;
@@ -592,10 +621,17 @@ function UserTrialsPanel({
   terminatedTrials: number;
   setLoadError: (error: string | null) => void;
   onUserUpdate: (user: User) => void;
+  refreshSnapshot: () => Promise<void>;
 }) {
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [isSitewideBusy, setIsSitewideBusy] = useState(false);
+  const [sitewideEndDate, setSitewideEndDate] = useState<string>("");
   const [trialEndDates, setTrialEndDates] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
+  const [showTerminateUserPrompt, setShowTerminateUserPrompt] = useState<User | null>(null);
+  const [showExtendSitewidePrompt, setShowExtendSitewidePrompt] = useState(false);
+  const [showTerminateSitewidePrompt, setShowTerminateSitewidePrompt] = useState(false);
+
   const filteredUsers = users.filter((user) => matchesUserSearch(user, search));
 
   const handleExtend = async (user: User) => {
@@ -613,17 +649,59 @@ function UserTrialsPanel({
     }
   };
 
-  const handleTerminate = async (user: User) => {
-    if (!window.confirm(`Terminate free trial for ${user.email}? Trial-backed listings will expire immediately.`)) return;
+  const confirmTerminate = async (user: User) => {
     setBusyUserId(user.id);
     try {
       const updated = await api.terminateUserTrial(token, user.id);
       onUserUpdate(updated);
       setLoadError(null);
+      setShowTerminateUserPrompt(null);
     } catch (error) {
       setLoadError(publicErrorMessage(error, "Unable to terminate trial"));
     } finally {
       setBusyUserId(null);
+    }
+  };
+
+  const handleTerminate = (user: User) => {
+    setShowTerminateUserPrompt(user);
+  };
+
+  const handleExtendSitewide = () => {
+    if (!sitewideEndDate) return;
+    setShowExtendSitewidePrompt(true);
+  };
+
+  const confirmExtendSitewide = async () => {
+    setIsSitewideBusy(true);
+    try {
+      await api.extendSitewideTrial(token, new Date(`${sitewideEndDate}T23:59:59`).toISOString());
+      await refreshSnapshot();
+      setSitewideEndDate("");
+      setLoadError(null);
+      setShowExtendSitewidePrompt(false);
+    } catch (error) {
+      setLoadError(publicErrorMessage(error, "Unable to extend sitewide trial"));
+    } finally {
+      setIsSitewideBusy(false);
+    }
+  };
+
+  const handleTerminateSitewide = () => {
+    setShowTerminateSitewidePrompt(true);
+  };
+
+  const confirmTerminateSitewide = async () => {
+    setIsSitewideBusy(true);
+    try {
+      await api.terminateSitewideTrial(token);
+      await refreshSnapshot();
+      setLoadError(null);
+      setShowTerminateSitewidePrompt(false);
+    } catch (error) {
+      setLoadError(publicErrorMessage(error, "Unable to terminate sitewide trial"));
+    } finally {
+      setIsSitewideBusy(false);
     }
   };
 
@@ -645,6 +723,24 @@ function UserTrialsPanel({
         </div>
       )}
     >
+      <div className="admin-sitewide-actions card card--compact" style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem", alignItems: "center", background: "var(--background-secondary)" }}>
+        <strong>Sitewide Trial:</strong>
+        <input
+          type="date"
+          value={sitewideEndDate}
+          min={dateInputValue(new Date().toISOString())}
+          onChange={(event) => setSitewideEndDate(event.target.value)}
+          disabled={isSitewideBusy}
+          style={{ padding: "0.25rem 0.5rem" }}
+        />
+        <button type="button" className="active-listing-action" disabled={isSitewideBusy || !sitewideEndDate} onClick={() => void handleExtendSitewide()}>
+          <CalendarPlus size={16} /> Extend All
+        </button>
+        <button type="button" className="active-listing-action danger" disabled={isSitewideBusy} onClick={() => void handleTerminateSitewide()}>
+          <Ban size={16} /> Terminate All
+        </button>
+      </div>
+
       <div className="admin-trial-list">
           {filteredUsers.map((user) => {
             const trial = user.trial;
@@ -678,7 +774,94 @@ function UserTrialsPanel({
               </div>
             );
           })}
-        </div>
+      </div>
+
+      {showTerminateUserPrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="terminate-user-title">
+            <h3 id="terminate-user-title" className="confirmation-dialog-title tone-danger">
+              <Ban size={20} /> Terminate Trial
+            </h3>
+            <p className="confirmation-dialog-copy">
+              Terminate free trial for {showTerminateUserPrompt.email}? Trial-backed listings will expire immediately.
+            </p>
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => setShowTerminateUserPrompt(null)}
+                className="confirmation-dialog-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmTerminate(showTerminateUserPrompt)}
+                disabled={busyUserId === showTerminateUserPrompt.id}
+                className="confirmation-dialog-button tone-danger"
+              >
+                {busyUserId === showTerminateUserPrompt.id ? "Terminating..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showExtendSitewidePrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="extend-sitewide-title">
+            <h3 id="extend-sitewide-title" className="confirmation-dialog-title tone-warning">
+              <CalendarPlus size={20} /> Extend Sitewide Trial
+            </h3>
+            <p className="confirmation-dialog-copy">
+              Are you sure you want to extend the free trial for ALL users to {sitewideEndDate}?
+            </p>
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => setShowExtendSitewidePrompt(false)}
+                className="confirmation-dialog-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmExtendSitewide()}
+                disabled={isSitewideBusy}
+                className="confirmation-dialog-button tone-warning"
+              >
+                {isSitewideBusy ? "Extending..." : "Confirm Extension"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showTerminateSitewidePrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="terminate-sitewide-title">
+            <h3 id="terminate-sitewide-title" className="confirmation-dialog-title tone-danger">
+              <Ban size={20} /> Terminate All Trials
+            </h3>
+            <p className="confirmation-dialog-copy">
+              Terminate free trial for ALL users immediately? Trial-backed listings will expire.
+            </p>
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => setShowTerminateSitewidePrompt(false)}
+                className="confirmation-dialog-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmTerminateSitewide()}
+                disabled={isSitewideBusy}
+                className="confirmation-dialog-button tone-danger"
+              >
+                {isSitewideBusy ? "Terminating..." : "Confirm Termination"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </AdminSection>
   );
 }

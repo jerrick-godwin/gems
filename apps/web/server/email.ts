@@ -108,3 +108,121 @@ Gemslanka LK Support Team
     console.info("Mock email sent. Reset Link:", resetLink);
   }
 }
+
+export async function sendAdminNotificationEmail(
+  action: string,
+  details: Record<string, any>,
+  adminLink?: string
+) {
+  try {
+    const { getActiveAdminEmails } = await import("./auth.js");
+    const emails = await getActiveAdminEmails();
+
+    if (emails.length === 0) {
+      console.warn("No active admin emails found. Skipping admin notification for:", action);
+      return;
+    }
+
+    const detailsHtml = Object.entries(details)
+      .map(([key, value]) => `<tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>${key}</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${value}</td></tr>`)
+      .join("");
+
+    const detailsText = Object.entries(details)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n");
+
+    const actionButtonHtml = adminLink
+      ? `
+        <table border="0" cellspacing="0" cellpadding="0" style="margin-top: 32px; margin-bottom: 32px;">
+          <tr>
+            <td align="center" style="border-radius: 6px; background-color: #0066cc;">
+              <a href="${adminLink}" target="_blank" style="font-size: 16px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 6px; padding: 14px 28px; border: 1px solid #0066cc; display: inline-block;">View in Admin Panel</a>
+            </td>
+          </tr>
+        </table>
+      `
+      : "";
+
+    const actionText = adminLink ? `\n\nView in Admin Panel: ${adminLink}` : "";
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Notification: ${action}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f9f9f9; color: #333333;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f9f9f9; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto;">
+          <tr>
+            <td style="padding: 40px 40px 30px 40px; text-align: left;">
+              <h2 style="margin: 0 0 20px 0; font-size: 24px; color: #1a1a1a;">Admin Notification</h2>
+              <p style="margin: 0 0 16px 0; font-size: 16px; line-height: 1.5; color: #4a4a4a;">An action occurred that requires your attention: <strong>${action}</strong>.</p>
+              
+              <table width="100%" style="border-collapse: collapse; margin-top: 20px;">
+                ${detailsHtml}
+              </table>
+
+              ${actionButtonHtml}
+              
+              <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #4a4a4a; margin-top: 20px;">Thank you,<br>Gemslanka System</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const textContent = `
+Admin Notification
+------------------
+Action: ${action}
+
+Details:
+${detailsText}${actionText}
+
+Thank you,
+Gemslanka System
+    `.trim();
+
+    if (resend) {
+      // Resend limits to 50 recipients per batch, so we chunk the array
+      const BATCH_SIZE = 50;
+      const batches = [];
+      
+      for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+        batches.push(emails.slice(i, i + BATCH_SIZE));
+      }
+
+      await Promise.allSettled(
+        batches.map(async (batch) => {
+          const { error } = await resend!.emails.send({
+            from: "Gemslanka Admin <noreply@gemslanka.lk>",
+            to: batch,
+            subject: `[Admin] Action: ${action}`,
+            html: htmlContent,
+            text: textContent,
+          });
+          if (error) {
+            console.error("Resend API error (admin notification batch):", error);
+          }
+        })
+      );
+    } else {
+      // For local dev if no key is provided
+      console.info(`Mock Admin Notification Email sent to ${emails.length} admins (first batch preview):`, emails.slice(0, 5));
+      console.info("Action:", action);
+      console.info("Details:", details);
+      if (adminLink) console.info("Link:", adminLink);
+    }
+  } catch (err) {
+    console.error("Critical failure in sendAdminNotificationEmail:", err);
+  }
+}
