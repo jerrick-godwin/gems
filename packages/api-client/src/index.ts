@@ -378,6 +378,29 @@ export class GemsAdminApiClient {
     return response.json() as Promise<User>;
   }
 
+  async extendSitewideTrial(token: string, endsAt: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${this.baseUrl}/admin/sitewide-trial`, {
+      method: "PATCH",
+      headers: {
+        ...adminHeaders(token),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ endsAt })
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<{ success: boolean }>;
+  }
+
+  async terminateSitewideTrial(token: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${this.baseUrl}/admin/sitewide-trial`, {
+      method: "DELETE",
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
+    return response.json() as Promise<{ success: boolean }>;
+  }
+
+
   async sellers(token: string): Promise<SellerProfile[]> {
     const response = await fetch(`${this.baseUrl}/admin/sellers`, {
       headers: adminHeaders(token)

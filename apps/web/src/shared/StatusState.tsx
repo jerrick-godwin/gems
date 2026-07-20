@@ -4,7 +4,7 @@ type StatusStateProps = {
   title: string;
   message: string;
   loading?: boolean;
-  variant?: "marketplace" | "admin" | "payment";
+  variant?: "marketplace" | "admin" | "payment" | "simple";
   showAction?: boolean;
   onRetry?: () => void | Promise<void>;
   headingLevel?: 1 | 2;
