@@ -173,11 +173,13 @@ export class GemsApiClient {
     return this.authJson("/users/me/dashboard");
   }
 
-  async getMyListings(page: number, limit: number, search: string = ""): Promise<PaginatedResponse<Listing>> {
+  async getMyListings(page: number, limit: number, search: string = "", status?: string, gemTypeId?: string): Promise<PaginatedResponse<Listing>> {
     const params = new URLSearchParams();
     params.set("page", page.toString());
     params.set("limit", limit.toString());
     if (search) params.set("search", search);
+    if (status) params.set("status", status);
+    if (gemTypeId) params.set("gemTypeId", gemTypeId);
     return this.authJson(`/users/me/listings?${params.toString()}`);
   }
 

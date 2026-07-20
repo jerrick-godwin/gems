@@ -991,7 +991,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
   };
 }
 
-export async function getMyListings(userId: string, search: string = "", page: number = 1, limit: number = 10): Promise<{ items: Listing[], total: number, page: number, limit: number, totalPages: number }> {
+export async function getMyListings(userId: string, search: string = "", page: number = 1, limit: number = 10, status?: string, gemTypeId?: string): Promise<{ items: Listing[], total: number, page: number, limit: number, totalPages: number }> {
   const offset = (page - 1) * limit;
 
   if (hasDatabase) {
@@ -1000,18 +1000,16 @@ export async function getMyListings(userId: string, search: string = "", page: n
     if (sellerIds.length === 0) {
       return { items: [], total: 0, page, limit, totalPages: 0 };
     }
-    let countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(inArray(listings.sellerId, sellerIds));
-    if (search) {
-      countQuery = db.select({ count: sql<number>`count(*)` }).from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)));
-    }
-    const countResult = await countQuery;
+    
+    const conditions = [inArray(listings.sellerId, sellerIds)];
+    if (search) conditions.push(ilike(listings.title, `%${search}%`));
+    if (status) conditions.push(eq(listings.status, status as any));
+    if (gemTypeId) conditions.push(eq(listings.gemTypeId, gemTypeId));
+
+    const countResult = await db.select({ count: sql<number>`count(*)` }).from(listings).where(and(...conditions));
     const total = Number(countResult[0]?.count || 0);
 
-    const baseQuery = search
-      ? db.select().from(listings).where(and(inArray(listings.sellerId, sellerIds), ilike(listings.title, `%${search}%`)))
-      : db.select().from(listings).where(inArray(listings.sellerId, sellerIds));
-
-    const rows = await baseQuery.limit(limit).offset(offset).orderBy(desc(listings.createdAt));
+    const rows = await db.select().from(listings).where(and(...conditions)).limit(limit).offset(offset).orderBy(desc(listings.createdAt));
     const totalPages = Math.ceil(total / limit);
     return { items: rows.map(toListing), total, page, limit, totalPages };
   }
@@ -1027,6 +1025,12 @@ export async function getMyListings(userId: string, search: string = "", page: n
   if (search) {
     const searchLower = search.toLowerCase();
     allListings = allListings.filter(l => l.title.toLowerCase().includes(searchLower));
+  }
+  if (status) {
+    allListings = allListings.filter(l => l.status === status);
+  }
+  if (gemTypeId) {
+    allListings = allListings.filter(l => l.gemTypeId === gemTypeId);
   }
   allListings.sort((a, b) => {
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -3007,6 +3011,8 @@ function toListing(row: typeof listings.$inferSelect): Listing {
     rejectionReason: (row as any).rejectionReason ?? undefined,
     publishedAt: row.publishedAt?.toISOString(),
     expiresAt: row.expiresAt?.toISOString(),
+    createdAt: row.createdAt?.toISOString(),
+    updatedAt: row.updatedAt?.toISOString(),
     attributes: row.attributes as any,
     media: media as any,
     promoted: Array.from(activePromotions),
