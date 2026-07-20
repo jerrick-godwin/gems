@@ -34,6 +34,7 @@ import type {
 } from "@gems/schemas";
 import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type ListingSubscriptionPlan } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
+import { sendPasswordResetEmail, sendAdminNotificationEmail } from "./email.js";
 import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { normalizeListingTitle } from "./listing-title.js";
@@ -1081,6 +1082,13 @@ export async function createListing(userId: string, input: ListingInput, idempot
       remainingReveals: 0
     };
   }
+  
+  void sendAdminNotificationEmail("Listing Created", {
+    "Listing ID": listing.id,
+    "Seller ID": listing.sellerId,
+    "Title": listing.title
+  }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/listings/${listing.id}`);
+
   return listing;
 }
 
@@ -1763,6 +1771,13 @@ export async function recordStripeSubscriptionInvoicePayment(input: {
   if (!inserted) return intent;
   await updatePaymentStripeState(intent.id, { stripeSubscriptionId: input.stripeSubscriptionId, stripeInvoiceId: input.stripeInvoiceId });
   await extendListingSubscription(intent.subscriptionId, intent.id);
+  
+  void sendAdminNotificationEmail("Subscription Renewed", {
+    "Subscription ID": intent.subscriptionId,
+    "Stripe Subscription ID": input.stripeSubscriptionId,
+    "Payment Intent ID": intent.id
+  }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/subscriptions/${intent.subscriptionId}`);
+
   return getPaymentIntent(intent.id);
 }
 
@@ -1812,6 +1827,8 @@ export async function syncStripeSubscriptionStatus(input: {
     updates.cancelledAt = now;
   }
 
+  let finalSubscription: ListingSubscription | undefined;
+
   if (hasDatabase) {
     const [updated] = await db
       .update(listingSubscriptions)
@@ -1821,26 +1838,36 @@ export async function syncStripeSubscriptionStatus(input: {
     if ((nextStatus === "cancelled" || nextStatus === "expired") && updated) {
       await db.update(listings).set({ status: "expired", expiresAt: input.currentPeriodEnd ?? now, updatedAt: now }).where(eq(listings.id, updated.listingId));
     }
-    return updated ? toListingSubscription(updated) : undefined;
-  }
-
-  const state = await getMemoryState();
-  const subscription = state.listingSubscriptions.find((item) => item.id === intent.subscriptionId);
-  if (!subscription) return undefined;
-  if (nextStatus) subscription.status = nextStatus;
-  if (input.cancelAtPeriodEnd !== undefined) subscription.autoRenew = !input.cancelAtPeriodEnd;
-  if (input.currentPeriodEnd) subscription.expiresAt = input.currentPeriodEnd.toISOString();
-  if (nextStatus === "cancelled" || nextStatus === "expired") {
-    subscription.autoRenew = false;
-    subscription.cancelledAt = now.toISOString();
-    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
-    if (listing) {
-      listing.status = "expired";
-      listing.expiresAt = (input.currentPeriodEnd ?? now).toISOString();
+    finalSubscription = updated ? toListingSubscription(updated) : undefined;
+  } else {
+    const state = await getMemoryState();
+    const subscription = state.listingSubscriptions.find((item) => item.id === intent.subscriptionId);
+    if (subscription) {
+      if (nextStatus) subscription.status = nextStatus;
+      if (input.cancelAtPeriodEnd !== undefined) subscription.autoRenew = !input.cancelAtPeriodEnd;
+      if (input.currentPeriodEnd) subscription.expiresAt = input.currentPeriodEnd.toISOString();
+      if (nextStatus === "cancelled" || nextStatus === "expired") {
+        subscription.autoRenew = false;
+        subscription.cancelledAt = now.toISOString();
+        const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+        if (listing) {
+          listing.status = "expired";
+          listing.expiresAt = (input.currentPeriodEnd ?? now).toISOString();
+        }
+      }
+      subscription.updatedAt = now.toISOString();
+      finalSubscription = subscription;
     }
   }
-  subscription.updatedAt = now.toISOString();
-  return subscription;
+
+  if (nextStatus === "cancelled" && finalSubscription) {
+    void sendAdminNotificationEmail("Subscription Cancelled", {
+      "Subscription ID": intent.subscriptionId,
+      "Stripe Subscription ID": input.stripeSubscriptionId
+    }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/subscriptions/${intent.subscriptionId}`);
+  }
+
+  return finalSubscription;
 }
 
 export async function cancelListingSubscription(userId: string, subscriptionId: string) {

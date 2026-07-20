@@ -1,5 +1,6 @@
 import type { Conversation, Listing, ListingSearchItem, MarketplaceContent, MarketplaceFilters, MarketplaceListingPage, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
 import { eq, ne, and, or, ilike, desc, asc, sql, inArray } from "drizzle-orm";
+import { sendAdminNotificationEmail } from "./email.js";
 import { db, hasDatabase } from "./db/index.js";
 import {
   cartItems as cartItemTable,
@@ -559,6 +560,8 @@ export async function createReport(reporterId: string, listingId: string, reason
     notes
   };
 
+  let finalReport: Report;
+
   if (hasDatabase) {
     const [inserted] = await db.insert(reportTable).values({
       id: newReport.id,
@@ -568,12 +571,22 @@ export async function createReport(reporterId: string, listingId: string, reason
       status: newReport.status,
       notes: newReport.notes
     }).returning();
-    return inserted ? toReport(inserted) : newReport;
+    finalReport = inserted ? toReport(inserted) : newReport;
+  } else {
+    const database = await getMutableMarketplaceDatabase();
+    database.reports.push(newReport);
+    finalReport = newReport;
   }
 
-  const database = await getMutableMarketplaceDatabase();
-  database.reports.push(newReport);
-  return newReport;
+  void sendAdminNotificationEmail("Report Created", {
+    "Report ID": finalReport.id,
+    "Reporter ID": reporterId,
+    "Listing ID": listingId,
+    "Reason": reason,
+    "Notes": notes
+  }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/reports/${finalReport.id}`);
+
+  return finalReport;
 }
 
 export async function getAllSellers() {

@@ -194,15 +194,55 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
           image: [productImage],
           url: metadata.canonical,
           category: `${humanizeGemType(props.route.listing.gemTypeId)} gemstone`,
+          brand: {
+            "@type": "Brand",
+            name: "Gemslanka"
+          },
           offers: {
             "@type": "Offer",
             priceCurrency: "LKR",
             price: props.route.listing.priceLkr,
             availability: "https://schema.org/InStock",
             url: metadata.canonical,
+            itemCondition: "https://schema.org/NewCondition",
             seller: {
               "@type": props.route.seller.businessName ? "Organization" : "Person",
               name: props.route.seller.businessName ?? props.route.seller.displayName
+            },
+            shippingDetails: {
+              "@type": "OfferShippingDetails",
+              shippingRate: {
+                "@type": "MonetaryAmount",
+                value: 0,
+                currency: "LKR"
+              },
+              shippingDestination: {
+                "@type": "DefinedRegion",
+                addressCountry: "LK"
+              },
+              deliveryTime: {
+                "@type": "ShippingDeliveryTime",
+                handlingTime: {
+                  "@type": "QuantitativeValue",
+                  minValue: 0,
+                  maxValue: 1,
+                  unitCode: "d"
+                },
+                transitTime: {
+                  "@type": "QuantitativeValue",
+                  minValue: 1,
+                  maxValue: 5,
+                  unitCode: "d"
+                }
+              }
+            },
+            hasMerchantReturnPolicy: {
+              "@type": "MerchantReturnPolicy",
+              applicableCountry: "LK",
+              returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
+              merchantReturnDays: 7,
+              returnMethod: "https://schema.org/ReturnByMail",
+              returnFees: "https://schema.org/FreeReturn"
             }
           }
         },
