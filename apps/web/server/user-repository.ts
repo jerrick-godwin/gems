@@ -285,6 +285,51 @@ export async function terminateUserTrial(userId: string) {
   return user;
 }
 
+export async function extendSitewideTrial(endsAt: Date) {
+  const now = new Date();
+  if (!Number.isFinite(endsAt.getTime())) throw new Error("Valid trial end date is required.");
+
+  if (hasDatabase) {
+    await db.update(users).set({
+      trialEndsAt: endsAt,
+      trialTerminatedAt: null,
+      updatedAt: now
+    });
+    await refreshSitewideTrialBackedListings(endsAt);
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const user of state.users) {
+    user.trialEndsAt = endsAt.toISOString();
+    user.trialTerminatedAt = undefined;
+    user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
+    user.updatedAt = now.toISOString();
+  }
+  await refreshSitewideTrialBackedListings(endsAt);
+}
+
+export async function terminateSitewideTrial() {
+  const now = new Date();
+
+  if (hasDatabase) {
+    await db.update(users).set({
+      trialTerminatedAt: now,
+      updatedAt: now
+    });
+    await expireSitewideTrialBackedListings(now);
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const user of state.users) {
+    user.trialTerminatedAt = now.toISOString();
+    user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
+    user.updatedAt = now.toISOString();
+  }
+  await expireSitewideTrialBackedListings(now);
+}
+
 export async function getUserProfile(userId: string) {
   const [user, settings] = await Promise.all([getUser(userId), getSettings(userId)]);
   return { user, settings };
@@ -2436,6 +2481,86 @@ async function expireTrialBackedListings(userId: string, expiredAt: Date) {
 
   const state = await getMemoryState();
   for (const subscription of state.listingSubscriptions.filter((item) => item.userId === userId && item.source === "trial")) {
+    subscription.status = "expired";
+    subscription.autoRenew = false;
+    subscription.expiresAt = expiredAt.toISOString();
+    subscription.cancelledAt = expiredAt.toISOString();
+    subscription.updatedAt = expiredAt.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = "expired";
+      listing.expiresAt = expiredAt.toISOString();
+    }
+  }
+}
+
+async function refreshSitewideTrialBackedListings(expiresAt: Date) {
+  const now = new Date();
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.source, "trial"));
+    if (subscriptions.length === 0) return;
+    const nextStatus = expiresAt > now ? "active" : "expired";
+    const listingIds = subscriptions.map((subscription) => subscription.listingId);
+    
+    await db.update(listingSubscriptions).set({
+      status: nextStatus,
+      expiresAt,
+      cancelledAt: null,
+      updatedAt: now
+    }).where(eq(listingSubscriptions.source, "trial"));
+    
+    const listingUpdate = nextStatus === "active"
+      ? { status: "pending_review" as const, moderationStatus: "queued" as const, expiresAt, updatedAt: now }
+      : { status: "expired" as const, expiresAt, updatedAt: now };
+    
+    if (listingIds.length > 0) {
+      await db.update(listings).set(listingUpdate).where(inArray(listings.id, listingIds));
+    }
+    return;
+  }
+
+  const state = await getMemoryState();
+  const nextStatus = expiresAt > now ? "active" : "expired";
+  for (const subscription of state.listingSubscriptions.filter((item) => item.source === "trial")) {
+    subscription.status = nextStatus;
+    subscription.expiresAt = expiresAt.toISOString();
+    subscription.cancelledAt = undefined;
+    subscription.updatedAt = now.toISOString();
+    const listing = state.database.listings.find((item) => item.id === subscription.listingId);
+    if (listing) {
+      listing.status = nextStatus === "active" ? "pending_review" : "expired";
+      if (nextStatus === "active") listing.moderationStatus = "queued";
+      listing.expiresAt = expiresAt.toISOString();
+    }
+  }
+}
+
+async function expireSitewideTrialBackedListings(expiredAt: Date) {
+  if (hasDatabase) {
+    const subscriptions = await db.select().from(listingSubscriptions).where(eq(listingSubscriptions.source, "trial"));
+    if (subscriptions.length === 0) return;
+    
+    await db.update(listingSubscriptions).set({
+      status: "expired",
+      autoRenew: false,
+      expiresAt: expiredAt,
+      cancelledAt: expiredAt,
+      updatedAt: expiredAt
+    }).where(eq(listingSubscriptions.source, "trial"));
+    
+    const listingIds = subscriptions.map((subscription) => subscription.listingId);
+    if (listingIds.length > 0) {
+      await db.update(listings).set({
+        status: "expired",
+        expiresAt: expiredAt,
+        updatedAt: expiredAt
+      }).where(inArray(listings.id, listingIds));
+    }
+    return;
+  }
+
+  const state = await getMemoryState();
+  for (const subscription of state.listingSubscriptions.filter((item) => item.source === "trial")) {
     subscription.status = "expired";
     subscription.autoRenew = false;
     subscription.expiresAt = expiredAt.toISOString();

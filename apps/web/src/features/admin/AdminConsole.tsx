@@ -18,6 +18,7 @@ import {
   LogOut
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
 import { ThemeSwitcher, type ThemePreference } from "@gems/ui";
@@ -297,6 +298,15 @@ export function AdminConsole({
             setLoadError={setLoadError}
             onUserUpdate={(updated) => {
               setSnapshot({ ...snapshot, users: snapshot.users.map((user) => user.id === updated.id ? updated : user) });
+            }}
+            refreshSnapshot={async () => {
+              try {
+                setLoadError(null);
+                const refreshed = await api.moderationSnapshot(token);
+                setSnapshot(refreshed);
+              } catch (e) {
+                setLoadError("Unable to refresh snapshot");
+              }
             }}
           />
         )}
@@ -582,7 +592,8 @@ function UserTrialsPanel({
   expiredTrials,
   terminatedTrials,
   setLoadError,
-  onUserUpdate
+  onUserUpdate,
+  refreshSnapshot
 }: {
   users: User[];
   api: GemsAdminApiClient;
@@ -592,10 +603,17 @@ function UserTrialsPanel({
   terminatedTrials: number;
   setLoadError: (error: string | null) => void;
   onUserUpdate: (user: User) => void;
+  refreshSnapshot: () => Promise<void>;
 }) {
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [isSitewideBusy, setIsSitewideBusy] = useState(false);
+  const [sitewideEndDate, setSitewideEndDate] = useState<string>("");
   const [trialEndDates, setTrialEndDates] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
+  const [showTerminateUserPrompt, setShowTerminateUserPrompt] = useState<User | null>(null);
+  const [showExtendSitewidePrompt, setShowExtendSitewidePrompt] = useState(false);
+  const [showTerminateSitewidePrompt, setShowTerminateSitewidePrompt] = useState(false);
+
   const filteredUsers = users.filter((user) => matchesUserSearch(user, search));
 
   const handleExtend = async (user: User) => {
@@ -613,17 +631,59 @@ function UserTrialsPanel({
     }
   };
 
-  const handleTerminate = async (user: User) => {
-    if (!window.confirm(`Terminate free trial for ${user.email}? Trial-backed listings will expire immediately.`)) return;
+  const confirmTerminate = async (user: User) => {
     setBusyUserId(user.id);
     try {
       const updated = await api.terminateUserTrial(token, user.id);
       onUserUpdate(updated);
       setLoadError(null);
+      setShowTerminateUserPrompt(null);
     } catch (error) {
       setLoadError(publicErrorMessage(error, "Unable to terminate trial"));
     } finally {
       setBusyUserId(null);
+    }
+  };
+
+  const handleTerminate = (user: User) => {
+    setShowTerminateUserPrompt(user);
+  };
+
+  const handleExtendSitewide = () => {
+    if (!sitewideEndDate) return;
+    setShowExtendSitewidePrompt(true);
+  };
+
+  const confirmExtendSitewide = async () => {
+    setIsSitewideBusy(true);
+    try {
+      await api.extendSitewideTrial(token, new Date(`${sitewideEndDate}T23:59:59`).toISOString());
+      await refreshSnapshot();
+      setSitewideEndDate("");
+      setLoadError(null);
+      setShowExtendSitewidePrompt(false);
+    } catch (error) {
+      setLoadError(publicErrorMessage(error, "Unable to extend sitewide trial"));
+    } finally {
+      setIsSitewideBusy(false);
+    }
+  };
+
+  const handleTerminateSitewide = () => {
+    setShowTerminateSitewidePrompt(true);
+  };
+
+  const confirmTerminateSitewide = async () => {
+    setIsSitewideBusy(true);
+    try {
+      await api.terminateSitewideTrial(token);
+      await refreshSnapshot();
+      setLoadError(null);
+      setShowTerminateSitewidePrompt(false);
+    } catch (error) {
+      setLoadError(publicErrorMessage(error, "Unable to terminate sitewide trial"));
+    } finally {
+      setIsSitewideBusy(false);
     }
   };
 
@@ -645,6 +705,24 @@ function UserTrialsPanel({
         </div>
       )}
     >
+      <div className="admin-sitewide-actions card card--compact" style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem", alignItems: "center", background: "var(--background-secondary)" }}>
+        <strong>Sitewide Trial:</strong>
+        <input
+          type="date"
+          value={sitewideEndDate}
+          min={dateInputValue(new Date().toISOString())}
+          onChange={(event) => setSitewideEndDate(event.target.value)}
+          disabled={isSitewideBusy}
+          style={{ padding: "0.25rem 0.5rem" }}
+        />
+        <button type="button" className="active-listing-action" disabled={isSitewideBusy || !sitewideEndDate} onClick={() => void handleExtendSitewide()}>
+          <CalendarPlus size={16} /> Extend All
+        </button>
+        <button type="button" className="active-listing-action danger" disabled={isSitewideBusy} onClick={() => void handleTerminateSitewide()}>
+          <Ban size={16} /> Terminate All
+        </button>
+      </div>
+
       <div className="admin-trial-list">
           {filteredUsers.map((user) => {
             const trial = user.trial;
@@ -678,7 +756,94 @@ function UserTrialsPanel({
               </div>
             );
           })}
-        </div>
+      </div>
+
+      {showTerminateUserPrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="terminate-user-title">
+            <h3 id="terminate-user-title" className="confirmation-dialog-title tone-danger">
+              <Ban size={20} /> Terminate Trial
+            </h3>
+            <p className="confirmation-dialog-copy">
+              Terminate free trial for {showTerminateUserPrompt.email}? Trial-backed listings will expire immediately.
+            </p>
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => setShowTerminateUserPrompt(null)}
+                className="confirmation-dialog-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmTerminate(showTerminateUserPrompt)}
+                disabled={busyUserId === showTerminateUserPrompt.id}
+                className="confirmation-dialog-button tone-danger"
+              >
+                {busyUserId === showTerminateUserPrompt.id ? "Terminating..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showExtendSitewidePrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="extend-sitewide-title">
+            <h3 id="extend-sitewide-title" className="confirmation-dialog-title tone-warning">
+              <CalendarPlus size={20} /> Extend Sitewide Trial
+            </h3>
+            <p className="confirmation-dialog-copy">
+              Are you sure you want to extend the free trial for ALL users to {sitewideEndDate}?
+            </p>
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => setShowExtendSitewidePrompt(false)}
+                className="confirmation-dialog-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmExtendSitewide()}
+                disabled={isSitewideBusy}
+                className="confirmation-dialog-button tone-warning"
+              >
+                {isSitewideBusy ? "Extending..." : "Confirm Extension"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showTerminateSitewidePrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="terminate-sitewide-title">
+            <h3 id="terminate-sitewide-title" className="confirmation-dialog-title tone-danger">
+              <Ban size={20} /> Terminate All Trials
+            </h3>
+            <p className="confirmation-dialog-copy">
+              Terminate free trial for ALL users immediately? Trial-backed listings will expire.
+            </p>
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => setShowTerminateSitewidePrompt(false)}
+                className="confirmation-dialog-button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmTerminateSitewide()}
+                disabled={isSitewideBusy}
+                className="confirmation-dialog-button tone-danger"
+              >
+                {isSitewideBusy ? "Terminating..." : "Confirm Termination"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </AdminSection>
   );
 }

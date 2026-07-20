@@ -65,6 +65,8 @@ import {
   getUserProfile,
   extendUserTrial,
   terminateUserTrial,
+  extendSitewideTrial,
+  terminateSitewideTrial,
   updateOrderStatus,
   updateSettings,
   updateListingCheckoutDraft,
@@ -436,6 +438,30 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, user ? 200 : 404, user ?? { error: "User not found" });
       return true;
     }
+
+    if (path === "/api/v1/admin/sitewide-trial" && request.method === "PATCH") {
+      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const endsAtValue = typeof body.endsAt === "string" ? body.endsAt : "";
+      const endsAt = new Date(endsAtValue);
+      try {
+        await extendSitewideTrial(endsAt);
+        sendJson(response, 200, { success: true });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to extend sitewide trial" });
+      }
+      return true;
+    }
+
+    if (path === "/api/v1/admin/sitewide-trial" && request.method === "DELETE") {
+      try {
+        await terminateSitewideTrial();
+        sendJson(response, 200, { success: true });
+      } catch (error) {
+        sendJson(response, 500, { error: "Unable to terminate sitewide trial" });
+      }
+      return true;
+    }
+
 
     if (request.method === "GET" && path === "/api/v1/admin/sellers") {
       sendJson(response, 200, await getAllSellers());
