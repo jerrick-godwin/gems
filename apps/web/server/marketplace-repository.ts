@@ -796,6 +796,8 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
     rejectionReason: (row as any).rejectionReason ?? undefined,
     publishedAt: row.publishedAt instanceof Date ? row.publishedAt.toISOString() : (row.publishedAt as string | undefined),
     expiresAt: row.expiresAt instanceof Date ? row.expiresAt.toISOString() : (row.expiresAt as string | undefined),
+    createdAt: (row as any).createdAt instanceof Date ? (row as any).createdAt.toISOString() : ((row as any).createdAt as string | undefined),
+    updatedAt: (row as any).updatedAt instanceof Date ? (row as any).updatedAt.toISOString() : ((row as any).updatedAt as string | undefined),
     attributes: row.attributes as any,
     media: media as any,
     promoted: Array.from(activePromotions),
