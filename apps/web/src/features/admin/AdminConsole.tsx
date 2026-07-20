@@ -61,7 +61,10 @@ export function AdminConsole({
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
 }) {
-  const pending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
+  const allPending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
+  const paidPending = allPending.filter((listing) => listing.subscription?.status === "active");
+  const unpaidPending = allPending.filter((listing) => listing.subscription?.status !== "active");
+  const pending = paidPending; // Legacy naming for backwards compatibility
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
   const successfulPayments = snapshot.payments.filter((payment) => payment.status === "succeeded");
@@ -70,6 +73,7 @@ export function AdminConsole({
   const expiredTrials = snapshot.users.filter((user) => user.trial?.status === "expired").length;
   const terminatedTrials = snapshot.users.filter((user) => user.trial?.status === "terminated").length;
   const [reviewSearch, setReviewSearch] = useState("");
+  const [pendingPaymentSearch, setPendingPaymentSearch] = useState("");
   const [reportSearch, setReportSearch] = useState("");
   const [activeListingSearch, setActiveListingSearch] = useState("");
   const [rejectedListingSearch, setRejectedListingSearch] = useState("");
@@ -78,7 +82,8 @@ export function AdminConsole({
   const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
   const rejectedListings = allListings.filter((listing) => listing.status === "rejected" || listing.moderationStatus === "rejected");
   const archivedListings = allListings.filter((listing) => listing.status === "expired" || listing.status === "paused");
-  const filteredPending = pending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
+  const filteredPending = paidPending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
+  const filteredUnpaidPending = unpaidPending.filter((listing) => matchesListingSearch(listing, pendingPaymentSearch, snapshot));
   const filteredReports = openReports.filter((report) => matchesReportSearch(report, reportSearch, snapshot));
   const filteredActiveListings = snapshot.liveListings.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
   const filteredRejectedListings = rejectedListings.filter((listing) => matchesListingSearch(listing, rejectedListingSearch, snapshot));
@@ -117,7 +122,7 @@ export function AdminConsole({
       <AdminNavigation
         activeView={activeView}
         onSelect={selectView}
-        moderationCount={pending.length + openReports.length}
+        moderationCount={allPending.length + openReports.length}
         listingCount={allListings.length}
         userCount={snapshot.users.length}
         paymentCount={pendingPayments.length}
@@ -137,7 +142,7 @@ export function AdminConsole({
 
         {activeView === "overview" && (
           <AdminOverview
-            pendingReviews={pending.length}
+            pendingReviews={allPending.length}
             openReports={openReports.length}
             checkedCertificates={checkedCertificates}
             paidSubscriptions={successfulPayments.length}
@@ -152,13 +157,14 @@ export function AdminConsole({
         {activeView === "moderation" && (
           <div className="admin-console-stack">
             <div className="metric-grid admin-view-metrics">
-              <Metric icon={ClipboardCheck} label="Queued listings" value={String(pending.length)} accent="var(--gold)" />
+              <Metric icon={ClipboardCheck} label="Queued listings" value={String(paidPending.length)} accent="var(--gold)" />
+              <Metric icon={CreditCard} label="Pending payment" value={String(unpaidPending.length)} accent="var(--muted)" />
               <Metric icon={Flag} label="Open reports" value={String(openReports.length)} accent="var(--danger)" />
               <Metric icon={BadgeCheck} label="Checked certs" value={String(checkedCertificates)} accent="var(--emerald)" />
             </div>
             <AdminSection
-              title="Review queue"
-              totalCount={pending.length}
+              title="Review Queue"
+              totalCount={paidPending.length}
               visibleCount={filteredPending.length}
               searchValue={reviewSearch}
               onSearchChange={setReviewSearch}
@@ -167,6 +173,18 @@ export function AdminConsole({
               noMatchesMessage="No queued listings match your search."
             >
               {filteredPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
+            </AdminSection>
+            <AdminSection
+              title="Pending Payment"
+              totalCount={unpaidPending.length}
+              visibleCount={filteredUnpaidPending.length}
+              searchValue={pendingPaymentSearch}
+              onSearchChange={setPendingPaymentSearch}
+              searchPlaceholder="Search unpaid listings"
+              emptyMessage="No listings pending payment."
+              noMatchesMessage="No unpaid listings match your search."
+            >
+              {filteredUnpaidPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
             </AdminSection>
             <AdminSection
               title="Reports"

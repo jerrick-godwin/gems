@@ -2442,7 +2442,7 @@ async function refreshTrialBackedListings(userId: string, expiresAt: Date) {
       updatedAt: now
     }).where(and(eq(listingSubscriptions.userId, userId), eq(listingSubscriptions.source, "trial")));
     const listingUpdate = nextStatus === "active"
-      ? { status: "pending_review" as const, moderationStatus: "queued" as const, expiresAt, updatedAt: now }
+      ? { status: sql<Listing["status"]>`CASE WHEN moderation_status = 'approved' THEN 'live' WHEN moderation_status = 'rejected' THEN 'rejected' ELSE 'pending_review' END`, expiresAt, updatedAt: now }
       : { status: "expired" as const, expiresAt, updatedAt: now };
     await db.update(listings).set(listingUpdate).where(inArray(listings.id, listingIds));
     return;
@@ -2457,8 +2457,7 @@ async function refreshTrialBackedListings(userId: string, expiresAt: Date) {
     subscription.updatedAt = now.toISOString();
     const listing = state.database.listings.find((item) => item.id === subscription.listingId);
     if (listing) {
-      listing.status = nextStatus === "active" ? "pending_review" : "expired";
-      if (nextStatus === "active") listing.moderationStatus = "queued";
+      listing.status = nextStatus === "active" ? (listing.moderationStatus === "approved" ? "live" : listing.moderationStatus === "rejected" ? "rejected" : "pending_review") : "expired";
       listing.expiresAt = expiresAt.toISOString();
     }
   }
@@ -2514,7 +2513,7 @@ async function refreshSitewideTrialBackedListings(expiresAt: Date) {
     }).where(eq(listingSubscriptions.source, "trial"));
     
     const listingUpdate = nextStatus === "active"
-      ? { status: "pending_review" as const, moderationStatus: "queued" as const, expiresAt, updatedAt: now }
+      ? { status: sql<Listing["status"]>`CASE WHEN moderation_status = 'approved' THEN 'live' WHEN moderation_status = 'rejected' THEN 'rejected' ELSE 'pending_review' END`, expiresAt, updatedAt: now }
       : { status: "expired" as const, expiresAt, updatedAt: now };
     
     if (listingIds.length > 0) {
@@ -2532,8 +2531,7 @@ async function refreshSitewideTrialBackedListings(expiresAt: Date) {
     subscription.updatedAt = now.toISOString();
     const listing = state.database.listings.find((item) => item.id === subscription.listingId);
     if (listing) {
-      listing.status = nextStatus === "active" ? "pending_review" : "expired";
-      if (nextStatus === "active") listing.moderationStatus = "queued";
+      listing.status = nextStatus === "active" ? (listing.moderationStatus === "approved" ? "live" : listing.moderationStatus === "rejected" ? "rejected" : "pending_review") : "expired";
       listing.expiresAt = expiresAt.toISOString();
     }
   }
