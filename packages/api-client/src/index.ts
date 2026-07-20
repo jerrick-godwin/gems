@@ -556,7 +556,21 @@ export class GemsAdminApiClient {
     if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to update campaign");
     return response.json() as Promise<Listing>;
   }
+
+  async impersonateUser(token: string, uid: string): Promise<{ customToken: string }> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${uid}/impersonate`, {
+      method: "POST",
+      headers: adminHeaders(token)
+    });
+    if (!response.ok) {
+      if (response.status === 401) throw new Error("Admin session expired");
+      if (response.status === 404) throw new Error("User not found");
+      throw new Error("Unable to start impersonation");
+    }
+    return response.json() as Promise<{ customToken: string }>;
+  }
 }
+
 
 function adminHeaders(token: string) {
   return {

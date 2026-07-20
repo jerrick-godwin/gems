@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, signInWithEmailAndPassword, updateProfile, type Auth, type User } from "firebase/auth";
+import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, signInWithEmailAndPassword, signInWithCustomToken, updateProfile, type Auth, type User } from "firebase/auth";
 
 export interface MarketplaceAuthUser {
   uid: string;
@@ -204,6 +204,11 @@ class MarketplaceAuthClient {
 
     // Local dev fallback
     console.info("Simulated password reset for code:", code);
+  }
+
+  async signInWithCustomToken(customToken: string) {
+    if (!this.auth) throw createMissingConfigError();
+    await signInWithCustomToken(this.auth, customToken);
   }
 
   async signOut() {

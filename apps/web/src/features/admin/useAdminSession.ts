@@ -46,8 +46,36 @@ export function useAdminSession(api: GemsAdminApiClient) {
   useEffect(() => {
     if (!auth) return undefined;
 
+    // Force-refresh the token whenever this effect runs (on mount) or the tab
+    // regains visibility. This prevents stale tokens after the tab has been
+    // idle for longer than Firebase's 1-hour token TTL.
+    const forceRefreshToken = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const nextToken = await user.getIdToken(/* forceRefresh */ true);
+        window.localStorage.setItem(tokenStorageKey, nextToken);
+        setToken(nextToken);
+      } catch {
+        // If the refresh fails (e.g. network offline), let the next API call
+        // surface the error naturally — don't clear the session preemptively.
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void forceRefreshToken();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Eagerly refresh on mount so we never send an already-expired cached token.
+    void forceRefreshToken();
+
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
       if (user) {
+        // Firebase fires this proactively ~5 min before expiry when the tab is active.
         const nextToken = await user.getIdToken();
         window.localStorage.setItem(tokenStorageKey, nextToken);
         setToken(nextToken);
@@ -55,7 +83,11 @@ export function useAdminSession(api: GemsAdminApiClient) {
         clearAdminSession(setToken);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {

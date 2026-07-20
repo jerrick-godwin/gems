@@ -10,6 +10,7 @@ import {
   Flag,
   Gem,
   LayoutDashboard,
+  LogIn,
   PackageCheck,
   Search,
   ShieldCheck,
@@ -27,6 +28,7 @@ import { publicErrorMessage } from "../../shared/helpers";
 import { ActiveListingRow } from "./ActiveListingRow";
 import { ReportRow } from "./ReportRow";
 import { ReviewRow } from "./ReviewRow";
+import { setImpersonationInfo } from "./ImpersonationBanner";
 
 type AdminView = "overview" | "moderation" | "listings" | "users" | "payments";
 
@@ -631,6 +633,9 @@ function UserTrialsPanel({
   const [showTerminateUserPrompt, setShowTerminateUserPrompt] = useState<User | null>(null);
   const [showExtendSitewidePrompt, setShowExtendSitewidePrompt] = useState(false);
   const [showTerminateSitewidePrompt, setShowTerminateSitewidePrompt] = useState(false);
+  const [showImpersonatePrompt, setShowImpersonatePrompt] = useState<User | null>(null);
+  const [impersonateBusy, setImpersonateBusy] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
 
   const filteredUsers = users.filter((user) => matchesUserSearch(user, search));
 
@@ -665,6 +670,34 @@ function UserTrialsPanel({
 
   const handleTerminate = (user: User) => {
     setShowTerminateUserPrompt(user);
+  };
+
+  const handleImpersonate = (user: User) => {
+    setShowImpersonatePrompt(user);
+    setImpersonateError(null);
+  };
+
+  const confirmImpersonate = async (user: User) => {
+    setImpersonateBusy(true);
+    setImpersonateError(null);
+    try {
+      const { customToken } = await api.impersonateUser(token, user.id);
+      setImpersonationInfo({ uid: user.id, email: user.email });
+      // Sign in with the custom token in the new tab via localStorage to avoid
+      // cross-tab sessionStorage cloning issues. The new tab picks up the key
+      // and signs in, immediately removing it from localStorage.
+      try {
+        window.localStorage.setItem("gems-pending-impersonation-token", customToken);
+      } catch {
+        // localStorage write failure shouldn't block the flow
+      }
+      window.open("/", "_blank");
+      setShowImpersonatePrompt(null);
+    } catch (error) {
+      setImpersonateError(error instanceof Error ? error.message : "Unable to start impersonation");
+    } finally {
+      setImpersonateBusy(false);
+    }
   };
 
   const handleExtendSitewide = () => {
@@ -770,6 +803,9 @@ function UserTrialsPanel({
                   <button type="button" className="active-listing-action danger" disabled={busy || trial?.status === "terminated"} onClick={() => void handleTerminate(user)}>
                     <Ban size={16} /> Terminate
                   </button>
+                  <button type="button" className="active-listing-action" disabled={busy} onClick={() => handleImpersonate(user)} title="Sign in as this user in a new tab">
+                    <LogIn size={16} /> Login as User
+                  </button>
                 </div>
               </div>
             );
@@ -856,6 +892,41 @@ function UserTrialsPanel({
                 className="confirmation-dialog-button tone-danger"
               >
                 {isSitewideBusy ? "Terminating..." : "Confirm Termination"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showImpersonatePrompt && createPortal(
+        <div className="modal-overlay modal-overlay--priority" role="presentation">
+          <div className="confirmation-dialog card card--surface" role="dialog" aria-modal="true" aria-labelledby="impersonate-title">
+            <h3 id="impersonate-title" className="confirmation-dialog-title" style={{ color: "var(--gold)" }}>
+              <LogIn size={20} /> Sign in as User
+            </h3>
+            <p className="confirmation-dialog-copy">
+              You will be signed in as <strong>{showImpersonatePrompt.name || showImpersonatePrompt.email}</strong> ({showImpersonatePrompt.email}) in a new tab.
+              The marketplace will open with full access as this user. An audit log entry will be recorded.
+            </p>
+            {impersonateError && (
+              <p style={{ color: "var(--danger)", fontSize: "0.875rem", margin: "0 0 0.75rem" }}>{impersonateError}</p>
+            )}
+            <div className="confirmation-dialog-actions">
+              <button
+                onClick={() => { setShowImpersonatePrompt(null); setImpersonateError(null); }}
+                className="confirmation-dialog-button"
+                disabled={impersonateBusy}
+              >
+                Cancel
+              </button>
+              <button
+                id="confirm-impersonate-btn"
+                onClick={() => void confirmImpersonate(showImpersonatePrompt)}
+                disabled={impersonateBusy}
+                className="confirmation-dialog-button tone-warning"
+              >
+                {impersonateBusy ? "Opening..." : "Open as User"}
               </button>
             </div>
           </div>

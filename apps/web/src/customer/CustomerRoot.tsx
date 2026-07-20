@@ -4,6 +4,7 @@ import type { PublicRouteData } from "../public/types.js";
 import { MarketplaceRoute } from "../features/marketplace/MarketplaceRoute.js";
 import type { AccountSurfaceProps, CustomerAuthState, CustomerNavigationOptions, MarketplaceReferenceState } from "../shared/customer.js";
 import { pathForView, viewFromPathname, type View } from "../shared/types.js";
+import { ImpersonationBanner } from "../features/admin/ImpersonationBanner.js";
 
 type AccountSurfaceModule = { default: ComponentType<AccountSurfaceProps> };
 
@@ -195,7 +196,24 @@ export function CustomerRoot({
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
-    void import("../firebase.js").then(({ authClient }) => {
+    void import("../firebase.js").then(async ({ authClient }) => {
+      if (!active) return;
+
+      // Check for a pending impersonation custom token from the admin panel.
+      // This is written to localStorage by the admin console before opening this tab.
+      const pendingToken = window.localStorage.getItem("gems-pending-impersonation-token");
+      if (pendingToken) {
+        window.localStorage.removeItem("gems-pending-impersonation-token"); // single-use
+        try {
+          await authClient.signInWithCustomToken(pendingToken);
+        } catch {
+          // If sign-in fails, clear the impersonation marker so the banner doesn't appear.
+          import("../features/admin/ImpersonationBanner.js")
+            .then(({ clearImpersonationInfo }) => clearImpersonationInfo())
+            .catch(() => {});
+        }
+      }
+
       if (!active) return;
       unsubscribe = authClient.onAuthStateChanged((user) => {
         if (!active) return;
@@ -259,19 +277,27 @@ export function CustomerRoot({
 
   if (surface === "public" && activePublicRoute) {
     return (
-      <MarketplaceRoute
-        key={`public-${publicRevision}`}
-        initialRoute={activePublicRoute}
-        authState={authState}
-        pendingView={pendingView}
-        onNavigate={navigate}
-        onNavigateIntent={preload}
-        onRouteStateChange={updatePublicRoute}
-        onPublicUrlChange={pushPublicUrl}
-      />
+      <>
+        <ImpersonationBanner />
+        <MarketplaceRoute
+          key={`public-${publicRevision}`}
+          initialRoute={activePublicRoute}
+          authState={authState}
+          pendingView={pendingView}
+          onNavigate={navigate}
+          onNavigateIntent={preload}
+          onRouteStateChange={updatePublicRoute}
+          onPublicUrlChange={pushPublicUrl}
+        />
+      </>
     );
   }
 
   if (!LoadedAccount) return null;
-  return <LoadedAccount view={view} authState={authState} references={references} navigate={navigate} />;
+  return (
+    <>
+      <ImpersonationBanner />
+      <LoadedAccount view={view} authState={authState} references={references} navigate={navigate} />
+    </>
+  );
 }
