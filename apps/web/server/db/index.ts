@@ -13,6 +13,7 @@ if (!connectionString) {
 
 // Disable prefetch as it is not supported for "Transaction" pool mode
 const client = postgres(connectionString || "", { 
+  max: process.env.DB_MAX_CONNECTIONS ? parseInt(process.env.DB_MAX_CONNECTIONS, 10) : (process.env.VERCEL ? 1 : undefined),
   prepare: false,
   onnotice: () => {} 
 });
