@@ -19,6 +19,10 @@
     "test": "npm run test --workspace @gems/schemas && npm run test --workspace @gems/web",
     "typecheck": "npm run typecheck --workspace @gems/web && npm run typecheck --workspace @gems/ui && npm run typecheck --workspace @gems/schemas && npm run typecheck --workspace @gems/api-client"
   },
+  "overrides": {
+    "esbuild": "^0.25.0",
+    "uuid": "^11.1.1"
+  },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "typescript": "^5.5.3"

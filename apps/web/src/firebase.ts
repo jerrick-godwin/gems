@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, signInWithEmailAndPassword, updateProfile, type Auth, type User } from "firebase/auth";
+import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, signInWithEmailAndPassword, signInWithCustomToken, updateProfile, type Auth, type User } from "firebase/auth";
 
 export interface MarketplaceAuthUser {
   uid: string;
@@ -16,13 +16,13 @@ interface LocalStoredUser {
 }
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  apiKey: import.meta.env?.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env?.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env?.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env?.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const requiredFirebaseConfig = [
@@ -36,7 +36,7 @@ function hasConfiguredFirebaseValue(value: unknown) {
 }
 
 const hasPublicFirebaseConfig = requiredFirebaseConfig.every(hasConfiguredFirebaseValue);
-const canUseLocalAuth = import.meta.env.DEV && !hasPublicFirebaseConfig;
+const canUseLocalAuth = import.meta.env?.DEV && !hasPublicFirebaseConfig;
 const localUsersKey = "gems-local-auth-users";
 const localSessionKey = "gems-local-auth-session";
 const localAuthListeners = new Set<(user: MarketplaceAuthUser | null) => void>();
@@ -204,6 +204,11 @@ class MarketplaceAuthClient {
 
     // Local dev fallback
     console.info("Simulated password reset for code:", code);
+  }
+
+  async signInWithCustomToken(customToken: string) {
+    if (!this.auth) throw createMissingConfigError();
+    await signInWithCustomToken(this.auth, customToken);
   }
 
   async signOut() {

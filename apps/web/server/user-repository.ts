@@ -234,6 +234,16 @@ export async function getAllUsers() {
   return (await getMemoryState()).users;
 }
 
+export async function getFirebaseUidForUser(userId: string): Promise<string | null> {
+  if (hasDatabase) {
+    const [row] = await db.select({ firebaseUid: users.firebaseUid }).from(users).where(eq(users.id, userId)).limit(1);
+    return row?.firebaseUid ?? null;
+  }
+  const state = await getMemoryState();
+  const user = state.users.find((u) => u.id === userId);
+  return user?.firebaseUid ?? null;
+}
+
 export async function extendUserTrial(userId: string, endsAt: Date) {
   const now = new Date();
   if (!Number.isFinite(endsAt.getTime())) throw new Error("Valid trial end date is required.");
