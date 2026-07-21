@@ -749,30 +749,31 @@ function UserTrialsPanel({
       emptyMessage="No users found."
       noMatchesMessage="No users match your search."
       summary={(
-        <div className="metric-grid admin-section-metrics">
-          <Metric icon={Clock} label="Active" value={String(activeTrials)} accent="var(--gold)" />
-          <Metric icon={CalendarPlus} label="Expired" value={String(expiredTrials)} accent="var(--muted)" />
-          <Metric icon={Ban} label="Terminated" value={String(terminatedTrials)} accent="var(--danger)" />
-        </div>
+        <>
+          <div className="metric-grid admin-section-metrics">
+            <Metric icon={Clock} label="Active" value={String(activeTrials)} accent="var(--gold)" />
+            <Metric icon={CalendarPlus} label="Expired" value={String(expiredTrials)} accent="var(--muted)" />
+            <Metric icon={Ban} label="Terminated" value={String(terminatedTrials)} accent="var(--danger)" />
+          </div>
+          <div className="admin-sitewide-actions card card--compact">
+            <strong>Sitewide Trial:</strong>
+            <input
+              type="date"
+              value={sitewideEndDate}
+              min={dateInputValue(new Date().toISOString())}
+              onChange={(event) => setSitewideEndDate(event.target.value)}
+              disabled={isSitewideBusy}
+            />
+            <button type="button" className="active-listing-action" disabled={isSitewideBusy || !sitewideEndDate} onClick={() => void handleExtendSitewide()}>
+              <CalendarPlus size={16} /> Extend All
+            </button>
+            <button type="button" className="active-listing-action danger" disabled={isSitewideBusy} onClick={() => void handleTerminateSitewide()}>
+              <Ban size={16} /> Terminate All
+            </button>
+          </div>
+        </>
       )}
     >
-      <div className="admin-sitewide-actions card card--compact" style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem", alignItems: "center", background: "var(--background-secondary)" }}>
-        <strong>Sitewide Trial:</strong>
-        <input
-          type="date"
-          value={sitewideEndDate}
-          min={dateInputValue(new Date().toISOString())}
-          onChange={(event) => setSitewideEndDate(event.target.value)}
-          disabled={isSitewideBusy}
-          style={{ padding: "0.25rem 0.5rem" }}
-        />
-        <button type="button" className="active-listing-action" disabled={isSitewideBusy || !sitewideEndDate} onClick={() => void handleExtendSitewide()}>
-          <CalendarPlus size={16} /> Extend All
-        </button>
-        <button type="button" className="active-listing-action danger" disabled={isSitewideBusy} onClick={() => void handleTerminateSitewide()}>
-          <Ban size={16} /> Terminate All
-        </button>
-      </div>
 
       <div className="admin-trial-list">
           {filteredUsers.map((user) => {

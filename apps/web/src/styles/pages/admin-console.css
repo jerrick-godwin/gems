@@ -1368,6 +1368,24 @@
   margin-bottom: 16px;
 }
 
+.admin-sitewide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  background: var(--background-secondary);
+}
+
+.admin-sitewide-actions input {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  height: 38px;
+}
+
 .admin-trial-list {
   gap: 12px;
 }
@@ -1416,11 +1434,13 @@
 }
 
 .admin-trial-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.admin-trial-actions > * {
+  width: 100%;
 }
 
 .admin-trial-actions input {
