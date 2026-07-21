@@ -111,6 +111,15 @@ export async function generatePasswordResetLink(email: string, redirectUrl: stri
   return await getAuth(firebaseApp).generatePasswordResetLink(email, actionCodeSettings);
 }
 
+export async function generateImpersonationToken(firebaseUid: string): Promise<string> {
+  if (!firebaseApp) {
+    throw new Error("Authentication service is not initialized.");
+  }
+  // createCustomToken signs a JWT for this uid using the service account.
+  // Tokens expire in 1 hour and are single-use once exchanged for an ID token.
+  return getAuth(firebaseApp).createCustomToken(firebaseUid, { impersonated: true });
+}
+
 export async function getActiveAdminEmails(): Promise<string[]> {
   if (!adminFirebaseApp) {
     console.warn("Admin authentication service is not initialized, cannot fetch admin emails.");

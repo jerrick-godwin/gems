@@ -33,7 +33,7 @@ import {
 } from "./marketplace-repository.js";
 import { broadcastMarketplaceInvalidation, loadMarketplacePage, pageSizeFromCookie, parseMarketplaceFilters, prewarmMarketplacePages, startMarketplaceInvalidationListener } from "./public-marketplace.js";
 import { publicAssetsFromViteManifest, type ViteManifestEntry } from "./public-assets.js";
-import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken, generatePasswordResetLink } from "./auth.js";
+import { readBearerToken, verifyFirebaseIdToken, verifyAdminFirebaseIdToken, generatePasswordResetLink, generateImpersonationToken } from "./auth.js";
 import { sendPasswordResetEmail } from "./email.js";
 import {
   createListingPaymentIntent,
@@ -74,6 +74,7 @@ import {
   updateUserProfile,
   DuplicatePhoneNumberError,
   getAllUsers,
+  getFirebaseUidForUser,
   removeUserListing,
   updateUserListing
 } from "./user-repository.js";
@@ -462,6 +463,26 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
+    const impersonateMatch = path.match(/^\/api\/v1\/admin\/users\/([^/]+)\/impersonate$/);
+    if (request.method === "POST" && impersonateMatch) {
+      const internalUserId = impersonateMatch[1];
+      try {
+        // Resolve the Firebase UID from the internal DB user ID.
+        // The admin snapshot uses internal UUIDs; createCustomToken needs the Firebase UID.
+        const firebaseUid = await getFirebaseUidForUser(internalUserId);
+        if (!firebaseUid) {
+          sendJson(response, 404, { error: "User not found or has no linked Firebase account" });
+          return true;
+        }
+        const customToken = await generateImpersonationToken(firebaseUid);
+        console.log("[admin impersonation] %s → uid=%s firebase=%s", admin.email, internalUserId, firebaseUid);
+        sendJson(response, 200, { customToken });
+      } catch (error) {
+        console.error("[admin impersonation] Failed for userId=%s:", internalUserId, error);
+        sendJson(response, 500, { error: "Unable to generate impersonation token" });
+      }
+      return true;
+    }
 
     if (request.method === "GET" && path === "/api/v1/admin/sellers") {
       sendJson(response, 200, await getAllSellers());
