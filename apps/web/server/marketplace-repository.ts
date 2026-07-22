@@ -597,26 +597,62 @@ export async function getAllSellers() {
 
 export async function updateListingModeration(listingId: string, decision: "approve" | "reject", reason?: string) {
   const now = new Date();
-  const nextValues = decision === "approve"
-    ? {
-        status: "live" as const,
-        moderationStatus: "approved" as const,
-        publishedAt: now,
-        updatedAt: now
-      }
-    : {
-        status: "rejected" as const,
-        moderationStatus: "rejected" as const,
-        rejectionReason: reason,
-        publishedAt: null,
-        expiresAt: null,
-        updatedAt: now
-      };
-
+  
   if (hasDatabase) {
     if (decision === "reject") {
       await cancelListingSubscriptionsForListing(listingId);
     }
+    
+    let nextExpiresAt: Date | undefined;
+    
+    if (decision === "approve") {
+      // Find the most recent subscription for this listing, even if it was marked as expired while waiting in queue
+      const latestSubResult = await db.select().from(listingSubscriptions)
+        .where(eq(listingSubscriptions.listingId, listingId))
+        .orderBy(desc(listingSubscriptions.createdAt))
+        .limit(1);
+        
+      const latestSub = latestSubResult[0];
+      
+      if (latestSub) {
+        if (latestSub.startsAt && latestSub.expiresAt && latestSub.startsAt < now) {
+          const duration = latestSub.expiresAt.getTime() - latestSub.startsAt.getTime();
+          const newStartsAt = now;
+          const newExpiresAt = new Date(now.getTime() + duration);
+          
+          await db.update(listingSubscriptions)
+            .set({ 
+              status: "active", 
+              startsAt: newStartsAt, 
+              expiresAt: newExpiresAt, 
+              updatedAt: now 
+            })
+            .where(eq(listingSubscriptions.id, latestSub.id));
+            
+          nextExpiresAt = newExpiresAt;
+        } else if (latestSub.expiresAt) {
+          nextExpiresAt = latestSub.expiresAt;
+        }
+      }
+    }
+
+    const nextValues = decision === "approve"
+      ? {
+          status: "live" as const,
+          moderationStatus: "approved" as const,
+          publishedAt: now,
+          ...(nextExpiresAt ? { expiresAt: nextExpiresAt } : {}),
+          updatedAt: now
+        }
+      : {
+          status: "rejected" as const,
+          moderationStatus: "rejected" as const,
+          rejectionReason: reason,
+          publishedAt: null,
+          expiresAt: null,
+          updatedAt: now
+        };
+
     const [updated] = await db.update(listingTable).set(nextValues).where(eq(listingTable.id, listingId)).returning();
     return updated ? toListing(updated) : undefined;
   }
@@ -625,9 +661,34 @@ export async function updateListingModeration(listingId: string, decision: "appr
   const listing = database.listings.find((item) => item.id === listingId);
   if (!listing) return undefined;
   if (decision === "approve") {
+    const state = await import("./user-repository.js").then(m => m.getMemoryState());
+    
+    // Find the most recent subscription
+    const subs = state.listingSubscriptions
+      .filter(s => s.listingId === listingId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+    const latestSub = subs[0];
+    let nextExpiresAt: Date | undefined;
+    
+    if (latestSub) {
+      const starts = new Date(latestSub.startsAt);
+      const expires = new Date(latestSub.expiresAt);
+      if (starts < now) {
+        const duration = expires.getTime() - starts.getTime();
+        latestSub.status = "active";
+        latestSub.startsAt = now.toISOString();
+        latestSub.expiresAt = new Date(now.getTime() + duration).toISOString();
+        nextExpiresAt = new Date(latestSub.expiresAt);
+      } else {
+        nextExpiresAt = expires;
+      }
+    }
+    
     listing.status = "live";
     listing.moderationStatus = "approved";
     listing.publishedAt = now.toISOString();
+    if (nextExpiresAt) listing.expiresAt = nextExpiresAt.toISOString();
   } else {
     await cancelListingSubscriptionsForListing(listingId);
     listing.status = "rejected";

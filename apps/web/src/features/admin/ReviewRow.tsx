@@ -101,7 +101,12 @@ export function ReviewRow({
         <button className="review-row-action" onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide Details" : "View Details"}
         </button>
-        <button className="review-row-action tone-success" disabled={moderationAction.busy || busy !== null || !isQueued} onClick={() => setShowApprovePrompt(true)}>
+        <button 
+          className="review-row-action tone-success" 
+          disabled={moderationAction.busy || busy !== null || !isQueued || listing.subscription?.status !== "active"} 
+          onClick={() => setShowApprovePrompt(true)}
+          title={listing.subscription?.status !== "active" ? "Cannot approve unpaid listing" : undefined}
+        >
           {busy === "approve" ? "Approving..." : "Approve"}
         </button>
         <button className="review-row-action tone-danger" disabled={moderationAction.busy || busy !== null} onClick={() => setShowRejectPrompt(true)}>

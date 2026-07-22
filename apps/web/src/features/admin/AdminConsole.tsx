@@ -96,7 +96,10 @@ export function AdminConsole({
       const updated = await api.moderateListing(token, listingId, decision, reason);
       setSnapshot({
         ...snapshot,
-        listings: snapshot.listings.map((listing) => listing.id === updated.id ? updated : listing)
+        listings: snapshot.listings.map((listing) => listing.id === updated.id ? updated : listing),
+        liveListings: decision === "approve"
+          ? [updated, ...snapshot.liveListings.filter(l => l.id !== updated.id)]
+          : snapshot.liveListings.filter(l => l.id !== updated.id)
       });
       setLoadError(null);
     } catch (error) {
