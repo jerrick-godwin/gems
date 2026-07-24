@@ -1428,3 +1428,10 @@
     justify-content: flex-end;
   }
 }
+
+.adsense-unit-container {
+  min-height: 100px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

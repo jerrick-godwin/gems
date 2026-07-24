@@ -30,6 +30,16 @@ export function AdSenseUnit({
 
   useEffect(() => {
     if (pushedRef.current) return;
+
+    // Dynamically load AdSense script if not present
+    if (!document.querySelector('script[src*="adsbygoogle.js"]')) {
+      const script = document.createElement('script');
+      script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${client}`;
+      script.async = true;
+      script.crossOrigin = "anonymous";
+      document.head.appendChild(script);
+    }
+
     try {
       if (adRef.current && adRef.current.children.length === 0) {
         (window.adsbygoogle = window.adsbygoogle || []).push({});
@@ -38,7 +48,7 @@ export function AdSenseUnit({
     } catch {
       // Ignore adsbygoogle errors (e.g. adblocker active or missing slot)
     }
-  }, []);
+  }, [client]);
 
   return (
     <div className={`adsense-unit-container ${className}`.trim()}>
