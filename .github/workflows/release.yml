@@ -31,11 +31,11 @@ jobs:
       - name: Run Typecheck
         run: npm run typecheck
 
-      - name: Run Unit Tests
-        run: npm test
-
       - name: Build Web Application
         run: npm run build
+
+      - name: Run Unit Tests
+        run: npm test
 
       - name: Package Release Artifacts
         run: |
