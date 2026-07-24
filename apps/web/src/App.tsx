@@ -44,17 +44,17 @@ const viewSeo: Record<View, { title: string; description: string; robots: "index
   terms: {
     title: "Terms and Conditions | Gemslanka.lk",
     description: "Read the Gemslanka.lk terms for gemstone listing services, seller responsibilities, subscriptions, and marketplace use.",
-    robots: "noindex,follow"
+    robots: "index,follow"
   },
   privacy: {
     title: "Privacy Policy | Gemslanka.lk",
     description: "Learn how Gemslanka.lk handles account, listing, payment metadata, moderation, and support information.",
-    robots: "noindex,follow"
+    robots: "index,follow"
   },
   refund: {
     title: "Refund Policy | Gemslanka.lk",
     description: "Review the Gemslanka.lk refund policy for listing subscriptions, renewals, and extra-photo fees.",
-    robots: "noindex,follow"
+    robots: "index,follow"
   },
   login: {
     title: "Sign In | Gemslanka.lk",

@@ -24,9 +24,19 @@ export function buildSitemapXml(siteUrl: string, listings: SitemapListing[], gem
   const staticDates = new Map<string, string>([
     ["/", latestListingDate],
     ["/contact-us", "2026-06-11"],
+    ["/privacy-policy", "2026-06-11"],
+    ["/terms-and-conditions", "2026-06-11"],
+    ["/refund-policy", "2026-06-11"],
     ...Object.values(seoLandingPages).map((page) => [page.path, page.updatedAt] as [string, string])
   ]);
-  const indexableStaticPaths = ["/", ...Object.values(seoLandingPages).map((page) => page.path), "/contact-us"];
+  const indexableStaticPaths = [
+    "/",
+    ...Object.values(seoLandingPages).map((page) => page.path),
+    "/contact-us",
+    "/privacy-policy",
+    "/terms-and-conditions",
+    "/refund-policy"
+  ];
   const urls: SitemapUrl[] = indexableStaticPaths.map((path) => ({
     path,
     lastmod: staticDates.get(path) ?? "2026-07-15"
