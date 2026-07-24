@@ -63,7 +63,7 @@ export function CookieConsent({ onNavigate }: CookieConsentProps) {
         <div className="cookie-consent-text">
           <strong className="cookie-consent-title">We value your privacy & preferences</strong>
           <p>
-            Gemslanka uses essential cookies to ensure site functionality, session security, and account features. Third-party partners like Google AdSense also use advertising cookies to personalize ads based on past visits. Learn more in our{" "}
+            Gemslanka uses essential cookies to ensure site functionality, session security, and account features. Third-party partners can also use advertising cookies to personalize ads based on past visits. Learn more in our{" "}
             {onNavigate ? (
               <button
                 type="button"
