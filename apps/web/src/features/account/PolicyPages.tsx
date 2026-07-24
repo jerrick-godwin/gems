@@ -63,7 +63,7 @@ export function PrivacyPolicy() {
     <section className="policy-page">
       <div className="section-heading">
         <h1>Privacy Policy</h1>
-        <p>Effective June 11, 2026. This policy explains how gemslanka.lk handles user and listing data.</p>
+        <p>Effective June 11, 2026. This policy explains how gemslanka.lk handles user, listing, and advertising data.</p>
       </div>
       <div className="data-panel policy-content card card--spacious">
         <PolicySection title="Information we collect">
@@ -76,13 +76,16 @@ export function PrivacyPolicy() {
           We use data to operate accounts, publish listings, moderate content, manage free trials, process listing subscriptions, prevent abuse, respond to reports, provide support, and maintain legal or audit records.
         </PolicySection>
         <PolicySection title="Cookies and local storage">
-          The site may use cookies or local storage for authentication, theme preferences, session continuity, security, and marketplace functionality.
+          The site uses cookies and local storage for authentication, theme preferences, session continuity, security, site analytics, and marketplace functionality.
+        </PolicySection>
+        <PolicySection title="Google AdSense and third-party advertising cookies">
+          Third-party vendors, including Google, use cookies to serve ads based on a user's prior visits to gemslanka.lk or other websites. Google's use of advertising cookies enables it and its partners to serve ads to users based on their visit to our site and/or other sites on the Internet. Users may opt out of personalized advertising by visiting <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer">Google Ads Settings</a> or by visiting <a href="https://www.aboutads.info" target="_blank" rel="noopener noreferrer">www.aboutads.info</a>.
         </PolicySection>
         <PolicySection title="Retention and security">
           We retain records as needed for operations, moderation, security, legal compliance, and payment audits. We use reasonable safeguards, but no online service can guarantee absolute security.
         </PolicySection>
         <PolicySection title="User choices">
-          Users can update account information, cancel listing auto-renewal, request support, and ask about personal data associated with their account.
+          Users can update account information, manage cookie consent preferences, cancel listing auto-renewal, request support, and ask about personal data associated with their account.
         </PolicySection>
       </div>
     </section>
@@ -120,7 +123,7 @@ function ContactDetail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PolicySection({ title, children }: { title: string; children: string }) {
+function PolicySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="policy-section">
       <h2>{title}</h2>
