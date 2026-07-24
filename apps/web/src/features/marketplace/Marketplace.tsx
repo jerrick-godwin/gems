@@ -97,7 +97,7 @@ export function Marketplace(props: MarketplaceProps) {
                   <Fragment key={`ad-${listing.id}`}>
                     {card}
                     <div className="feed-ad-container" style={{ gridColumn: "1 / -1", padding: "16px 0" }}>
-                      <AdSenseUnit format="fluid" layoutKey="-gw-1+2a-9x+5y" />
+                      <AdSenseUnit format="fluid" layoutKey="-gw-1+2a-9x+5y" slot="TODO_IN_FEED_SLOT_ID" />
                     </div>
                   </Fragment>
                 );
@@ -452,7 +452,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
           )}
         </div>
         <div className="detail-ad-container" style={{ margin: "16px 0", minHeight: "100px" }}>
-          <AdSenseUnit format="auto" />
+          <AdSenseUnit format="auto" slot="TODO_DISPLAY_SLOT_ID" />
         </div>
         <div className="listing-footer">
           <div className="seller-card sleek-seller">
