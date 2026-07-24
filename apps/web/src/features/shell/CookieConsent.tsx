@@ -3,6 +3,12 @@ import type { View } from "../../shared/types";
 
 const CONSENT_KEY = "gemslanka_cookie_consent";
 
+declare global {
+  interface Window {
+    gtag?: (...args: any[]) => void;
+  }
+}
+
 export interface CookieConsentProps {
   onNavigate?: (view: View) => void;
 }
@@ -15,6 +21,16 @@ export function CookieConsent({ onNavigate }: CookieConsentProps) {
       const stored = localStorage.getItem(CONSENT_KEY);
       if (!stored) {
         setVisible(true);
+      } else {
+        const { choice } = JSON.parse(stored);
+        if (choice === "all" && window.gtag) {
+          window.gtag("consent", "update", {
+            ad_storage: "granted",
+            ad_user_data: "granted",
+            ad_personalization: "granted",
+            analytics_storage: "granted",
+          });
+        }
       }
     } catch {
       // LocalStorage access may fail in private window mode or restricted environments
@@ -24,6 +40,15 @@ export function CookieConsent({ onNavigate }: CookieConsentProps) {
   const handleAccept = (choice: "all" | "essential") => {
     try {
       localStorage.setItem(CONSENT_KEY, JSON.stringify({ choice, timestamp: new Date().toISOString() }));
+      
+      if (choice === "all" && window.gtag) {
+        window.gtag("consent", "update", {
+          ad_storage: "granted",
+          ad_user_data: "granted",
+          ad_personalization: "granted",
+          analytics_storage: "granted",
+        });
+      }
     } catch {
       // Ignore storage errors
     }
@@ -55,14 +80,14 @@ export function CookieConsent({ onNavigate }: CookieConsentProps) {
         <div className="cookie-consent-actions">
           <button
             type="button"
-            className="btn btn--secondary btn--sm"
+            className="subtle-action"
             onClick={() => handleAccept("essential")}
           >
             Essential Only
           </button>
           <button
             type="button"
-            className="btn btn--primary btn--sm"
+            className="primary-action"
             onClick={() => handleAccept("all")}
           >
             Accept All
