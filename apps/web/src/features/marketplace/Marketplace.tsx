@@ -1,10 +1,11 @@
 import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, SlidersHorizontal, Star, X, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type CertificateStatus, type Listing, type MarketplacePageSize, type SellerProfile, type Treatment } from "@gems/schemas";
 import { MultiSelectDropdown } from "../../shared/MultiSelectDropdown";
 import { StatusState } from "../../shared/StatusState";
+import { AdSenseUnit } from "../../shared/AdSenseUnit";
 import { publicErrorMessage, formatTimeAgo, formatPostedDate } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
@@ -74,21 +75,35 @@ export function Marketplace(props: MarketplaceProps) {
           </div>
         ) : (
           <div className="listing-list">
-            {props.filteredListings.map((listing, index) => (
-              <ListingCard
-                key={listing.id}
-                listing={listing}
-                gemTypes={props.gemTypes}
-                sellers={props.sellers}
-                selected={props.selectedId === listing.id}
-                eager={index < 4}
-                priority={index === 0}
-                onSelect={() => {
-                  props.setSelectedId(listing.id);
-                  props.onRecordInteraction(listing.id, "view");
-                }}
-              />
-            ))}
+            {props.filteredListings.map((listing, index) => {
+              const card = (
+                <ListingCard
+                  key={listing.id}
+                  listing={listing}
+                  gemTypes={props.gemTypes}
+                  sellers={props.sellers}
+                  selected={props.selectedId === listing.id}
+                  eager={index < 4}
+                  priority={index === 0}
+                  onSelect={() => {
+                    props.setSelectedId(listing.id);
+                    props.onRecordInteraction(listing.id, "view");
+                  }}
+                />
+              );
+
+              if (index > 0 && (index + 4) % 8 === 0) {
+                return (
+                  <Fragment key={`ad-${listing.id}`}>
+                    {card}
+                    <div className="feed-ad-container" style={{ gridColumn: "1 / -1", padding: "16px 0" }}>
+                      <AdSenseUnit format="fluid" layoutKey="-gw-1+2a-9x+5y" />
+                    </div>
+                  </Fragment>
+                );
+              }
+              return card;
+            })}
           </div>
         )}
         {(props.totalPages > 1 || (props.pageSize && props.setPageSize)) && (
@@ -435,6 +450,9 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
               </div>
             </div>
           )}
+        </div>
+        <div className="detail-ad-container" style={{ margin: "16px 0", minHeight: "100px" }}>
+          <AdSenseUnit format="auto" />
         </div>
         <div className="listing-footer">
           <div className="seller-card sleek-seller">

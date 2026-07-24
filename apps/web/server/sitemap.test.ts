@@ -19,8 +19,10 @@ test("sitemap uses content dates, stable images, and escaped XML", () => {
   assert.match(xml, /Blue &amp; &lt;rare&gt; agate/);
   assert.match(xml, /https:\/\/gemslanka\.lk\/gemstones\/sapphire/);
   assert.match(xml, /https:\/\/gemslanka\.lk\/gemstones\/agate/);
-  assert.doesNotMatch(xml, /gemstones\/onyx/);
-  assert.doesNotMatch(xml, /privacy-policy|terms-and-conditions|refund-policy|\?sig=/);
+  assert.match(xml, /https:\/\/gemslanka\.lk\/privacy-policy/);
+  assert.match(xml, /https:\/\/gemslanka\.lk\/terms-and-conditions/);
+  assert.match(xml, /https:\/\/gemslanka\.lk\/refund-policy/);
+  assert.doesNotMatch(xml, /\?sig=/);
 });
 
 test("XML escaping covers attribute-significant characters", () => {

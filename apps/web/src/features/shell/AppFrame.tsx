@@ -5,6 +5,7 @@ import type { User as AccountUser } from "@gems/schemas";
 import type { MarketplaceAuthUser } from "../../firebase";
 import { footerDescription, seoLandingPages } from "../../shared/seo";
 import { pathForView, type View } from "../../shared/types";
+import { CookieConsent } from "./CookieConsent";
 import { getTrialMenuLabel, getTrialMenuTone } from "../account/TrialStatusPanel";
 
 function isClientNavigationClick(event: MouseEvent<HTMLAnchorElement>) {
@@ -473,6 +474,7 @@ export function AppFrame({
           <p className="footer-copy">&copy; {new Date().getFullYear()} gemslanka.lk. All rights reserved.</p>
         </div>
       </footer>
+      <CookieConsent onNavigate={setView} />
     </div>
   );
 }

@@ -152,7 +152,6 @@ export function metadataFor(props: PublicRenderPayload) {
     description = props.route.page === "contact"
       ? "Contact Gemslanka for support with gemstone listings, marketplace accounts, and listing services."
       : `${labels[props.route.page]} for the Gemslanka gemstone listing marketplace.`;
-    if (props.route.page !== "contact") robots = "noindex,follow";
   } else {
     title = `${props.route.status} | Gemslanka`;
     robots = "noindex,follow";

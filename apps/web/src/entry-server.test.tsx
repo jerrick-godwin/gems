@@ -393,8 +393,8 @@ test("category metadata indexes useful clean pages and noindexes filtered or thi
   assert.equal(thin.robots, "noindex,follow");
 });
 
-test("legal policy pages are noindex while contact remains indexable", () => {
+test("legal policy pages and contact remain indexable for search and AdSense review", () => {
   const base = { origin: "https://gemslanka.lk", theme: "light" as const, year: 2026, assets: { clientEntry: "/public.js", stylesheets: [], modulePreloads: [] } };
-  assert.equal(metadataFor({ ...base, url: "/privacy-policy", route: { kind: "content", page: "privacy" } }).robots, "noindex,follow");
+  assert.equal(metadataFor({ ...base, url: "/privacy-policy", route: { kind: "content", page: "privacy" } }).robots, "index,follow,max-image-preview:large");
   assert.equal(metadataFor({ ...base, url: "/contact-us", route: { kind: "content", page: "contact" } }).robots, "index,follow,max-image-preview:large");
 });
