@@ -523,6 +523,9 @@ async function populateListingSubscriptions(listings: Listing[]) {
           expiresAt: sub.expiresAt?.toISOString(),
           cancelledAt: sub.cancelledAt?.toISOString()
         };
+        if (sub.status === "expired") {
+          listing.status = "expired";
+        }
       }
     }
   }
@@ -869,6 +872,11 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
     thumbnailUrl: m.thumbnailKey ? normalizeListingMediaUrl(m.thumbnailKey, m.thumbnailKey) : m.thumbnailUrl
   })) : [];
 
+  const expiresAt = row.expiresAt instanceof Date ? row.expiresAt.toISOString() : (row.expiresAt as string | undefined);
+  const isExpired = expiresAt ? new Date(expiresAt) <= new Date() : false;
+  const rawStatus = row.status as any;
+  const status = isExpired ? "expired" : rawStatus;
+
   return {
     id: row.id,
     sellerId: row.sellerId,
@@ -878,11 +886,11 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
     priceLkr: row.priceLkr,
     negotiable: row.negotiable,
     location: row.location,
-    status: row.status as any,
+    status,
     moderationStatus: row.moderationStatus as any,
     rejectionReason: (row as any).rejectionReason ?? undefined,
     publishedAt: row.publishedAt instanceof Date ? row.publishedAt.toISOString() : (row.publishedAt as string | undefined),
-    expiresAt: row.expiresAt instanceof Date ? row.expiresAt.toISOString() : (row.expiresAt as string | undefined),
+    expiresAt,
     createdAt: (row as any).createdAt instanceof Date ? (row as any).createdAt.toISOString() : ((row as any).createdAt as string | undefined),
     updatedAt: (row as any).updatedAt instanceof Date ? (row as any).updatedAt.toISOString() : ((row as any).updatedAt as string | undefined),
     attributes: row.attributes as any,

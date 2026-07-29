@@ -95,6 +95,10 @@ export function ActiveListingRow({
   const hasActiveCampaign = (listing.campaigns || []).some((campaign) => campaign.status === "active" && new Date(campaign.endsAt) > new Date());
   const canViewReceipt = Boolean(receiptPayment);
 
+  const isExpired = listing.status === "expired" || (listing.expiresAt && new Date(listing.expiresAt) <= new Date()) || listing.subscription?.status === "expired";
+  const isRejected = listing.status === "rejected" || listing.moderationStatus === "rejected";
+  const displayStatus = isExpired ? "expired" : listing.status.replace("_", " ");
+
   return (
     <>
       <div className="active-listing-row">
@@ -106,7 +110,7 @@ export function ActiveListingRow({
               {listing.attributes.carat} ct · {formatLkr(listing.priceLkr)} · {listing.location}
             </span>
             <div className="active-listing-badges">
-              <span className="active-listing-pill">{listing.status.replace("_", " ")}</span>
+              <span className="active-listing-pill">{displayStatus}</span>
               {listing.attributes.certificateStatus !== "none" && <span className="active-listing-pill">{listing.attributes.certificateStatus.replace("_", " ")}</span>}
               {hasActiveCampaign && <span className="active-listing-pill promoted">Promoted</span>}
             </div>
@@ -116,7 +120,7 @@ export function ActiveListingRow({
               {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               {expanded ? "Hide Details" : "View Details"}
             </button>
-            {listing.status !== "rejected" && listing.status !== "expired" && (
+            {!isRejected && !isExpired && (
               <>
                 <button type="button" className="active-listing-action" disabled={removeAction.busy || busy} onClick={() => setShowCampaigns(true)}>
                   <Star size={16} /> Promotions
