@@ -65,7 +65,7 @@ export function AdminConsole({
 }) {
   const allPending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
   const paidPending = allPending.filter((listing) => listing.subscription?.status === "active");
-  const unpaidPending = allPending.filter((listing) => listing.subscription?.status !== "active");
+  const unpaidPending = snapshot.listings.filter((listing) => (listing.moderationStatus === "queued" || listing.moderationStatus === "not_submitted") && listing.subscription?.status !== "active");
   const pending = paidPending; // Legacy naming for backwards compatibility
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
