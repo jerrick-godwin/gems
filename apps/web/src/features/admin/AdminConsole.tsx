@@ -65,6 +65,10 @@ export function AdminConsole({
 }) {
   const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
 
+  const isRejectedListing = (listing: Listing) => {
+    return listing.status === "rejected" || listing.moderationStatus === "rejected";
+  };
+
   const isExpiredListing = (listing: Listing) => {
     if (listing.status === "expired") return true;
     if (listing.expiresAt && new Date(listing.expiresAt) <= new Date()) return true;
@@ -72,24 +76,25 @@ export function AdminConsole({
     return false;
   };
 
-  const isRejectedListing = (listing: Listing) => {
-    return listing.status === "rejected" || listing.moderationStatus === "rejected";
-  };
-
   const isTrulyLiveListing = (listing: Listing) => {
-    if (isRejectedListing(listing) || isExpiredListing(listing)) return false;
+    if (isRejectedListing(listing)) return false;
     if (listing.status !== "live" || listing.moderationStatus !== "approved") return false;
+    if (listing.expiresAt && new Date(listing.expiresAt) <= new Date()) return false;
     if (listing.subscription && listing.subscription.status !== "active") return false;
     return true;
+  };
+
+  const isUnpaidPendingListing = (listing: Listing) => {
+    if (isRejectedListing(listing)) return false;
+    if (isTrulyLiveListing(listing)) return false;
+    if (listing.moderationStatus === "queued" && listing.subscription?.status === "active") return false;
+    return listing.subscription?.status !== "active" || listing.moderationStatus === "not_submitted";
   };
 
   const liveListingsList = allListings.filter(isTrulyLiveListing);
   const allPending = allListings.filter((listing) => listing.moderationStatus === "queued" && (!listing.subscription || listing.subscription.status === "active"));
   const paidPending = allPending;
-  const unpaidPending = allListings.filter((listing) => {
-    if (isRejectedListing(listing) || isExpiredListing(listing) || isTrulyLiveListing(listing)) return false;
-    return true;
-  });
+  const unpaidPending = allListings.filter(isUnpaidPendingListing);
   const pending = paidPending; // Legacy naming for backwards compatibility
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
@@ -107,7 +112,10 @@ export function AdminConsole({
   const [paymentSearch, setPaymentSearch] = useState("");
 
   const rejectedListings = allListings.filter(isRejectedListing);
-  const archivedListings = allListings.filter((listing) => isExpiredListing(listing) || listing.status === "paused");
+  const archivedListings = allListings.filter((listing) => {
+    if (isTrulyLiveListing(listing) || isUnpaidPendingListing(listing) || isRejectedListing(listing) || allPending.includes(listing)) return false;
+    return isExpiredListing(listing) || listing.status === "paused";
+  });
   const filteredPending = paidPending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
   const filteredUnpaidPending = unpaidPending.filter((listing) => matchesListingSearch(listing, pendingPaymentSearch, snapshot));
   const filteredReports = openReports.filter((report) => matchesReportSearch(report, reportSearch, snapshot));
