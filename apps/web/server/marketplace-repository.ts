@@ -501,9 +501,59 @@ export async function getConversations() {
   return (await getMutableMarketplaceDatabase()).conversations;
 }
 
+async function populateListingSubscriptions(listings: Listing[]) {
+  if (listings.length === 0) return listings;
+  const listingIds = listings.map((l) => l.id);
+  if (hasDatabase) {
+    const subscriptions = await db
+      .select()
+      .from(listingSubscriptionsTable)
+      .where(inArray(listingSubscriptionsTable.listingId, listingIds));
+    for (const listing of listings) {
+      const sub = subscriptions.find((s) => s.listingId === listing.id);
+      if (sub) {
+        listing.subscription = {
+          id: sub.id,
+          listingId: sub.listingId,
+          planId: sub.planId as any,
+          status: sub.status as any,
+          source: sub.source as any,
+          autoRenew: sub.autoRenew,
+          startsAt: sub.startsAt?.toISOString(),
+          expiresAt: sub.expiresAt?.toISOString(),
+          cancelledAt: sub.cancelledAt?.toISOString()
+        };
+      }
+    }
+  }
+  return listings;
+}
+
 export async function getModerationListings() {
-  if (hasDatabase) return (await db.select().from(listingTable).where(ne(listingTable.moderationStatus, "approved"))).map(toListing);
-  return (await getMutableMarketplaceDatabase()).listings.filter((listing) => listing.moderationStatus !== "approved");
+  if (hasDatabase) {
+    const rows = await db
+      .select()
+      .from(listingTable)
+      .where(
+        or(
+          ne(listingTable.moderationStatus, "approved"),
+          ne(listingTable.status, "live"),
+          sql`${listingTable.expiresAt} is not null and ${listingTable.expiresAt} <= now()`
+        )
+      );
+    const listings = rows.map(toListing);
+    return populateListingSubscriptions(listings);
+  }
+  const database = await getMutableMarketplaceDatabase();
+  const nowStr = new Date().toISOString();
+  const listings = database.listings.filter((listing) => {
+    return (
+      listing.moderationStatus !== "approved" ||
+      listing.status !== "live" ||
+      (listing.expiresAt && listing.expiresAt <= nowStr)
+    );
+  });
+  return populateListingSubscriptions(listings);
 }
 
 export async function getReports() {
@@ -681,30 +731,31 @@ function isPublicListing(listing: Listing) {
 
 export async function getLiveListings() {
   if (hasDatabase) {
-    const listings = (await db.select().from(listingTable).where(inArray(listingTable.status, ["live", "paused"]))).map(toListing);
-    const listingIds = listings.map(l => l.id);
-    if (listingIds.length > 0) {
-      const subscriptions = await db.select().from(listingSubscriptionsTable).where(inArray(listingSubscriptionsTable.listingId, listingIds));
-      for (const listing of listings) {
-        const sub = subscriptions.find(s => s.listingId === listing.id);
-        if (sub) {
-          listing.subscription = {
-            id: sub.id,
-            listingId: sub.listingId,
-            planId: sub.planId as any,
-            status: sub.status as any,
-            source: sub.source as any,
-            autoRenew: sub.autoRenew,
-            startsAt: sub.startsAt?.toISOString(),
-            expiresAt: sub.expiresAt?.toISOString(),
-            cancelledAt: sub.cancelledAt?.toISOString()
-          };
-        }
-      }
-    }
-    return listings;
+    const rows = await db
+      .select()
+      .from(listingTable)
+      .where(
+        and(
+          inArray(listingTable.status, ["live", "paused"]),
+          eq(listingTable.moderationStatus, "approved"),
+          sql`(${listingTable.expiresAt} is null or ${listingTable.expiresAt} > now())`
+        )
+      );
+    const listings = rows.map(toListing);
+    await populateListingSubscriptions(listings);
+    return listings.filter((l) => !l.subscription || l.subscription.status === "active");
   }
-  return (await getMutableMarketplaceDatabase()).listings.filter((listing) => listing.status === "live" || listing.status === "paused");
+  const database = await getMutableMarketplaceDatabase();
+  const nowStr = new Date().toISOString();
+  const listings = database.listings.filter((listing) => {
+    return (
+      (listing.status === "live" || listing.status === "paused") &&
+      listing.moderationStatus === "approved" &&
+      (!listing.expiresAt || listing.expiresAt > nowStr)
+    );
+  });
+  await populateListingSubscriptions(listings);
+  return listings.filter((l) => !l.subscription || l.subscription.status === "active");
 }
 
 export async function updateListingStatus(listingId: string, status: "live" | "paused") {

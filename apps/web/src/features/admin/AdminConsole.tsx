@@ -63,9 +63,33 @@ export function AdminConsole({
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
 }) {
-  const allPending = snapshot.listings.filter((listing) => listing.moderationStatus === "queued");
-  const paidPending = allPending.filter((listing) => listing.subscription?.status === "active");
-  const unpaidPending = snapshot.listings.filter((listing) => (listing.moderationStatus === "queued" || listing.moderationStatus === "not_submitted") && listing.subscription?.status !== "active");
+  const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
+
+  const isExpiredListing = (listing: Listing) => {
+    if (listing.status === "expired") return true;
+    if (listing.expiresAt && new Date(listing.expiresAt) <= new Date()) return true;
+    if (listing.subscription?.status === "expired") return true;
+    return false;
+  };
+
+  const isRejectedListing = (listing: Listing) => {
+    return listing.status === "rejected" || listing.moderationStatus === "rejected";
+  };
+
+  const isTrulyLiveListing = (listing: Listing) => {
+    if (isRejectedListing(listing) || isExpiredListing(listing)) return false;
+    if (listing.status !== "live" || listing.moderationStatus !== "approved") return false;
+    if (listing.subscription && listing.subscription.status !== "active") return false;
+    return true;
+  };
+
+  const liveListingsList = allListings.filter(isTrulyLiveListing);
+  const allPending = allListings.filter((listing) => listing.moderationStatus === "queued" && (!listing.subscription || listing.subscription.status === "active"));
+  const paidPending = allPending;
+  const unpaidPending = allListings.filter((listing) => {
+    if (isRejectedListing(listing) || isExpiredListing(listing) || isTrulyLiveListing(listing)) return false;
+    return true;
+  });
   const pending = paidPending; // Legacy naming for backwards compatibility
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
@@ -81,13 +105,13 @@ export function AdminConsole({
   const [rejectedListingSearch, setRejectedListingSearch] = useState("");
   const [archivedListingSearch, setArchivedListingSearch] = useState("");
   const [paymentSearch, setPaymentSearch] = useState("");
-  const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
-  const rejectedListings = allListings.filter((listing) => listing.status === "rejected" || listing.moderationStatus === "rejected");
-  const archivedListings = allListings.filter((listing) => listing.status === "expired" || listing.status === "paused");
+
+  const rejectedListings = allListings.filter(isRejectedListing);
+  const archivedListings = allListings.filter((listing) => isExpiredListing(listing) || listing.status === "paused");
   const filteredPending = paidPending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
   const filteredUnpaidPending = unpaidPending.filter((listing) => matchesListingSearch(listing, pendingPaymentSearch, snapshot));
   const filteredReports = openReports.filter((report) => matchesReportSearch(report, reportSearch, snapshot));
-  const filteredActiveListings = snapshot.liveListings.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
+  const filteredActiveListings = liveListingsList.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
   const filteredRejectedListings = rejectedListings.filter((listing) => matchesListingSearch(listing, rejectedListingSearch, snapshot));
   const filteredArchivedListings = archivedListings.filter((listing) => matchesListingSearch(listing, archivedListingSearch, snapshot));
   const filteredPayments = snapshot.payments.filter((payment) => matchesPaymentSearch(payment, paymentSearch, snapshot));
@@ -152,7 +176,7 @@ export function AdminConsole({
             checkedCertificates={checkedCertificates}
             paidSubscriptions={successfulPayments.length}
             activeTrials={activeTrials}
-            liveListings={snapshot.liveListings.length}
+            liveListings={liveListingsList.length}
             totalUsers={snapshot.users.length}
             pendingPayments={pendingPayments.length}
             onNavigate={selectView}
@@ -225,13 +249,13 @@ export function AdminConsole({
         {activeView === "listings" && (
           <div className="admin-console-stack">
             <div className="metric-grid admin-view-metrics">
-              <Metric icon={Gem} label="Live listings" value={String(snapshot.liveListings.length)} accent="var(--emerald)" />
+              <Metric icon={Gem} label="Live listings" value={String(liveListingsList.length)} accent="var(--emerald)" />
               <Metric icon={CircleAlert} label="Rejected" value={String(rejectedListings.length)} accent="var(--danger)" />
               <Metric icon={Clock} label="Archived" value={String(archivedListings.length)} accent="var(--muted)" />
             </div>
             <AdminSection
               title="Active listings"
-              totalCount={snapshot.liveListings.length}
+              totalCount={liveListingsList.length}
               visibleCount={filteredActiveListings.length}
               searchValue={activeListingSearch}
               onSearchChange={setActiveListingSearch}
