@@ -1186,90 +1186,134 @@
 }
 
 .seller-listing-card {
+  --listing-card-accent: var(--line-strong);
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
+  grid-template-columns: 164px minmax(0, 1fr);
   grid-template-areas:
     "image body"
     "image finance"
     "image details"
     "image rejection"
-    "footer footer";
-  gap: 12px 24px;
-  padding: 24px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--panel-strong);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+    "image footer";
+  gap: 10px 22px;
+  overflow: hidden;
+  padding: 20px;
+  border-color: var(--listing-card-accent);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(var(--foreground-rgb), 0.025), transparent 55%),
+    var(--surface);
+  box-shadow: var(--shadow-xs);
+  content-visibility: auto;
+  contain-intrinsic-size: 250px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.seller-listing-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--brand-yellow);
+  content: "";
+  opacity: 0.72;
+}
+
+.seller-listing-card.is-attention {
+  --listing-card-accent: color-mix(in srgb, var(--danger) 32%, var(--line));
+}
+
+.seller-listing-card.is-attention::before {
+  background: var(--danger);
+}
+
+.seller-listing-card.no-media {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "body"
+    "finance"
+    "details"
+    "rejection"
+    "footer";
 }
 
 .seller-listing-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  border-color: color-mix(in srgb, var(--listing-card-accent) 72%, var(--brand-yellow));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .seller-listing-image-wrapper {
   grid-area: image;
   position: relative;
+  align-self: start;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-muted);
 }
 
 .seller-listing-image {
-  width: 140px;
-  aspect-ratio: 1;
+  display: block;
+  width: 100%;
+  height: 154px;
   object-fit: cover;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.25s var(--ease-out);
 }
 
-.seller-listing-status-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 800;
-  border-radius: 6px;
-  background: var(--status-background);
-  color: var(--status-foreground);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.seller-listing-card:hover .seller-listing-image {
+  transform: scale(1.025);
 }
 
 .seller-listing-body {
   grid-area: body;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .seller-listing-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: baseline;
+  gap: 20px;
 }
 
 .seller-listing-title {
   margin: 0;
   color: var(--ink);
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.2;
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 850;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
 }
 
 .seller-listing-price {
   color: var(--emerald);
+  flex: 0 0 auto;
   font-size: 18px;
-  font-weight: 800;
-  line-height: 1.2;
+  font-weight: 850;
+  line-height: 1.18;
+  white-space: nowrap;
 }
 
 .seller-listing-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
+}
+
+.seller-listing-summary .seller-listing-status {
+  display: inline-flex;
+  margin-right: 0;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--status-foreground) 28%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.015em;
 }
 
 .seller-listing-finance-row {
@@ -1311,21 +1355,25 @@
 
 .seller-listing-details-panel {
   grid-area: details;
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .seller-listing-details-panel summary {
   list-style: none; /* Hide default marker */
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--emerald);
-  padding: 6px 0;
+  width: fit-content;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
   user-select: none;
-  transition: opacity 0.2s;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .seller-listing-details-panel summary::-webkit-details-marker {
@@ -1341,28 +1389,52 @@
 }
 
 .seller-listing-details-panel summary:hover {
-  opacity: 0.8;
+  border-color: var(--line-strong);
+  background: var(--control-hover);
 }
 
-.seller-listing-rejection {
+.seller-listing-card .seller-listing-rejection {
   grid-area: rejection;
-  margin-top: 8px;
-  padding: 12px;
-  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
   background: var(--danger-soft);
-  color: var(--danger-strong);
+  color: var(--danger);
   font-size: 13px;
   line-height: 1.4;
-  border: 1px solid var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.seller-listing-card .seller-listing-rejection svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.seller-listing-card .seller-listing-rejection div {
+  display: grid;
+  gap: 2px;
+}
+
+.seller-listing-card .seller-listing-rejection strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.seller-listing-card .seller-listing-rejection span {
+  color: var(--danger);
 }
 
 .seller-listing-footer {
   grid-area: footer;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  gap: 16px;
-  padding-top: 16px;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 12px;
   border-top: 1px solid var(--line-subtle);
   flex-wrap: wrap;
 }
@@ -1370,7 +1442,7 @@
 .seller-listing-finance-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -1378,24 +1450,24 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface-muted) 55%, transparent);
   border: 1px solid var(--line);
 }
 
 .seller-listing-finance-pill.is-renewing,
 .seller-listing-finance-pill.is-paid {
   border-color: var(--emerald);
-  background: rgba(var(--emerald-rgb), 0.05);
+  background: color-mix(in srgb, var(--emerald) 8%, transparent);
 }
 
 .seller-listing-finance-pill.is-pending {
   border-color: var(--gold);
-  background: rgba(var(--gold-rgb), 0.05);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
 }
 
 .seller-listing-finance-status {
@@ -1415,7 +1487,8 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-left: auto;
+  justify-content: flex-end;
+  margin-left: 0;
 }
 
 .seller-listing-action-button {
@@ -1423,15 +1496,15 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 6px 16px;
-  border-radius: 20px;
+  min-height: 38px;
+  padding: 7px 14px;
+  border-radius: 10px;
   border: 1px solid transparent;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.1;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .seller-listing-action-button:disabled {
@@ -1441,18 +1514,19 @@
 
 .seller-listing-pay-button {
   background: var(--emerald);
-  color: #fff;
+  color: var(--brand-black);
 }
 .seller-listing-pay-button:hover:not(:disabled) {
-  opacity: 0.9;
+  background: var(--brand-yellow-light);
+  transform: translateY(-1px);
 }
 
 .seller-listing-ghost-button {
   background: transparent;
   color: var(--muted);
   width: auto;
-  padding: 6px 16px;
-  border-radius: 20px;
+  padding: 7px 14px;
+  border-radius: 10px;
   border: 1px solid var(--line);
 }
 .seller-listing-ghost-button:hover:not(:disabled) {
@@ -1465,8 +1539,8 @@
   background: transparent;
   color: var(--danger);
   width: auto;
-  padding: 6px 16px;
-  border-radius: 20px;
+  padding: 7px 14px;
+  border-radius: 10px;
   border: 1px solid var(--line);
 }
 .seller-listing-ghost-danger-button:hover:not(:disabled) {
@@ -1476,21 +1550,18 @@
 
 @media (max-width: 760px) {
   .seller-listing-card {
-    grid-template-columns: 100px minmax(0, 1fr);
+    grid-template-columns: 88px minmax(0, 1fr);
     grid-template-areas:
       "image body"
       "finance finance"
       "details details"
       "rejection rejection"
       "footer footer";
-    gap: 12px 16px;
-    padding: 16px;
-  }
-  .seller-listing-image-wrapper {
-    flex: 0 0 100px;
+    gap: 10px 14px;
+    padding: 14px;
   }
   .seller-listing-image {
-    width: 100px;
+    height: 88px;
   }
   .seller-listing-header {
     flex-direction: column;
@@ -1503,13 +1574,22 @@
     font-size: 16px;
   }
   .seller-listing-footer {
-    flex-direction: column;
-    align-items: stretch;
+    justify-content: flex-start;
   }
   .seller-listing-actions-row {
-    margin-left: 0;
-    justify-content: center;
+    justify-content: flex-start;
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .seller-listing-header {
+    display: grid;
+    gap: 5px;
+  }
+
+  .seller-listing-action-button {
+    flex: 1 1 calc(50% - 4px);
   }
 }
 

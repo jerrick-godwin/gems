@@ -1,5 +1,5 @@
-import { CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Receipt, Search, ChevronLeft, ChevronRight, LoaderCircle } from "lucide-react";
-import { useState, useEffect, type CSSProperties } from "react";
+import { CircleAlert, CreditCard, Download, RefreshCcw, Trash2, ShieldCheck, Search, ChevronRight, LoaderCircle } from "lucide-react";
+import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { GemsApiClient } from "@gems/api-client";
 import { formatLkr, type GemType, type Listing, type ListingSubscription, type ListingSubscriptionSummary, type PaymentIntent, type Treatment, type UserDashboard, type ListingSubscriptionPlan } from "@gems/schemas";
@@ -39,6 +39,12 @@ export function MyListingsView({
   const cancelAction = useSingleFlightAction();
   const payAction = useSingleFlightAction();
   const deleteAction = useSingleFlightAction();
+  const gemTypeNameById = useMemo(() => new Map(gemTypes.map((gemType) => [gemType.id, gemType.name])), [gemTypes]);
+  const planById = useMemo(() => new Map(subscriptionPlans.map((plan) => [plan.id, plan])), [subscriptionPlans]);
+  const subscriptionByListingId = useMemo(
+    () => new Map((dashboard?.listingSubscriptions ?? []).map((subscription) => [subscription.listingId, subscription])),
+    [dashboard?.listingSubscriptions]
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -72,9 +78,18 @@ export function MyListingsView({
     return () => { active = false; };
   }, [api, page, limit, debouncedSearchQuery, filterStatus, filterGemType, dashboard]);
 
-  const getStatusLabel = (listing: Listing) => {
+  const getStatusLabel = (listing: Listing, subscription: ListingSubscription | undefined) => {
     if (listing.status === "rejected" || listing.moderationStatus === "rejected") {
       return { label: "Rejected", color: "var(--danger)", bg: "var(--danger-soft)" };
+    }
+    if (subscription?.paymentStatus === "failed") {
+      return { label: "Payment Failed", color: "var(--danger)", bg: "var(--danger-soft)" };
+    }
+    if (subscription?.paymentStatus === "pending") {
+      return { label: "Payment Pending", color: "var(--gold)", bg: "rgba(251,191,36,0.15)" };
+    }
+    if (subscription?.paymentStatus === "required") {
+      return { label: "Payment Required", color: "var(--danger)", bg: "var(--danger-soft)" };
     }
     if (listing.moderationStatus === "approved") {
       return { label: "Approved", color: "var(--success)", bg: "var(--success-soft)" };
@@ -107,17 +122,8 @@ export function MyListingsView({
     await payAction.run(async () => {
       try {
         setPayingSubscriptionId(subscriptionId);
-        const subscription = dashboard?.listingSubscriptions.find((item) => item.id === subscriptionId);
-        const paymentIntent = subscription?.source === "trial"
-          ? await api.convertTrialSubscription(subscriptionId, { idempotencyKey: createIdempotencyKey("trial-convert") })
-          : await api.getListingSubscriptionPaymentIntent(subscriptionId);
-        if (!paymentIntent.paymentUrl) {
-          alert("Checkout is not available for this pending payment. Please contact support to restart payment.");
-          setPayingSubscriptionId(null);
-          payAction.release();
-          return;
-        }
-        window.location.href = paymentIntent.paymentUrl;
+        const recovery = await api.startListingSubscriptionPayment(subscriptionId, { idempotencyKey: createIdempotencyKey("listing-payment") });
+        window.location.href = recovery.checkoutUrl;
       } catch (error) {
         alert(`Failed to open checkout: ${publicErrorMessage(error, "Unknown error")}`);
         setPayingSubscriptionId(null);
@@ -218,33 +224,42 @@ export function MyListingsView({
         ) : (
           <div className="seller-listings-stack">
             {listings.map((listing) => {
-              const statusInfo = getStatusLabel(listing);
-              const gemTypeName = gemTypes.find((gemType) => gemType.id === listing.gemTypeId)?.name;
+              const gemTypeName = gemTypeNameById.get(listing.gemTypeId);
               const attributes = getListingAttributes(listing, gemTypeName);
-              const subscription = dashboard?.listingSubscriptions.find((item) => item.listingId === listing.id);
-              const plan = subscription ? subscriptionPlans.find(p => p.id === subscription.planId) : undefined;
+              const subscription = subscriptionByListingId.get(listing.id);
+              const statusInfo = getStatusLabel(listing, subscription);
+              const plan = subscription ? planById.get(subscription.planId) : undefined;
               const payment = findListingPayment(dashboard?.recentPayments ?? [], listing.id, subscription);
-              const paymentLines = payment ? paymentBreakdown(payment) : [];
               const canDownloadReceipt = Boolean(payment?.stripeInvoiceId && payment.status === "succeeded");
               const isRejected = listing.status === "rejected" || listing.moderationStatus === "rejected";
               const hasPaidSubscriptionAccess = isSubscriptionInPaidAccess(subscription);
               const canCancelRenewal = Boolean(subscription?.source === "paid" && subscription.autoRenew && hasPaidSubscriptionAccess && !isRejected);
-              const canConvertTrial = Boolean(subscription?.source === "trial" && !hasPaidSubscriptionAccess && !isRejected);
+              const canRecoverPayment = Boolean(
+                subscription
+                && !isRejected
+                && subscription.paymentStatus !== "paid"
+                && ((subscription.source === "trial" && !hasPaidSubscriptionAccess) || ["pending_payment", "past_due", "cancelled", "expired"].includes(subscription.status))
+              );
               const renewalStatus = getSubscriptionRenewalStatus(subscription, isRejected);
+              const hasMedia = Boolean(listing.media[0]);
+              const needsAttention = isRejected || subscription?.paymentStatus === "failed" || subscription?.paymentStatus === "required";
 
               return (
-                <article key={listing.id} className="seller-listing-card card card--surface card--compact">
-                  {listing.media[0] && (
+                <article key={listing.id} className={`seller-listing-card card card--surface card--compact ${hasMedia ? "has-media" : "no-media"}${needsAttention ? " is-attention" : ""}`}>
+                  {hasMedia && listing.media[0] ? (
                     <div className="seller-listing-image-wrapper">
-                      <img src={listing.media[0].url} alt={listing.title} className="seller-listing-image" />
+                      <img src={listing.media[0].url} alt={listing.title} className="seller-listing-image" loading="lazy" decoding="async" />
                     </div>
-                  )}
+                  ) : null}
                   <div className="seller-listing-body">
                       <div className="seller-listing-header">
                         <h3 className="seller-listing-title">{listing.title}</h3>
                         <strong className="seller-listing-price">{formatLkr(listing.priceLkr)}</strong>
                       </div>
                       <div className="seller-listing-summary">
+                        <span className="seller-listing-status" style={{ "--status-background": statusInfo.bg, "--status-foreground": statusInfo.color } as CSSProperties}>
+                          {statusInfo.label}
+                        </span>
                         {(isRejected ? listing.updatedAt : listing.createdAt) && (
                           <span className="seller-listing-posted-date">
                             {isRejected ? "Rejected Date" : "Posted"}: {formatDate(isRejected ? (listing.updatedAt || "") : (listing.createdAt || ""))}
@@ -289,13 +304,18 @@ export function MyListingsView({
                   </details>
                   {isRejected && listing.rejectionReason && (
                     <div className="seller-listing-rejection">
-                      <strong>Reason:</strong> {listing.rejectionReason}
+                      <CircleAlert size={17} aria-hidden="true" />
+                      <div>
+                        <strong>Why this listing was rejected</strong>
+                        <span>{listing.rejectionReason}</span>
+                      </div>
                     </div>
                   )}
                   <div className="seller-listing-footer">
                     <div className="seller-listing-actions-row">
-                      {subscription && (isAwaitingInitialPayment(subscription) || canConvertTrial) && (
+                      {subscription && canRecoverPayment && (
                         <button
+                          type="button"
                           onClick={() => void handlePayNow(subscription.id)}
                           disabled={payAction.busy || payingSubscriptionId === subscription.id}
                           className="seller-listing-action-button seller-listing-pay-button"
@@ -306,6 +326,7 @@ export function MyListingsView({
                       )}
                       {payment && canDownloadReceipt && (
                         <button
+                          type="button"
                           onClick={() => void handleDownloadReceipt(payment)}
                           disabled={downloadingPaymentId === payment.id}
                           className="seller-listing-action-button seller-listing-ghost-button"
@@ -316,6 +337,7 @@ export function MyListingsView({
                       )}
                       {canCancelRenewal && subscription && (
                         <button
+                          type="button"
                           onClick={() => setConfirmCancelSubscriptionId(subscription.id)}
                           disabled={cancelAction.busy || cancellingSubscriptionId === subscription.id}
                           className="seller-listing-action-button seller-listing-ghost-button"
@@ -325,6 +347,7 @@ export function MyListingsView({
                         </button>
                       )}
                       <button 
+                        type="button"
                         onClick={() => setConfirmDeleteId(listing.id)}
                         disabled={deleteAction.busy || deletingId === listing.id}
                         className="seller-listing-action-button seller-listing-ghost-danger-button"
@@ -468,10 +491,6 @@ function isDisplayAttribute(attribute: [string, string | undefined]): attribute 
   return hasDisplayValue(attribute[1]);
 }
 
-function compactValues(values: Array<string | undefined>) {
-  return values.filter(hasDisplayValue);
-}
-
 function hasDisplayValue(value: string | undefined): value is string {
   return Boolean(value?.replace(/[\s\u200B-\u200D\uFEFF]/g, ""));
 }
@@ -489,18 +508,6 @@ function findListingPayment(payments: PaymentIntent[], listingId: string, subscr
   return candidates.find((payment) => payment.id === subscription?.paymentIntentId) ?? candidates[0];
 }
 
-function paymentBreakdown(payment: PaymentIntent) {
-  const lines = [`Base ${formatLkr(payment.quote.basePriceLkr)}`];
-  if (payment.quote.extraPhotoCount > 0) {
-    lines.push(`${payment.quote.extraPhotoCount} extra photo${payment.quote.extraPhotoCount === 1 ? "" : "s"} ${formatLkr(payment.quote.extraPhotoTotalLkr)}`);
-  }
-  return lines;
-}
-
-function shortRef(value: string) {
-  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
-}
-
 function isSubscriptionInPaidAccess(subscription: ListingSubscriptionSummary | undefined) {
   return Boolean(
     subscription &&
@@ -510,18 +517,16 @@ function isSubscriptionInPaidAccess(subscription: ListingSubscriptionSummary | u
   );
 }
 
-function isAwaitingInitialPayment(subscription: ListingSubscriptionSummary | undefined) {
-  return Boolean(
-    subscription &&
-    (subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt))
-  );
-}
-
 function getSubscriptionRenewalStatus(subscription: ListingSubscriptionSummary | undefined, isRejected?: boolean) {
   if (!subscription) return undefined;
 
   if (isRejected) {
     return { label: "Subscription cancelled", color: "var(--danger)" };
+  }
+
+  // Payment state is shown by the primary badge; the plan pill describes access.
+  if (subscription.paymentStatus !== "paid") {
+    return { label: "Suspended", color: "var(--danger)" };
   }
 
   if (subscription.source === "trial") {

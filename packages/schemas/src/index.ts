@@ -7,6 +7,7 @@ export type PromotionType = "bump" | "top" | "urgent" | "featured" | "scheduled"
 export type ListingSubscriptionPlanId = string;
 export type ListingSubscriptionStatus = "pending_payment" | "active" | "past_due" | "cancelled" | "expired";
 export type ListingSubscriptionSource = "paid" | "trial";
+export type EffectiveListingPaymentStatus = "pending" | "failed" | "required" | "paid";
 export type PaymentPurpose = "listing_subscription" | "listing_subscription_renewal";
 export type PaymentStatus = "pending" | "succeeded" | "failed" | "cancelled" | "expired";
 export type UserTrialStatus = "active" | "expired" | "terminated";
@@ -41,6 +42,7 @@ export interface ListingSubscriptionSummary {
   startsAt?: string;
   expiresAt?: string;
   cancelledAt?: string;
+  paymentStatus?: EffectiveListingPaymentStatus;
 }
 
 export interface PromotionCampaign {
@@ -225,6 +227,12 @@ export interface ListingSubscription extends ListingSubscriptionSummary {
   paymentIntentId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ListingPaymentRecoveryResponse {
+  checkoutUrl: string;
+  paymentStatus: EffectiveListingPaymentStatus;
+  subscriptionStatus: ListingSubscriptionStatus;
 }
 
 export interface ListingCheckoutPaymentResult {
