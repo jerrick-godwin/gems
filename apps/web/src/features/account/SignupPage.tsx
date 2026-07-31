@@ -4,6 +4,7 @@ import { Eye, EyeOff, UserPlus, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateSignupFields, type AuthFieldErrors } from "./authValidation";
 
@@ -195,7 +196,7 @@ export function SignupPage({ onSignedIn, onNavigate }: { onSignedIn: (dashboard:
             {fieldErrors.address && <span className="field-error" id="signup-address-error">{fieldErrors.address}</span>}
           </label>
           <button className="primary-action auth-field-wide" type="submit" id="signup-page-submit" disabled={loading}>
-            {loading ? <span className="button-spinner" aria-hidden="true" /> : <UserPlus size={18} strokeWidth={2.4} />}
+            {loading ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <UserPlus size={18} strokeWidth={2.4} />}
             {loading ? "Creating account..." : "Create account"}
           </button>
         </form>

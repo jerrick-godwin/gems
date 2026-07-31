@@ -4,6 +4,7 @@ import type { GemsApiClient } from "@gems/api-client";
 import type { UserDashboard } from "@gems/schemas";
 import type { MarketplaceAuthUser } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { publicErrorMessage } from "../../shared/helpers";
 import { TrialStatusPanel } from "./TrialStatusPanel";
 
@@ -109,7 +110,7 @@ export function ProfileSettings({
             </label>
           </div>
           <button className="primary-action profile-save-action" type="submit" disabled={saveAction.busy || saveState === "saving" || !user}>
-            {saveState === "saving" && <span className="button-spinner" aria-hidden="true" />}
+            {saveState === "saving" && <ClassicLoader className="button-spinner" size={17} aria-hidden="true" />}
             {saveState === "saved" && <Check size={18} strokeWidth={2.6} aria-hidden="true" />}
             {saveState === "saving" ? "Saving profile..." : saveState === "saved" ? "Profile saved" : "Save profile"}
           </button>

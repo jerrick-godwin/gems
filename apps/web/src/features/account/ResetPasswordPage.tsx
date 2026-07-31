@@ -2,6 +2,7 @@ import { ArrowLeft, KeyRound, X } from "lucide-react";
 import { useState, useEffect, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import type { View } from "../../shared/types";
 import { authErrorMessage } from "./authValidation";
 
@@ -101,7 +102,7 @@ export function ResetPasswordPage({ onNavigate }: { onNavigate: (view: View) => 
               />
             </label>
             <button className="primary-action" type="submit" disabled={loading || !oobCode}>
-              {loading ? <span className="button-spinner" aria-hidden="true" /> : <KeyRound size={18} strokeWidth={2.4} />}
+              {loading ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <KeyRound size={18} strokeWidth={2.4} />}
               {loading ? "Saving..." : "Save Password"}
             </button>
           </form>

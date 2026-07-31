@@ -1,10 +1,11 @@
-import { ReceiptText, XCircle, CheckCircle2, LoaderCircle } from "lucide-react";
+import { ReceiptText, XCircle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { AdminMediaPreview } from "./AdminMediaPreview";
 
 export function ReviewRow({
@@ -146,7 +147,7 @@ export function ReviewRow({
                 className="confirmation-dialog-button tone-danger"
                 style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}
               >
-                {busy === "reject" ? <LoaderCircle className="icon-spinner" size={16} /> : null}
+                {busy === "reject" ? <ClassicLoader className="icon-spinner" size={16} /> : null}
                 {busy === "reject" ? "Rejecting..." : "Confirm Rejection"}
               </button>
             </div>
@@ -179,7 +180,7 @@ export function ReviewRow({
                 className="confirmation-dialog-button tone-success"
                 style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}
               >
-                {busy === "approve" ? <LoaderCircle className="icon-spinner" size={16} /> : null}
+                {busy === "approve" ? <ClassicLoader className="icon-spinner" size={16} /> : null}
                 {busy === "approve" ? "Approving..." : "Confirm Approval"}
               </button>
             </div>

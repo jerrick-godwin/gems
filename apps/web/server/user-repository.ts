@@ -14,6 +14,7 @@ import type {
   ListingCheckoutSession,
   Listing,
   ListingMedia,
+  ListingPaymentRecoveryResponse,
   ListingSubscription,
   ListingSubscriptionPlanId,
   ListingSubscriptionStatus,
@@ -38,9 +39,10 @@ import { sendPasswordResetEmail, sendAdminNotificationEmail } from "./email.js";
 import { db, hasDatabase } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { normalizeListingTitle } from "./listing-title.js";
+import { effectiveListingPaymentStatus, listingPaymentRecoveryKind } from "./listing-payment-recovery.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
 import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob, ensureListingCardThumbnail } from "./storage.js";
-import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
+import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeHostedInvoiceUrl, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
 type SettingsPatch = Partial<Pick<UserSettings, "theme" | "notificationsEnabled" | "language" | "dashboardDefaultView" | "savedMarketplaceFilters">>;
@@ -715,30 +717,55 @@ export async function getAdminPaymentReceiptPdf(intentId: string) {
   return retrieveStripeReceiptPdf(intent.stripeInvoiceId);
 }
 
-export async function getListingSubscriptionPaymentIntent(userId: string, subscriptionId: string): Promise<PaymentIntent | undefined> {
+export async function startListingSubscriptionPayment(userId: string, subscriptionId: string, idempotencyKey?: string): Promise<ListingPaymentRecoveryResponse | undefined> {
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
   if (hasDatabase) {
     const subscriptions = await db.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.id, subscriptionId), eq(listingSubscriptions.userId, userId))).limit(1);
     const subscription = subscriptions[0];
     if (!subscription) return undefined;
     const rows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.subscriptionId, subscriptionId), eq(paymentIntents.userId, userId))).orderBy(desc(paymentIntents.createdAt)).limit(1);
     const existing = rows[0] ? toPaymentIntent(rows[0]) : undefined;
-    if (existing?.status === "pending" && existing.paymentUrl) return existing;
+    const recoveryKind = listingPaymentRecoveryKind(toListingSubscription(subscription), existing);
+
+    if (recoveryKind === "not_required") {
+      throw new Error("Subscription payment is not required.");
+    }
+    if (recoveryKind === "trial_checkout") {
+      const intent = await convertTrialSubscriptionToPaymentIntent(userId, subscriptionId, normalizedIdempotencyKey);
+      if (!intent?.paymentUrl) throw new Error("Checkout is not available for this subscription.");
+      return paymentRecoveryResponse(intent.paymentUrl, "pending_payment");
+    }
+    if (recoveryKind === "hosted_invoice") {
+      const hostedInvoiceUrl = existing?.stripeInvoiceId ? await retrieveStripeHostedInvoiceUrl(existing.stripeInvoiceId) : undefined;
+      if (!hostedInvoiceUrl) throw new Error("The renewal invoice is not available. Please contact support.");
+      return paymentRecoveryResponse(hostedInvoiceUrl, "past_due", "failed");
+    }
+    if (recoveryKind === "reuse_checkout" && existing?.paymentUrl) {
+      return paymentRecoveryResponse(existing.paymentUrl, subscription.status);
+    }
+    if (recoveryKind === "not_recoverable") throw new Error("Subscription payment is not recoverable.");
 
     const listingRows = await db.select().from(listings).where(eq(listings.id, subscription.listingId)).limit(1);
     const listing = listingRows[0];
-    const canRestartInitialPayment = subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt);
-    if (!listing || !canRestartInitialPayment) return existing;
+    if (!listing) throw new Error("Subscription payment is not recoverable.");
+
+    if (normalizedIdempotencyKey) {
+      const keyedRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, subscription.listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      const keyedIntent = keyedRows[0] ? toPaymentIntent(keyedRows[0]) : undefined;
+      if (keyedIntent?.paymentUrl) return paymentRecoveryResponse(keyedIntent.paymentUrl, "pending_payment");
+    }
 
     const now = new Date();
     const plan = (await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId)).limit(1))[0];
     if (!plan) throw new Error("Unknown plan");
     const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
     let intent: PaymentIntent = {
-      id: `pay-${randomUUID()}`,
+      id: normalizedIdempotencyKey ? stableIdFromKey("pay", `${userId}:${subscription.listingId}:${normalizedIdempotencyKey}`) : `pay-${randomUUID()}`,
       userId,
       listingId: subscription.listingId,
       subscriptionId,
-      purpose: "listing_subscription",
+      purpose: subscription.startsAt ? "listing_subscription_renewal" : "listing_subscription",
       status: "pending",
       planId: subscription.planId,
       quote,
@@ -752,33 +779,44 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
     };
     intent = await prepareGatewayPayment(userId, intent);
 
-    const [inserted] = await db.insert(paymentIntents).values({
-      id: intent.id,
-      userId,
-      listingId: subscription.listingId,
-      subscriptionId,
-      purpose: intent.purpose,
-      status: intent.status,
-      planId: subscription.planId,
-      quote,
-      amountLkr: intent.amountLkr,
-      currency: intent.currency,
-      gateway: intent.gateway,
-      gatewayReference: intent.gatewayReference,
-      stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
-      stripeSubscriptionId: intent.stripeSubscriptionId,
-      stripeCustomerId: intent.stripeCustomerId,
-      stripeInvoiceId: intent.stripeInvoiceId,
-      paymentUrl: intent.paymentUrl,
-      policyVersion: intent.policyVersion,
-      policyAcceptedAt: now,
-      createdAt: now,
-      updatedAt: now
-    }).returning();
+    let inserted: typeof paymentIntents.$inferSelect;
+    try {
+      [inserted] = await db.insert(paymentIntents).values({
+        id: intent.id,
+        userId,
+        listingId: subscription.listingId,
+        idempotencyKey: normalizedIdempotencyKey,
+        subscriptionId,
+        purpose: intent.purpose,
+        status: intent.status,
+        planId: subscription.planId,
+        quote,
+        amountLkr: intent.amountLkr,
+        currency: intent.currency,
+        gateway: intent.gateway,
+        gatewayReference: intent.gatewayReference,
+        stripeCheckoutSessionId: intent.stripeCheckoutSessionId,
+        stripeSubscriptionId: intent.stripeSubscriptionId,
+        stripeCustomerId: intent.stripeCustomerId,
+        stripeInvoiceId: intent.stripeInvoiceId,
+        paymentUrl: intent.paymentUrl,
+        policyVersion: intent.policyVersion,
+        policyAcceptedAt: now,
+        createdAt: now,
+        updatedAt: now
+      }).returning();
+    } catch (error) {
+      if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
+      const keyedRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, subscription.listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+      const keyedIntent = keyedRows[0] ? toPaymentIntent(keyedRows[0]) : undefined;
+      if (!keyedIntent?.paymentUrl) throw error;
+      await db.update(listingSubscriptions).set({ status: "pending_payment", autoRenew: true, cancelledAt: null, paymentIntentId: keyedIntent.id, updatedAt: now }).where(eq(listingSubscriptions.id, subscriptionId));
+      return paymentRecoveryResponse(keyedIntent.paymentUrl, "pending_payment");
+    }
 
     await db.update(listingSubscriptions).set({ status: "pending_payment", autoRenew: true, cancelledAt: null, paymentIntentId: intent.id, updatedAt: now }).where(eq(listingSubscriptions.id, subscriptionId));
     await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId: subscription.listingId, paymentIntentId: intent.id, policyVersion: intent.policyVersion, acceptedAt: now });
-    return toPaymentIntent(inserted);
+    return paymentRecoveryResponse(toPaymentIntent(inserted).paymentUrl, "pending_payment");
   }
 
   const state = await getMemoryState();
@@ -787,22 +825,41 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
   const existing = state.paymentIntents
     .filter((item) => item.subscriptionId === subscriptionId && item.userId === userId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  if (existing?.status === "pending" && existing.paymentUrl) return existing;
-  const canRestartInitialPayment = subscription.status === "pending_payment" || (subscription.status === "cancelled" && !subscription.startsAt && !subscription.expiresAt);
-  if (!canRestartInitialPayment) return existing;
+  const recoveryKind = listingPaymentRecoveryKind(subscription, existing);
+  if (recoveryKind === "not_required") {
+    throw new Error("Subscription payment is not required.");
+  }
+  if (recoveryKind === "trial_checkout") {
+    const intent = await convertTrialSubscriptionToPaymentIntent(userId, subscriptionId, normalizedIdempotencyKey);
+    if (!intent?.paymentUrl) throw new Error("Checkout is not available for this subscription.");
+    return paymentRecoveryResponse(intent.paymentUrl, "pending_payment");
+  }
+  if (recoveryKind === "hosted_invoice") {
+    const hostedInvoiceUrl = existing?.stripeInvoiceId ? await retrieveStripeHostedInvoiceUrl(existing.stripeInvoiceId) : undefined;
+    if (!hostedInvoiceUrl) throw new Error("The renewal invoice is not available. Please contact support.");
+    return paymentRecoveryResponse(hostedInvoiceUrl, "past_due", "failed");
+  }
+  if (recoveryKind === "reuse_checkout" && existing?.paymentUrl) {
+    return paymentRecoveryResponse(existing.paymentUrl, subscription.status);
+  }
+  if (recoveryKind === "not_recoverable") throw new Error("Subscription payment is not recoverable.");
 
   const listing = state.database.listings.find((item) => item.id === subscription.listingId);
-  if (!listing) return existing;
+  if (!listing) throw new Error("Subscription payment is not recoverable.");
+  const memoryKey = normalizedIdempotencyKey ? `${userId}:${subscription.listingId}:${normalizedIdempotencyKey}` : "";
+  const keyedIntentId = memoryKey ? state.paymentIntentIdempotencyKeys[memoryKey] : undefined;
+  const keyedIntent = keyedIntentId ? state.paymentIntents.find((item) => item.id === keyedIntentId) : undefined;
+  if (keyedIntent?.paymentUrl) return paymentRecoveryResponse(keyedIntent.paymentUrl, "pending_payment");
   const now = new Date();
   const plan = state.subscriptionPlans.find(p => p.id === subscription.planId);
   if (!plan) throw new Error("Unknown plan");
   const quote = quoteListingSubscription(plan, countListingPhotos(listing.media));
   let intent: PaymentIntent = {
-    id: `pay-${randomUUID()}`,
+    id: normalizedIdempotencyKey ? stableIdFromKey("pay", memoryKey) : `pay-${randomUUID()}`,
     userId,
     listingId: subscription.listingId,
     subscriptionId,
-    purpose: "listing_subscription",
+    purpose: subscription.startsAt ? "listing_subscription_renewal" : "listing_subscription",
     status: "pending",
     planId: subscription.planId,
     quote,
@@ -821,7 +878,17 @@ export async function getListingSubscriptionPaymentIntent(userId: string, subscr
   subscription.paymentIntentId = intent.id;
   subscription.updatedAt = now.toISOString();
   state.paymentIntents.push(intent);
-  return intent;
+  if (memoryKey) state.paymentIntentIdempotencyKeys[memoryKey] = intent.id;
+  return paymentRecoveryResponse(intent.paymentUrl, "pending_payment");
+}
+
+function paymentRecoveryResponse(
+  checkoutUrl: string | undefined,
+  subscriptionStatus: ListingSubscriptionStatus,
+  paymentStatus: ListingPaymentRecoveryResponse["paymentStatus"] = "pending"
+): ListingPaymentRecoveryResponse {
+  if (!checkoutUrl) throw new Error("Checkout is not available for this subscription.");
+  return { checkoutUrl, paymentStatus, subscriptionStatus };
 }
 
 export async function convertTrialSubscriptionToPaymentIntent(userId: string, subscriptionId: string, idempotencyKey?: string): Promise<PaymentIntent | undefined> {
@@ -960,6 +1027,10 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
     getListingSubscriptions(userId),
     getPaymentIntents(userId)
   ]);
+  const subscriptionsWithPaymentStatus = subscriptions.map((subscription) => ({
+    ...subscription,
+    paymentStatus: effectiveListingPaymentStatus(subscription, payments)
+  }));
 
   if (hasDatabase) {
     const sellerRows = await db.select().from(sellerProfiles).where(eq(sellerProfiles.userId, userId));
@@ -982,7 +1053,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
       })),
       cartCount: 0,
       recentOrders: [],
-      listingSubscriptions: subscriptions,
+      listingSubscriptions: subscriptionsWithPaymentStatus,
       recentPayments: payments.slice(0, 10)
     };
   }
@@ -996,7 +1067,7 @@ export async function getDashboard(userId: string): Promise<UserDashboard> {
     conversations: state.database.conversations.filter((conversation) => sellerIds.has(conversation.sellerId)),
     cartCount: 0,
     recentOrders: [],
-    listingSubscriptions: subscriptions,
+    listingSubscriptions: subscriptionsWithPaymentStatus,
     recentPayments: payments.slice(0, 10)
   };
 }

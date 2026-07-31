@@ -1,4 +1,5 @@
-import { CreditCard, LoaderCircle, ShieldCheck } from "lucide-react";
+import { CreditCard, ShieldCheck } from "lucide-react";
+import { ClassicLoader } from "./ClassicLoader";
 
 type StatusStateProps = {
   title: string;
@@ -30,7 +31,7 @@ export function StatusState({ title, message, loading, variant = "marketplace", 
       <section className="status-state payment-processing-state" aria-busy="true" aria-live="polite">
         <div className="payment-processing-animation" aria-hidden="true">
           <CreditCard size={42} strokeWidth={1.8} />
-          <LoaderCircle className="payment-processing-spinner" size={24} strokeWidth={2.5} />
+          <ClassicLoader className="payment-processing-spinner" size={24} />
         </div>
         <div className="status-state-copy">
           <Heading>{title}</Heading>

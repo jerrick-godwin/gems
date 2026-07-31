@@ -212,6 +212,16 @@ export async function retrieveStripeInvoiceUrl(invoiceId: string) {
   }
 }
 
+export async function retrieveStripeHostedInvoiceUrl(invoiceId: string) {
+  try {
+    const invoice = await stripe().invoices.retrieve(invoiceId);
+    return invoice.hosted_invoice_url ?? undefined;
+  } catch (error) {
+    console.warn("Failed to retrieve Stripe hosted invoice:", error);
+    return undefined;
+  }
+}
+
 export async function retrieveStripeReceiptPdf(invoiceId: string) {
   try {
     const invoice = await stripe().invoices.retrieve(invoiceId) as any;
