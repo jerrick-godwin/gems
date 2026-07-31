@@ -1,9 +1,10 @@
-import { Calendar, XCircle, LoaderCircle } from "lucide-react";
+import { Calendar, XCircle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import type { Listing, PromotionCampaign } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 
 export function CampaignDialog({ 
   listing, 
@@ -103,7 +104,7 @@ export function CampaignDialog({
               <input type="date" value={endsAtInput} onChange={e => setEndsAtInput(e.target.value)} required min={startsAtInput} />
             </label>
             <button type="submit" className="campaign-dialog-create-button" disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}>
-              {(campaignAction.busy || busy) ? <LoaderCircle className="icon-spinner" size={16} /> : null}
+              {(campaignAction.busy || busy) ? <ClassicLoader className="icon-spinner" size={16} /> : null}
               Create
             </button>
           </form>
@@ -129,21 +130,21 @@ export function CampaignDialog({
                   <div className="campaign-dialog-actions">
                     {campaign.status === "active" && (
                       <button onClick={() => void handleAction(campaign.id, "pause")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
-                        {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} Pause
+                        {busy === campaign.id ? <ClassicLoader className="icon-spinner" size={14} /> : null} Pause
                       </button>
                     )}
                     {campaign.status === "paused" && (
                       <button onClick={() => void handleAction(campaign.id, "resume")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
-                        {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} Resume
+                        {busy === campaign.id ? <ClassicLoader className="icon-spinner" size={14} /> : null} Resume
                       </button>
                     )}
                     {(campaign.status === "active" || campaign.status === "paused") && (
                       <>
                         <button onClick={() => void handleAction(campaign.id, "extend")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
-                          {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} +7 Days
+                          {busy === campaign.id ? <ClassicLoader className="icon-spinner" size={14} /> : null} +7 Days
                         </button>
                         <button className="tone-danger" onClick={() => void handleAction(campaign.id, "stop")} disabled={campaignAction.busy || Boolean(busy)} style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
-                          {busy === campaign.id ? <LoaderCircle className="icon-spinner" size={14} /> : null} Stop
+                          {busy === campaign.id ? <ClassicLoader className="icon-spinner" size={14} /> : null} Stop
                         </button>
                       </>
                     )}

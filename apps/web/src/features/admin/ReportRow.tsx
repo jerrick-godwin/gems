@@ -1,9 +1,10 @@
-import { Eye, Flag, Trash, XCircle, LoaderCircle } from "lucide-react";
+import { Eye, Flag, Trash, XCircle } from "lucide-react";
 import { useState } from "react";
 import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
 import type { Report } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { publicErrorMessage } from "../../shared/helpers";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { AdminMediaPreview } from "./AdminMediaPreview";
 
 export function ReportRow({
@@ -138,10 +139,10 @@ export function ReportRow({
                 <div className="report-listing-description">{listing.description}</div>
                 <div className="report-listing-actions">
                   <button className="report-row-action tone-danger" disabled={rowAction.busy || busy !== null} onClick={() => void removeListing()}>
-                    {busy === "remove" ? <LoaderCircle className="icon-spinner" size={16} /> : <Trash size={16} />} {busy === "remove" ? "Removing..." : "Remove Listing"}
+                    {busy === "remove" ? <ClassicLoader className="icon-spinner" size={16} /> : <Trash size={16} />} {busy === "remove" ? "Removing..." : "Remove Listing"}
                   </button>
                   <button className="report-row-action" disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
-                    {busy === "reject" ? <LoaderCircle className="icon-spinner" size={16} /> : <XCircle size={16} />} {busy === "reject" ? "Rejecting..." : "Reject"}
+                    {busy === "reject" ? <ClassicLoader className="icon-spinner" size={16} /> : <XCircle size={16} />} {busy === "reject" ? "Rejecting..." : "Reject"}
                   </button>
                 </div>
               </div>
@@ -151,7 +152,7 @@ export function ReportRow({
               Listing details no longer available.
               <div className="report-row-unavailable-action">
                 <button className="report-row-action" disabled={rowAction.busy || busy !== null} onClick={() => void rejectClaim()}>
-                  {busy === "reject" ? <LoaderCircle className="icon-spinner" size={16} /> : <XCircle size={16} />} {busy === "reject" ? "Rejecting..." : "Reject"}
+                  {busy === "reject" ? <ClassicLoader className="icon-spinner" size={16} /> : <XCircle size={16} />} {busy === "reject" ? "Rejecting..." : "Reject"}
                 </button>
               </div>
             </div>
