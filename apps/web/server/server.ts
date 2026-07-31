@@ -56,7 +56,7 @@ import {
   getPaymentReceipt,
   getPaymentReceiptPdf,
   getListingCheckoutSession,
-  getListingSubscriptionPaymentIntent,
+  startListingSubscriptionPayment,
   getAdminOrders,
   getDashboard,
   getMyListings,
@@ -751,10 +751,22 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       return true;
     }
 
-    const subscriptionPaymentMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/payment-intent$/);
-    if (request.method === "GET" && subscriptionPaymentMatch) {
-      const intent = await getListingSubscriptionPaymentIntent(user.id, subscriptionPaymentMatch[1]);
-      sendJson(response, intent ? 200 : 404, intent ?? { error: "Payment intent not found" });
+    const subscriptionPaymentMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/pay$/);
+    if (request.method === "POST" && subscriptionPaymentMatch) {
+      try {
+        const recovery = await startListingSubscriptionPayment(user.id, subscriptionPaymentMatch[1], idempotencyKey(request));
+        sendJson(response, recovery ? 200 : 404, recovery ?? { error: "Subscription not found" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to start checkout right now. Please try again in a moment.";
+        if (message === "Subscription payment is not required." || message === "Subscription payment is not recoverable.") {
+          sendJson(response, 409, { error: message });
+        } else if (message === "The renewal invoice is not available. Please contact support." || message === "Checkout is not available for this subscription.") {
+          sendJson(response, 422, { error: message });
+        } else {
+          console.error("Unable to recover listing subscription payment", error);
+          sendJson(response, 500, { error: "Unable to start checkout right now. Please try again in a moment." });
+        }
+      }
       return true;
     }
 

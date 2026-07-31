@@ -7,6 +7,7 @@ import type {
   GemType,
   ListingCheckoutSession,
   ListingCheckoutCompletionResult,
+  ListingPaymentRecoveryResponse,
   Listing,
   ListingSubscription,
   ListingSubscriptionPlan,
@@ -239,8 +240,8 @@ export class GemsApiClient {
     return this.authJson(`/listings/${listingId}/payment-intents`, { method: "POST", body: JSON.stringify(request) }, options);
   }
 
-  async getListingSubscriptionPaymentIntent(subscriptionId: string): Promise<PaymentIntent> {
-    return this.authJson(`/listing-subscriptions/${subscriptionId}/payment-intent`);
+  async startListingSubscriptionPayment(subscriptionId: string, options: IdempotentRequestOptions = {}): Promise<ListingPaymentRecoveryResponse> {
+    return this.authJson(`/listing-subscriptions/${subscriptionId}/pay`, { method: "POST" }, options);
   }
 
   async convertTrialSubscription(subscriptionId: string, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
