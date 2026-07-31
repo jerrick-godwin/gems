@@ -96,13 +96,7 @@
 }
 
 .button-spinner {
-  width: 17px;
-  height: 17px;
-  border: 2px solid rgba(255, 255, 255, 0.42);
-  border-top-color: #ffffff;
-  border-radius: 50%;
   flex: 0 0 17px;
-  animation: button-spin 0.72s linear infinite;
 }
 
 .post-form .plan-option input {

@@ -2,6 +2,7 @@
 
 @import "./foundations/base.css" layer(foundations);
 @import "./foundations/motion.css" layer(foundations);
+@import "./atoms/classic-loader.css" layer(atoms);
 @import "./atoms/skeleton.css" layer(atoms);
 @import "./molecules/cards.css" layer(molecules);
 @import "./molecules/search.css" layer(molecules);

@@ -1,10 +1,11 @@
-import { ChevronDown, ChevronUp, ReceiptText, Star, Trash, Pause, Play, AlertTriangle, LoaderCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, ReceiptText, Star, Trash, Pause, Play, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import { formatLkr, type Listing, type ListingMedia, type PaymentIntent, type SellerProfile, type User } from "@gems/schemas";
 import { publicErrorMessage } from "../../shared/helpers";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { AdminMediaPreview } from "./AdminMediaPreview";
 import { CampaignDialog } from "./CampaignDialog";
 
@@ -307,7 +308,7 @@ export function ActiveListingRow({
                 className="confirmation-dialog-button tone-warning"
                 style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}
               >
-                {busy ? <LoaderCircle className="icon-spinner" size={16} /> : null}
+                {busy ? <ClassicLoader className="icon-spinner" size={16} /> : null}
                 {busy ? "Processing..." : `Proceed to ${listing.status === "paused" ? "Resume" : "Pause"}`}
               </button>
             </div>
@@ -338,7 +339,7 @@ export function ActiveListingRow({
                 className="confirmation-dialog-button tone-danger"
                 style={{ display: "inline-flex", gap: "8px", alignItems: "center", justifyContent: "center" }}
               >
-                {busy || removeAction.busy ? <LoaderCircle className="icon-spinner" size={16} /> : null}
+                {busy || removeAction.busy ? <ClassicLoader className="icon-spinner" size={16} /> : null}
                 {busy || removeAction.busy ? "Removing..." : "Proceed to Remove"}
               </button>
             </div>

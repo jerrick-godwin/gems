@@ -1,4 +1,4 @@
-import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, SlidersHorizontal, Star, X, LoaderCircle } from "lucide-react";
+import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, SlidersHorizontal, Star, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
@@ -9,6 +9,7 @@ import { AdSenseUnit } from "../../shared/AdSenseUnit";
 import { publicErrorMessage, formatTimeAgo, formatPostedDate } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { MarketplaceSearch } from "./MarketplaceSearch";
 
 export interface MarketplaceProps {
@@ -238,7 +239,7 @@ function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, on
       <div className="listing-media">
         {imageLoading && (
           <div className="image-loading-overlay">
-            <LoaderCircle className="icon-spinner" size={24} strokeWidth={2} />
+            <ClassicLoader className="icon-spinner" size={24} />
           </div>
         )}
         <img className={imageLoading ? "loading" : ""} src={listing.media[0]?.thumbnailUrl ?? listing.media[0]?.url} alt={listing.media[0]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} width={listing.media[0]?.width ?? 800} height={listing.media[0]?.height ?? 600} loading={eager ? "eager" : "lazy"} {...(priority ? { fetchpriority: "high" } : {})} onLoad={() => setImageLoading(false)} onError={() => setImageLoading(false)} ref={img => { if (img?.complete) setImageLoading(false); }} />
@@ -403,7 +404,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
       <div className="detail-image-container">
         {imageLoading && (
           <div className="image-loading-overlay">
-            <LoaderCircle className="icon-spinner" size={32} strokeWidth={2} />
+            <ClassicLoader className="icon-spinner" size={32} />
           </div>
         )}
         <img className={`detail-image ${imageLoading ? "loading" : ""}`} src={images[currentImageIndex]?.url} alt={images[currentImageIndex]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} onLoad={() => setImageLoading(false)} onError={() => setImageLoading(false)} ref={img => { if (img?.complete) setImageLoading(false); }} />
@@ -451,9 +452,6 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
             </div>
           )}
         </div>
-        <div className="detail-ad-container" style={{ margin: "16px 0", minHeight: "100px" }}>
-          <AdSenseUnit format="auto" slot="TODO_DISPLAY_SLOT_ID" />
-        </div>
         <div className="listing-footer">
           <div className="seller-card sleek-seller">
             <div className="seller-badge-title">{sellerProfileLabel(seller?.verificationStatus)}</div>
@@ -481,7 +479,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
                   disabled={isFullRevealLoading || (!phoneText && isPreviewLoading)}
                   aria-label={phonePreviewState === "error" ? "Retry loading phone number" : fullPhoneVisible && revealedPhone ? "Hide phone number" : "Show full phone number"}
                 >
-                  {isFullRevealLoading ? <LoaderCircle className="icon-spinner" size={18} /> : fullPhoneVisible && revealedPhone ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {isFullRevealLoading ? <ClassicLoader className="icon-spinner" size={18} /> : fullPhoneVisible && revealedPhone ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               )}
             </div>
@@ -500,7 +498,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
             <form className="post-form report-modal-form" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void handleReportSubmit(data.get("reason") as string, data.get("notes") as string); }}>
               <label>Reason for reporting *<select name="reason" required value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option value="">Select a reason...</option><option value="fake_certificate">Fake Certificate</option><option value="misrepresented_gem">Misrepresented Gem</option><option value="scam_attempt">Scam Attempt</option><option value="duplicate">Duplicate Listing</option><option value="wrong_details">Wrong Details</option><option value="abusive_seller">Abusive Seller</option><option value="other">Other</option></select></label>
               <label>{reportReason === "other" ? "Additional Notes *" : "Additional Notes (optional)"}<textarea name="notes" rows={4} placeholder="Please provide any additional details..." required={reportReason === "other"} /></label>
-              <div className="report-modal-actions"><button className="report-modal-cancel" type="button" onClick={() => setReportModalOpen(false)} disabled={reportAction.busy || isReporting}>Cancel</button><button type="submit" disabled={reportAction.busy || isReporting} className="primary-action btn-red report-modal-submit">{isReporting ? <LoaderCircle className="icon-spinner" size={16} /> : null} {isReporting ? "Submitting..." : "Submit Report"}</button></div>
+              <div className="report-modal-actions"><button className="report-modal-cancel" type="button" onClick={() => setReportModalOpen(false)} disabled={reportAction.busy || isReporting}>Cancel</button><button type="submit" disabled={reportAction.busy || isReporting} className="primary-action btn-red report-modal-submit">{isReporting ? <ClassicLoader className="icon-spinner" size={16} /> : null} {isReporting ? "Submitting..." : "Submit Report"}</button></div>
             </form>
           </div>
         </div>,

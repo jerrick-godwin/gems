@@ -2,6 +2,7 @@ import { Eye, EyeOff, LogIn, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateLoginFields, type AuthFieldErrors } from "./authValidation";
 
@@ -110,7 +111,7 @@ export function LoginPage({ onSignedIn, onNavigate }: { onSignedIn: () => void; 
           </label>
           <a className="forgot-password-link" href="/forgot-password" onClick={(event) => handleAuthLinkClick(event, "forgot_password")}>Forgot password?</a>
           <button className="primary-action" type="submit" id="login-page-submit" disabled={loading}>
-            {loading ? <span className="button-spinner" aria-hidden="true" /> : <LogIn size={18} strokeWidth={2.4} />}
+            {loading ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <LogIn size={18} strokeWidth={2.4} />}
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>

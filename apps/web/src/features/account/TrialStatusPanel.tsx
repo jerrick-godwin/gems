@@ -1,4 +1,4 @@
-import { AlertTriangle, Ban, CheckCircle2 } from "lucide-react";
+import { Ban, CheckCircle2 } from "lucide-react";
 import type { UserTrialSummary } from "@gems/schemas";
 
 type TrialPanelVariant = "full" | "compact" | "checkout";
@@ -12,7 +12,7 @@ export function TrialStatusPanel({
   trial?: UserTrialSummary | null;
   variant?: TrialPanelVariant;
 }) {
-  if (!trial) return null;
+  if (!trial || trial.status === "expired") return null;
 
   const copy = getTrialStatusCopy(trial);
   const Icon = copy.icon;
@@ -57,7 +57,7 @@ export function getTrialMenuLabel(trial?: UserTrialSummary | null) {
     return days <= 0 ? "Free trial: ends today" : `Free trial: ${days} day${days === 1 ? "" : "s"} left`;
   }
   if (trial.status === "terminated") return "Trial ended";
-  return "Trial expired";
+  return null;
 }
 
 export function getTrialMenuTone(trial?: UserTrialSummary | null) {
@@ -80,21 +80,11 @@ function getTrialStatusCopy(trial: UserTrialSummary) {
     };
   }
 
-  if (trial.status === "terminated") {
-    return {
-      icon: Ban,
-      title: "Trial ended",
-      statusLabel: "Terminated",
-      body: "Trial access was ended by admin. Paid subscriptions are still available.",
-      action: "Choose Pay Now on eligible listings to continue with paid access."
-    };
-  }
-
   return {
-    icon: AlertTriangle,
-    title: "Trial expired",
-    statusLabel: "Expired",
-    body: "Your free trial has ended. Pay to continue or renew listings.",
-    action: "Use Pay Now on trial listings to continue with a paid subscription."
+    icon: Ban,
+    title: "Trial ended",
+    statusLabel: "Terminated",
+    body: "Trial access was ended by admin. Paid subscriptions are still available.",
+    action: "Choose Pay Now on eligible listings to continue with paid access."
   };
 }

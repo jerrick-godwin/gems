@@ -5,6 +5,7 @@ import { formatLkr, quoteListingSubscription, type ListingCheckoutSession, type 
 import { authClient } from "../../firebase";
 import { publicErrorMessage } from "../../shared/helpers";
 import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateLoginFields, validateSignupFields, type AuthFieldErrors } from "./authValidation";
 import { TrialStatusPanel } from "./TrialStatusPanel";
@@ -161,7 +162,7 @@ export function PostGemCheckout({
     return (
       <section className="workspace-grid">
         <div className="workspace-main checkout-empty-state">
-          <span className="button-spinner" aria-hidden="true" />
+          <ClassicLoader className="button-spinner" size={17} aria-hidden="true" />
           <p>Loading checkout...</p>
         </div>
       </section>
@@ -297,7 +298,7 @@ export function PostGemCheckout({
             </span>
           </label>
           <button className="checkout-submit" type="button" onClick={() => void handlePayment()} disabled={!isSignedIn || !acceptedPolicies || isCompleting}>
-            {isCompleting ? <span className="button-spinner" aria-hidden="true" /> : activeTrial ? <Check size={18} strokeWidth={2.4} /> : <CreditCard size={18} strokeWidth={2.4} />}
+            {isCompleting ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : activeTrial ? <Check size={18} strokeWidth={2.4} /> : <CreditCard size={18} strokeWidth={2.4} />}
             {isCompleting ? (activeTrial ? "Submitting..." : "Creating payment...") : activeTrial ? "Publish with Free Trial" : "Proceed to Payment"}
           </button>
         </aside>
@@ -382,7 +383,7 @@ function InlineLoginForm() {
           {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
         </label>
         <button className="primary-action" type="submit" disabled={submitAction.busy}>
-          {submitAction.busy ? <span className="button-spinner" aria-hidden="true" /> : <LogIn size={18} strokeWidth={2.4} />}
+          {submitAction.busy ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <LogIn size={18} strokeWidth={2.4} />}
           {submitAction.busy ? "Signing in..." : "Sign in"}
         </button>
       </form>
@@ -480,7 +481,7 @@ function InlineSignupForm({ onDashboardChange }: { onDashboardChange: (dashboard
           {fieldErrors.address && <span className="field-error">{fieldErrors.address}</span>}
         </label>
         <button className="primary-action auth-field-wide" type="submit" disabled={submitAction.busy}>
-          {submitAction.busy ? <span className="button-spinner" aria-hidden="true" /> : <UserPlus size={18} strokeWidth={2.4} />}
+          {submitAction.busy ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <UserPlus size={18} strokeWidth={2.4} />}
           {submitAction.busy ? "Creating account..." : "Create account"}
         </button>
       </form>

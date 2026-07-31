@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
 import type { ListingCheckoutMedia, ListingCheckoutMediaInput, Treatment } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { formatPriceInput, parsePriceInput, isUploadableUrl, publicErrorMessage } from "../../shared/helpers";
 
 
@@ -489,7 +490,7 @@ export function PostGem({
             >
               {isSubmitting ? (
                 <>
-                  <span className="button-spinner" aria-hidden="true" />
+                  <ClassicLoader className="button-spinner" size={17} aria-hidden="true" />
                   <span>{status}</span>
                 </>
               ) : (

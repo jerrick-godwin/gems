@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { GemsApiClient } from "@gems/api-client";
 import type { PaymentReceipt, UserDashboard } from "@gems/schemas";
 import { StatusState } from "../../shared/StatusState";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import { publicErrorMessage } from "../../shared/helpers";
 import type { View } from "../../shared/types";
 
@@ -129,7 +130,7 @@ export function ReceiptPage({
       <div className="checkout-actions receipt-actions">
         {receipt.stripe.invoiceId && (
           <button type="button" className="primary-action" onClick={handleDownloadReceipt} disabled={downloadingReceipt}>
-            {downloadingReceipt ? <span className="button-spinner" aria-hidden="true" /> : <ReceiptText size={18} />}
+            {downloadingReceipt ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <ReceiptText size={18} />}
             {downloadingReceipt ? "Preparing receipt..." : "Download Receipt"}
           </button>
         )}

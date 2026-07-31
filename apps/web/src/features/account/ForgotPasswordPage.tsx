@@ -2,6 +2,7 @@ import { ArrowLeft, Mail, X } from "lucide-react";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "../../firebase";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { ClassicLoader } from "../../shared/ClassicLoader";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validatePasswordResetFields, type AuthFieldErrors } from "./authValidation";
 
@@ -88,7 +89,7 @@ export function ForgotPasswordPage({ onNavigate }: { onNavigate: (view: View) =>
             {fieldErrors.email && <span className="field-error" id="forgot-email-error">{fieldErrors.email}</span>}
           </label>
           <button className="primary-action" type="submit" id="forgot-password-submit" disabled={loading}>
-            {loading ? <span className="button-spinner" aria-hidden="true" /> : <Mail size={18} strokeWidth={2.4} />}
+            {loading ? <ClassicLoader className="button-spinner" size={17} aria-hidden="true" /> : <Mail size={18} strokeWidth={2.4} />}
             {loading ? "Sending link..." : "Send reset link"}
           </button>
         </form>
