@@ -54,11 +54,12 @@ test("listing status presents every supported management state", () => {
   assert.equal(deriveListingStatus({ ...baseListing, status: "paused" }).label, "Paused");
   assert.equal(deriveListingStatus({ ...baseListing, status: "draft", moderationStatus: "not_submitted" }).label, "Draft");
   assert.equal(deriveListingStatus({ ...baseListing, status: "expired" }).label, "Closed");
+  assert.equal(deriveListingStatus(baseListing, { ...baseSubscription, paymentStatus: "failed", expiresAt: "2026-06-01T00:00:00.000Z" }).label, "Suspended");
 });
 
 test("billing state stays separate and covers failed, pending, trial, renewal, and expiry", () => {
   const now = new Date("2026-07-31T00:00:00.000Z");
-  assert.equal(deriveAccessStatus({ ...baseSubscription, paymentStatus: "failed" }, undefined, now).status.label, "Payment required");
+  assert.equal(deriveAccessStatus({ ...baseSubscription, paymentStatus: "failed" }, undefined, now).status.label, "Pending Payment");
   assert.equal(deriveAccessStatus({ ...baseSubscription, status: "pending_payment", paymentStatus: "pending" }, undefined, now).status.label, "Payment pending");
   assert.equal(deriveAccessStatus({ ...baseSubscription, source: "trial", paymentStatus: "paid" }, undefined, now).status.label, "Trial active");
   assert.equal(deriveAccessStatus({ ...baseSubscription, autoRenew: true }, undefined, now).status.label, "Renews automatically");
