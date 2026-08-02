@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
+import { isAuthenticationError, type GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
 import { clearAdminSession } from "./useAdminSession";
 import { publicErrorMessage } from "../../shared/helpers";
 
@@ -18,6 +18,8 @@ export function useAdminModerationWorkflow({
 }) {
   const [snapshot, setSnapshot] = useState<AdminModerationSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!token || !enabled) {
@@ -31,13 +33,19 @@ export function useAdminModerationWorkflow({
       .then((nextSnapshot) => {
         if (!active) return;
         setSnapshot(nextSnapshot);
+        setError(null);
         setLoadError(null);
       })
       .catch((error: unknown) => {
         if (!active) return;
-        clearAdminSession(setToken);
-        setSnapshot(null);
-        setLoadError(publicErrorMessage(error, "Admin session expired"));
+        const message = publicErrorMessage(error, "Unable to load admin snapshot");
+        if (isAuthenticationError(error)) {
+          clearAdminSession(setToken);
+          setSnapshot(null);
+          setLoadError(message);
+        } else {
+          setError(message);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -46,7 +54,7 @@ export function useAdminModerationWorkflow({
     return () => {
       active = false;
     };
-  }, [api, enabled, setLoadError, setToken, token]);
+  }, [api, enabled, reloadKey, setLoadError, setToken, token]);
 
-  return { snapshot, setSnapshot, loading };
+  return { snapshot, setSnapshot, loading, error, retry: () => setReloadKey((value) => value + 1) };
 }

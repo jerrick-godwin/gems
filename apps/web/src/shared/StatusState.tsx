@@ -158,6 +158,9 @@ export function StatusState({ title, message, loading, variant = "marketplace", 
       )}
       <Heading className={variant === "admin" ? "status-state-admin-title" : undefined}>{title}</Heading>
       <p>{message}</p>
+      {showAction && onRetry ? (
+        <button className="status-state-action" type="button" onClick={retryLoad}>Retry</button>
+      ) : null}
     </section>
   );
 }

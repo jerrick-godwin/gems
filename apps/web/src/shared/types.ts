@@ -39,6 +39,10 @@ export function viewForAuthState(view: View, isSignedIn: boolean) {
   return isSignedIn && signedOutOnlyViews.has(view) ? "market" : view;
 }
 
+export function shouldLoadMarketplaceWorkflow(view: View) {
+  return view === "market" || view === "post_checkout" || view === "profile" || view === "reports" || view === "my_listings";
+}
+
 export function listingCheckoutTokenFromPathname(pathname: string) {
   const match = pathname.match(/^\/post\/checkout\/([^/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : "";

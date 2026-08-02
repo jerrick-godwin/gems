@@ -38,7 +38,8 @@ function ProfileMenu({
   theme,
   setTheme,
   showTheme,
-  onAction
+  onAction,
+  hrefForView
 }: {
   view: View;
   navigateToView: (view: View) => void;
@@ -49,6 +50,7 @@ function ProfileMenu({
   setTheme: (theme: ThemePreference) => void;
   showTheme: boolean;
   onAction: () => void;
+  hrefForView: (view: View) => string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuId = useId();
@@ -85,7 +87,7 @@ function ProfileMenu({
         </div>
         <div className="profile-dropdown-links-grid">
           <a
-            href={pathForView("my_listings")}
+            href={hrefForView("my_listings")}
             className={`menu-item ${view === "my_listings" ? "active" : ""}`}
             onClick={(event) => {
               if (!isClientNavigationClick(event)) return;
@@ -98,7 +100,7 @@ function ProfileMenu({
             <Store size={16} /> My Listings
           </a>
           <a
-            href={pathForView("reports")}
+            href={hrefForView("reports")}
             className={`menu-item ${view === "reports" ? "active" : ""}`}
             onClick={(event) => {
               if (!isClientNavigationClick(event)) return;
@@ -111,7 +113,7 @@ function ProfileMenu({
             <Flag size={16} /> My Reports
           </a>
           <a
-            href={pathForView("profile")}
+            href={hrefForView("profile")}
             className={`menu-item ${view === "profile" ? "active" : ""}`}
             onClick={(event) => {
               if (!isClientNavigationClick(event)) return;
@@ -162,7 +164,9 @@ export function AppFrame({
   paymentNotice,
   onDismissPaymentNotice,
   onViewIntent,
-  pendingView
+  pendingView,
+  onSignOut,
+  hrefForView = pathForView
 }: {
   children: ReactNode;
   view: View;
@@ -185,6 +189,8 @@ export function AppFrame({
   onDismissPaymentNotice?: () => void;
   onViewIntent?: (view: View) => void;
   pendingView?: View | null;
+  onSignOut?: () => Promise<void>;
+  hrefForView?: (view: View) => string;
 }) {
   const [mobileMenuOpenView, setMobileMenuOpenView] = useState<View | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -261,7 +267,8 @@ export function AppFrame({
 
   const handleLogout = () => {
     closeMobileMenu();
-    import("../../firebase").then(({ authClient }) => authClient.signOut()).then(() => {
+    const signOut = onSignOut ?? (() => import("../../firebase").then(({ authClient }) => authClient.signOut()));
+    void signOut().then(() => {
       setView("market");
     });
   };
@@ -274,7 +281,7 @@ export function AppFrame({
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-inner customer-topbar-inner">
-          <a className="brand" href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")} aria-label="gemslanka.lk home">
+          <a className="brand" href={hrefForView("market")} onClick={(event) => handleViewLinkClick(event, "market")} aria-label="gemslanka.lk home">
             <span className="brand-mark brand-mark-main">
               <img src="/assets/gemslanka-logo.png" alt="" />
             </span>
@@ -284,7 +291,7 @@ export function AppFrame({
           <nav className="nav-actions" aria-label="Primary" data-nosnippet ref={mobileMenuRef}>
             <a
               className="mobile-header-context-action"
-              href={pathForView(mobileHeaderActionView)}
+              href={hrefForView(mobileHeaderActionView)}
               onClick={(event) => handleViewLinkClick(event, mobileHeaderActionView)}
               id="nav-mobile-context-action"
               {...viewIntentProps(mobileHeaderActionView)}
@@ -318,7 +325,7 @@ export function AppFrame({
                 <section className="nav-menu-section nav-menu-section-marketplace" aria-labelledby="nav-menu-marketplace-heading">
                   <h2 className="nav-menu-section-title" id="nav-menu-marketplace-heading">Marketplace</h2>
                   <a
-                    href={pathForView("market")}
+                    href={hrefForView("market")}
                     className={`nav-menu-action${view === "market" ? " active" : ""}`}
                     onClick={(event) => handleViewLinkClick(event, "market")}
                     id="nav-browse"
@@ -327,7 +334,7 @@ export function AppFrame({
                     Browse
                   </a>
                   <a
-                    href={pathForView("post")}
+                    href={hrefForView("post")}
                     className={`nav-menu-action primary-action${view === "post" || view === "post_checkout" ? " active" : ""}`}
                     onClick={(event) => handleViewLinkClick(event, "post")}
                     id="nav-post"
@@ -375,9 +382,10 @@ export function AppFrame({
                       setTheme={setTheme}
                       showTheme={!isMobileViewport}
                       onAction={closeMobileMenu}
+                      hrefForView={hrefForView}
                     />
                   ) : (
-                    <a className="nav-menu-action login-button" href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} id="nav-login" {...viewIntentProps("login")}>
+                    <a className="nav-menu-action login-button" href={hrefForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} id="nav-login" {...viewIntentProps("login")}>
                       <LogIn size={16} strokeWidth={2.5} aria-hidden="true" />
                       Sign In
                     </a>
@@ -430,18 +438,18 @@ export function AppFrame({
             <div className="footer-col">
               <h3 className="footer-col-heading">Marketplace</h3>
               <nav className="footer-col-links" aria-label="Marketplace">
-                <a href={pathForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
+                <a href={hrefForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
                 <a href="/buy-gemstones">Buy Gemstones</a>
                 <a href="/sell-gemstones">Sell Gemstones</a>
-                <a href={pathForView("post")} onClick={(event) => handleViewLinkClick(event, "post")} {...viewIntentProps("post")}>Post a Listing</a>
+                <a href={hrefForView("post")} onClick={(event) => handleViewLinkClick(event, "post")} {...viewIntentProps("post")}>Post a Listing</a>
                 {!authResolved ? (
                   <span className="footer-auth-placeholder" aria-hidden="true">
                     <span className="skeleton footer-auth-placeholder-line short" />
                   </span>
                 ) : isSignedIn ? (
-                  <a href={pathForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")} {...viewIntentProps("my_listings")}>My Listings</a>
+                  <a href={hrefForView("my_listings")} onClick={(event) => handleViewLinkClick(event, "my_listings")} {...viewIntentProps("my_listings")}>My Listings</a>
                 ) : (
-                  <a href={pathForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} {...viewIntentProps("login")}>Sign In</a>
+                  <a href={hrefForView("login")} onClick={(event) => handleViewLinkClick(event, "login")} {...viewIntentProps("login")}>Sign In</a>
                 )}
               </nav>
             </div>
@@ -460,10 +468,10 @@ export function AppFrame({
             <div className="footer-col">
               <h3 className="footer-col-heading">Support &amp; Legal</h3>
               <nav className="footer-col-links" aria-label="Support and legal">
-                <a href={pathForView("contact")} onClick={(event) => handleViewLinkClick(event, "contact")}>Contact Us</a>
-                <a href={pathForView("terms")} onClick={(event) => handleViewLinkClick(event, "terms")}>Terms &amp; Conditions</a>
-                <a href={pathForView("privacy")} onClick={(event) => handleViewLinkClick(event, "privacy")}>Privacy Policy</a>
-                <a href={pathForView("refund")} onClick={(event) => handleViewLinkClick(event, "refund")}>Refund Policy</a>
+                <a href={hrefForView("contact")} onClick={(event) => handleViewLinkClick(event, "contact")}>Contact Us</a>
+                <a href={hrefForView("terms")} onClick={(event) => handleViewLinkClick(event, "terms")}>Terms &amp; Conditions</a>
+                <a href={hrefForView("privacy")} onClick={(event) => handleViewLinkClick(event, "privacy")}>Privacy Policy</a>
+                <a href={hrefForView("refund")} onClick={(event) => handleViewLinkClick(event, "refund")}>Refund Policy</a>
               </nav>
             </div>
           </div>

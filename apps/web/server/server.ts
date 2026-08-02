@@ -83,6 +83,7 @@ import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./st
 import { ensureDatabaseCompatibility, requireDatabase } from "./db/index.js";
 import { indexNowKey } from "./indexnow.js";
 import { resolvePublicListingMedia } from "./public-listing-media.js";
+import { isAdminDocumentPath } from "./admin-routing.js";
 import { buildSitemapXml } from "./sitemap.js";
 import { isPriorityGemSlug, seoLandingPageFromPath, seoLandingPages } from "../src/shared/seo.js";
 import { paymentReturnLocation } from "./payment-return.js";
@@ -445,8 +446,8 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       const endsAtValue = typeof body.endsAt === "string" ? body.endsAt : "";
       const endsAt = new Date(endsAtValue);
       try {
-        await extendSitewideTrial(endsAt);
-        sendJson(response, 200, { success: true });
+        const result = await extendSitewideTrial(endsAt);
+        sendJson(response, 200, { success: true, ...result });
       } catch (error) {
         sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to extend sitewide trial" });
       }
@@ -1346,7 +1347,7 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
-  if (url.pathname === "/admin" || url.pathname === "/admin/") {
+  if (isAdminDocumentPath(url.pathname)) {
     const adminPath = join(staticRoot, "admin.html");
     if (existsSync(adminPath)) {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -1364,6 +1365,7 @@ async function handleStatic(request: IncomingMessage, response: ServerResponse) 
 
   sendJson(response, 404, { error: "Web build not found. Run npm run build first." });
 }
+
 
 async function main() {
   await ensureDatabaseCompatibility({ force: true });

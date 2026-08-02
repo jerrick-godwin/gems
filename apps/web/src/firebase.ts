@@ -1,5 +1,5 @@
-import { initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, signInWithEmailAndPassword, signInWithCustomToken, updateProfile, type Auth, type User } from "firebase/auth";
+import { getApps, initializeApp } from "firebase/app";
+import { browserSessionPersistence, createUserWithEmailAndPassword, getAuth, onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset, setPersistence, signInWithEmailAndPassword, signInWithCustomToken, updateProfile, type Auth, type User } from "firebase/auth";
 
 export interface MarketplaceAuthUser {
   uid: string;
@@ -114,7 +114,17 @@ function createLocalPasswordResetUnavailableError() {
   return error;
 }
 
-class MarketplaceAuthClient {
+export interface CustomerAuthClient {
+  onAuthStateChanged(callback: (user: MarketplaceAuthUser | null) => void): () => void;
+  signIn(args: { email: string; password: string }): Promise<MarketplaceAuthUser>;
+  signUp(args: { email: string; password: string; fullName: string }): Promise<MarketplaceAuthUser>;
+  sendPasswordReset(args: { email: string }): Promise<void>;
+  confirmPasswordReset(args: { code: string; password: string }): Promise<void>;
+  signInWithCustomToken(customToken: string): Promise<void>;
+  signOut(): Promise<void>;
+}
+
+export class MarketplaceAuthClient implements CustomerAuthClient {
   constructor(private readonly auth: Auth | undefined) {}
 
   onAuthStateChanged(callback: (user: MarketplaceAuthUser | null) => void) {
@@ -222,3 +232,12 @@ class MarketplaceAuthClient {
 }
 
 export const authClient = new MarketplaceAuthClient(firebaseAuth);
+
+export async function createImpersonationAuthClient(): Promise<CustomerAuthClient> {
+  if (!hasPublicFirebaseConfig) throw createMissingConfigError();
+  const name = "customer-impersonation";
+  const impersonationApp = getApps().find((candidate) => candidate.name === name) ?? initializeApp(firebaseConfig, name);
+  const impersonationAuth = getAuth(impersonationApp);
+  await setPersistence(impersonationAuth, browserSessionPersistence);
+  return new MarketplaceAuthClient(impersonationAuth);
+}
