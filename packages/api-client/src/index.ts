@@ -53,6 +53,23 @@ export interface AdminSession {
   role: "admin";
 }
 
+export interface SitewideTrialExtensionResult {
+  success: boolean;
+  extendedCount: number;
+  preservedCount: number;
+}
+
+export class ApiResponseError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiResponseError";
+  }
+}
+
+export function isAuthenticationError(error: unknown) {
+  return error instanceof ApiResponseError && (error.status === 401 || error.status === 403);
+}
+
 export interface IdempotentRequestOptions {
   idempotencyKey?: string;
 }
@@ -331,7 +348,7 @@ export class GemsAdminApiClient {
     const response = await fetch(`${this.baseUrl}/admin/auth/me`, {
       headers: adminHeaders(token)
     });
-    if (!response.ok) throw new Error("Admin session expired");
+    if (!response.ok) throw new ApiResponseError(response.status === 401 ? "Admin session expired" : "Unable to verify admin session", response.status);
     return response.json() as Promise<AdminSession>;
   }
 
@@ -347,7 +364,7 @@ export class GemsAdminApiClient {
     const response = await fetch(`${this.baseUrl}/admin/snapshot`, {
       headers: adminHeaders(token)
     });
-    if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : "Unable to load admin snapshot");
+    if (!response.ok) throw new ApiResponseError(response.status === 401 ? "Admin session expired" : "Unable to load admin snapshot", response.status);
     return response.json() as Promise<AdminModerationSnapshot>;
   }
 
@@ -381,7 +398,7 @@ export class GemsAdminApiClient {
     return response.json() as Promise<User>;
   }
 
-  async extendSitewideTrial(token: string, endsAt: string): Promise<{ success: boolean }> {
+  async extendSitewideTrial(token: string, endsAt: string): Promise<SitewideTrialExtensionResult> {
     const response = await fetch(`${this.baseUrl}/admin/sitewide-trial`, {
       method: "PATCH",
       headers: {
@@ -391,7 +408,7 @@ export class GemsAdminApiClient {
       body: JSON.stringify({ endsAt })
     });
     if (!response.ok) throw new Error(response.status === 401 ? "Admin session expired" : await readApiError(response));
-    return response.json() as Promise<{ success: boolean }>;
+    return response.json() as Promise<SitewideTrialExtensionResult>;
   }
 
   async terminateSitewideTrial(token: string): Promise<{ success: boolean }> {

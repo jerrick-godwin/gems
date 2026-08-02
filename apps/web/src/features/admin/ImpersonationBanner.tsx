@@ -1,54 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ShieldAlert, X } from "lucide-react";
-import { authClient } from "../../firebase";
-
-const IMPERSONATION_KEY = "gems-impersonation-uid";
+import type { CustomerAuthClient } from "../../firebase";
 
 export interface ImpersonationInfo {
   uid: string;
   email: string;
 }
 
-export function readImpersonationInfo(): ImpersonationInfo | null {
-  try {
-    const raw = window.localStorage.getItem(IMPERSONATION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ImpersonationInfo>;
-    if (typeof parsed.uid === "string" && typeof parsed.email === "string") {
-      return { uid: parsed.uid, email: parsed.email };
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return null;
-}
-
-export function setImpersonationInfo(info: ImpersonationInfo) {
-  window.localStorage.setItem(IMPERSONATION_KEY, JSON.stringify(info));
-}
-
-export function clearImpersonationInfo() {
-  window.localStorage.removeItem(IMPERSONATION_KEY);
-}
-
-export function ImpersonationBanner() {
-  const [info, setInfo] = useState<ImpersonationInfo | null>(null);
+export function ImpersonationBanner({ info, authClient }: { info: ImpersonationInfo; authClient: CustomerAuthClient }) {
   const [ending, setEnding] = useState(false);
-
-  useEffect(() => {
-    setInfo(readImpersonationInfo());
-  }, []);
-
-  if (!info) return null;
 
   const handleEnd = async () => {
     setEnding(true);
     try {
-      clearImpersonationInfo();
       await authClient.signOut();
     } finally {
-      setInfo(null);
       setEnding(false);
+      window.close();
+      window.location.replace("/impersonate/ended");
     }
   };
 

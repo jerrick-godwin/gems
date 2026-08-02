@@ -5,6 +5,8 @@ import { MarketplaceRoute } from "../features/marketplace/MarketplaceRoute.js";
 import type { AccountSurfaceProps, CustomerAuthState, CustomerNavigationOptions, MarketplaceReferenceState } from "../shared/customer.js";
 import { pathForView, viewFromPathname, type View } from "../shared/types.js";
 import { ImpersonationBanner } from "../features/admin/ImpersonationBanner.js";
+import type { CustomerAuthClient } from "../firebase.js";
+import type { ImpersonationInfo } from "../features/admin/ImpersonationBanner.js";
 
 type AccountSurfaceModule = { default: ComponentType<AccountSurfaceProps> };
 
@@ -14,6 +16,9 @@ type CustomerRootProps = {
   initialView?: View;
   accountComponent?: ComponentType<AccountSurfaceProps>;
   loadAccountComponent?: () => Promise<AccountSurfaceModule>;
+  authClient?: CustomerAuthClient;
+  basePath?: string;
+  impersonationInfo?: ImpersonationInfo;
 };
 
 type CustomerHistoryState = {
@@ -50,7 +55,10 @@ export function CustomerRoot({
   initialPublicRoute,
   initialView = "market",
   accountComponent,
-  loadAccountComponent = defaultAccountLoader
+  loadAccountComponent = defaultAccountLoader,
+  authClient: authClientOverride,
+  basePath = "",
+  impersonationInfo
 }: CustomerRootProps) {
   const initialReferences = referencesFromRoute(initialPublicRoute);
   const [surface, setSurface] = useState<"public" | "account">(initialPublicRoute ? "public" : "account");
@@ -60,6 +68,7 @@ export function CustomerRoot({
   const [LoadedAccount, setLoadedAccount] = useState<ComponentType<AccountSurfaceProps> | undefined>(() => accountComponent);
   const [pendingView, setPendingView] = useState<View | null>(null);
   const [authState, setAuthState] = useState<CustomerAuthState>({ status: "resolving", user: null });
+  const [resolvedAuthClient, setResolvedAuthClient] = useState<CustomerAuthClient | null>(authClientOverride ?? null);
   const [referenceData, setReferenceData] = useState<MarketplaceReferences>(initialReferences ?? emptyReferences);
   const [referenceStatus, setReferenceStatus] = useState<MarketplaceReferenceState["status"]>(
     initialReferences ? "ready" : "idle"
@@ -125,8 +134,11 @@ export function CustomerRoot({
     return key;
   }, []);
 
+  const hrefForView = useCallback((nextView: View) => `${basePath}${pathForView(nextView) === "/" ? "" : pathForView(nextView)}` || "/", [basePath]);
+
   const commitAccountNavigation = useCallback((nextView: View, options: CustomerNavigationOptions = {}) => {
-    const path = options.path ?? pathForView(nextView);
+    const rawPath = options.path ?? pathForView(nextView);
+    const path = basePath && rawPath.startsWith("/") && !rawPath.startsWith(basePath) ? `${basePath}${rawPath === "/" ? "" : rawPath}` : rawPath;
     const state: CustomerHistoryState = { customerSurface: "account", customerEntryKey: nextEntryKey(), view: nextView };
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (options.replace) window.history.replaceState(state, "", path);
@@ -135,7 +147,7 @@ export function CustomerRoot({
       setView(nextView);
       setSurface("account");
     });
-  }, []);
+  }, [basePath]);
 
   const prepareAccountNavigation = useCallback((nextView: View, options: CustomerNavigationOptions = {}) => {
     const sequence = ++navigationSequenceRef.current;
@@ -153,12 +165,16 @@ export function CustomerRoot({
       .catch(() => {
         if (sequence !== navigationSequenceRef.current) return;
         setPendingView(null);
-        window.location.assign(options.path ?? pathForView(nextView));
+        window.location.assign(options.path ?? hrefForView(nextView));
       });
-  }, [commitAccountNavigation, ensureAccountLoaded, ensureCurrentPublicEntry, loadReferences]);
+  }, [commitAccountNavigation, ensureAccountLoaded, ensureCurrentPublicEntry, hrefForView, loadReferences]);
 
   const navigate = useCallback((nextView: View, options: CustomerNavigationOptions = {}) => {
     if (nextView === "market") {
+      if (basePath) {
+        commitAccountNavigation(nextView, options);
+        return;
+      }
       window.location.assign(options.path ?? pathForView(nextView));
       return;
     }
@@ -171,7 +187,7 @@ export function CustomerRoot({
       return;
     }
     commitAccountNavigation(nextView, options);
-  }, [commitAccountNavigation, prepareAccountNavigation, surface]);
+  }, [basePath, commitAccountNavigation, prepareAccountNavigation, surface]);
 
   const preload = useCallback((nextView: View) => {
     if (surface !== "public" || nextView === "market" || isPublicOnlyView(nextView)) return;
@@ -196,24 +212,10 @@ export function CustomerRoot({
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
-    void import("../firebase.js").then(async ({ authClient }) => {
+    const authClientPromise = authClientOverride ? Promise.resolve(authClientOverride) : import("../firebase.js").then(({ authClient }) => authClient);
+    void authClientPromise.then(async (authClient) => {
       if (!active) return;
-
-      // Check for a pending impersonation custom token from the admin panel.
-      // This is written to localStorage by the admin console before opening this tab.
-      const pendingToken = window.localStorage.getItem("gems-pending-impersonation-token");
-      if (pendingToken) {
-        window.localStorage.removeItem("gems-pending-impersonation-token"); // single-use
-        try {
-          await authClient.signInWithCustomToken(pendingToken);
-        } catch {
-          // If sign-in fails, clear the impersonation marker so the banner doesn't appear.
-          import("../features/admin/ImpersonationBanner.js")
-            .then(({ clearImpersonationInfo }) => clearImpersonationInfo())
-            .catch(() => {});
-        }
-      }
-
+      setResolvedAuthClient(authClient);
       if (!active) return;
       unsubscribe = authClient.onAuthStateChanged((user) => {
         if (!active) return;
@@ -226,7 +228,7 @@ export function CustomerRoot({
       active = false;
       unsubscribe?.();
     };
-  }, []);
+  }, [authClientOverride]);
 
   useEffect(() => {
     if (surface === "public") ensureCurrentPublicEntry();
@@ -278,7 +280,7 @@ export function CustomerRoot({
   if (surface === "public" && activePublicRoute) {
     return (
       <>
-        <ImpersonationBanner />
+        {impersonationInfo && resolvedAuthClient ? <ImpersonationBanner info={impersonationInfo} authClient={resolvedAuthClient} /> : null}
         <MarketplaceRoute
           key={`public-${publicRevision}`}
           initialRoute={activePublicRoute}
@@ -293,11 +295,11 @@ export function CustomerRoot({
     );
   }
 
-  if (!LoadedAccount) return null;
+  if (!LoadedAccount || !resolvedAuthClient) return null;
   return (
     <>
-      <ImpersonationBanner />
-      <LoadedAccount view={view} authState={authState} references={references} navigate={navigate} />
+      {impersonationInfo ? <ImpersonationBanner info={impersonationInfo} authClient={resolvedAuthClient} /> : null}
+      <LoadedAccount view={view} authState={authState} references={references} navigate={navigate} authClient={resolvedAuthClient} hrefForView={hrefForView} />
     </>
   );
 }

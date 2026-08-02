@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, ReceiptText, Star, Trash, Pause, Play, AlertTriangle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { GemsAdminApiClient } from "@gems/api-client";
 import { formatLkr, type Listing, type ListingMedia, type PaymentIntent, type SellerProfile, type User } from "@gems/schemas";
@@ -17,7 +17,9 @@ export function ActiveListingRow({
   sellers,
   users,
   onUpdate,
-  onRemove
+  onRemove,
+  initialExpanded = false,
+  highlighted = false
 }: { 
   listing: Listing; 
   api: GemsAdminApiClient; 
@@ -27,9 +29,19 @@ export function ActiveListingRow({
   users: User[];
   onUpdate: (listing: Listing) => void;
   onRemove: (id: string) => void;
+  initialExpanded?: boolean;
+  highlighted?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) {
+      setExpanded(true);
+      rowRef.current?.scrollIntoView({ block: "center" });
+      rowRef.current?.focus({ preventScroll: true });
+    }
+  }, [highlighted]);
   const [showCampaigns, setShowCampaigns] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptError, setReceiptError] = useState("");
@@ -102,7 +114,7 @@ export function ActiveListingRow({
 
   return (
     <>
-      <div className="active-listing-row">
+      <div ref={rowRef} tabIndex={highlighted ? -1 : undefined} className={`active-listing-row${highlighted ? " admin-record-highlight" : ""}`}>
         <div className="active-listing-summary">
           <AdminMediaPreview media={photos[0]} alt={listing.title} />
           <div className="active-listing-title-block">

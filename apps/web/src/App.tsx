@@ -13,9 +13,10 @@ import { ReceiptPage } from "./features/account/ReceiptPage";
 import { SignupPage } from "./features/account/SignupPage";
 import { useAccountWorkflow } from "./features/account/useAccountWorkflow";
 import { AppFrame } from "./features/shell/AppFrame";
+import { Marketplace } from "./features/marketplace/Marketplace";
 import { useMarketplaceWorkflow } from "./features/marketplace/useMarketplaceWorkflow";
 import { StatusState } from "./shared/StatusState";
-import { listingCheckoutTokenFromPathname, pathForView, protectedViews, signedOutOnlyViews, viewForAuthState, type View } from "./shared/types";
+import { listingCheckoutTokenFromPathname, pathForView, protectedViews, shouldLoadMarketplaceWorkflow, signedOutOnlyViews, viewForAuthState, type View } from "./shared/types";
 import type { AccountSurfaceProps, CustomerNavigationOptions } from "./shared/customer";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
@@ -143,7 +144,7 @@ function canonicalPathForView(view: View) {
 
 
 
-function App({ view, authState, references, navigate }: AccountSurfaceProps) {
+function App({ view, authState, references, navigate, authClient, hrefForView }: AccountSurfaceProps) {
   const [paymentNotice, setPaymentNotice] = useState<PaymentNotice | null>(null);
   const user = authState.status === "signed-in" ? authState.user : null;
   const authResolved = authState.status !== "resolving";
@@ -192,7 +193,7 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   const api = useMemo(() => new GemsApiClient("/api/v1", { getAccessToken }), [getAccessToken]);
   const accountWorkflowEnabled = isSignedIn && (protectedViews.has(view) || view === "post_checkout");
-  const marketplaceWorkflowEnabled = view === "post_checkout" || view === "profile" || view === "reports" || view === "my_listings";
+  const marketplaceWorkflowEnabled = shouldLoadMarketplaceWorkflow(view);
   const account = useAccountWorkflow(api, isSignedIn, accountWorkflowEnabled);
   const marketplace = useMarketplaceWorkflow({
     api,
@@ -254,7 +255,9 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
     user,
     accountUser: account.dashboard?.user ?? null,
     paymentNotice,
-    onDismissPaymentNotice: () => setPaymentNotice(null)
+    onDismissPaymentNotice: () => setPaymentNotice(null),
+    onSignOut: () => authClient.signOut(),
+    hrefForView
   };
 
   if (view === "terms" || view === "privacy" || view === "refund" || view === "contact") {
@@ -376,6 +379,45 @@ function App({ view, authState, references, navigate }: AccountSurfaceProps) {
 
   return (
     <AppFrame {...frameProps} locations={locations}>
+      {view === "market" && (
+        <Marketplace
+          gemTypes={gemTypes}
+          sellers={sellers}
+          locations={locations}
+          selectedLocations={marketplace.selectedLocations}
+          setSelectedLocations={marketplace.setSelectedLocations}
+          sourceListingCount={marketplace.approvedListings.length}
+          filteredListings={marketplace.filteredListings}
+          page={marketplace.page}
+          setPage={marketplace.setPage}
+          totalPages={marketplace.totalPages}
+          pageSize={marketplace.pageSize}
+          setPageSize={marketplace.setPageSize}
+          selectedListing={marketplace.selectedListing}
+          query={marketplace.query}
+          setQuery={marketplace.setQuery}
+          gemType={marketplace.gemType}
+          setGemType={marketplace.setGemType}
+          treatment={marketplace.treatment}
+          setTreatment={marketplace.setTreatment}
+          certificate={marketplace.certificate}
+          setCertificate={marketplace.setCertificate}
+          sort={marketplace.sort}
+          setSort={marketplace.setSort}
+          selectedId={marketplace.selectedId ?? ""}
+          setSelectedId={(listingId) => marketplace.setSelectedId(listingId || null)}
+          previewPhone={marketplace.selectedId ? marketplace.previewPhones[marketplace.selectedId] : undefined}
+          revealedPhone={marketplace.selectedId ? marketplace.fullPhones[marketplace.selectedId] : undefined}
+          previewPhoneNumber={marketplace.handlePreviewPhone}
+          revealPhone={marketplace.handleRevealPhone}
+          isSignedIn={isSignedIn}
+          reportedListingIds={marketplace.reportedListingIds}
+          onRefresh={marketplace.refreshSnapshot}
+          onReport={marketplace.handleReportListing}
+          onRecordInteraction={marketplace.handleRecordInteraction}
+          detailHeadingLevel={2}
+        />
+      )}
       {view === "post_checkout" && (
         <PostGemCheckout
           token={listingCheckoutToken}

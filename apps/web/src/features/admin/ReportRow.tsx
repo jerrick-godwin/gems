@@ -1,5 +1,5 @@
 import { Eye, Flag, Trash, XCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GemsAdminApiClient, AdminModerationSnapshot } from "@gems/api-client";
 import type { Report } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
@@ -14,7 +14,9 @@ export function ReportRow({
   token,
   onRemoveListing,
   onResolveReport,
-  setLoadError
+  setLoadError,
+  initialExpanded = false,
+  highlighted = false
 }: {
   report: Report;
   snapshot: AdminModerationSnapshot;
@@ -23,8 +25,18 @@ export function ReportRow({
   onRemoveListing: (listingId: string) => void;
   onResolveReport: (reportId: string) => void;
   setLoadError: (error: string | null) => void;
+  initialExpanded?: boolean;
+  highlighted?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const rowRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (highlighted) {
+      setExpanded(true);
+      rowRef.current?.scrollIntoView({ block: "center" });
+      rowRef.current?.focus({ preventScroll: true });
+    }
+  }, [highlighted]);
   const [busy, setBusy] = useState<"remove" | "reject" | null>(null);
   const rowAction = useSingleFlightAction();
   const reporter = snapshot.users.find(u => u.id === report.reporterId);
@@ -66,7 +78,7 @@ export function ReportRow({
   };
 
   return (
-    <article className={`report-row card card--surface card--compact status-${report.status}`}>
+    <article ref={rowRef} tabIndex={highlighted ? -1 : undefined} className={`report-row card card--surface card--compact status-${report.status}${highlighted ? " admin-record-highlight" : ""}`}>
       <div className="report-row-summary">
         {listing ? (
           <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} />

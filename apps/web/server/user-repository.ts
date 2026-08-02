@@ -246,16 +246,33 @@ export async function getFirebaseUidForUser(userId: string): Promise<string | nu
   return user?.firebaseUid ?? null;
 }
 
-export async function extendUserTrial(userId: string, endsAt: Date) {
+export function assertValidTrialExtension(endsAt: Date, currentEndsAt?: Date) {
   const now = new Date();
   if (!Number.isFinite(endsAt.getTime())) throw new Error("Valid trial end date is required.");
+  if (endsAt <= now) throw new Error("Trial end date must be later than the current date and time.");
+  if (currentEndsAt && endsAt <= currentEndsAt) throw new Error("Trial end date must be later than the current trial end date.");
+}
+
+export function planSitewideTrialExtensions(entries: Array<{ id: string; trialEndsAt: Date }>, requestedEndsAt: Date) {
+  let extendedCount = 0;
+  let preservedCount = 0;
+  const users = entries.map((entry) => {
+    const effectiveEndsAt = entry.trialEndsAt > requestedEndsAt ? entry.trialEndsAt : requestedEndsAt;
+    if (effectiveEndsAt.getTime() === entry.trialEndsAt.getTime()) preservedCount += 1;
+    else extendedCount += 1;
+    return { id: entry.id, effectiveEndsAt };
+  });
+  return { users, extendedCount, preservedCount };
+}
+
+export async function extendUserTrial(userId: string, endsAt: Date) {
+  const now = new Date();
+  assertValidTrialExtension(endsAt);
 
   if (hasDatabase) {
     const existing = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!existing[0]) return undefined;
-    if (endsAt <= existing[0].trialEndsAt) {
-      throw new Error("Trial end date must be later than the current trial end date.");
-    }
+    assertValidTrialExtension(endsAt, existing[0].trialEndsAt);
     const [updated] = await db.update(users).set({
       trialEndsAt: endsAt,
       trialTerminatedAt: null,
@@ -267,7 +284,7 @@ export async function extendUserTrial(userId: string, endsAt: Date) {
 
   const user = findMemoryUser(await getMemoryState(), userId);
   const currentEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt) : new Date(user.trial?.endsAt ?? 0);
-  if (endsAt <= currentEndsAt) throw new Error("Trial end date must be later than the current trial end date.");
+  assertValidTrialExtension(endsAt, currentEndsAt);
   user.trialEndsAt = endsAt.toISOString();
   user.trialTerminatedAt = undefined;
   user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
@@ -297,28 +314,56 @@ export async function terminateUserTrial(userId: string) {
   return user;
 }
 
-export async function extendSitewideTrial(endsAt: Date) {
+export async function extendSitewideTrial(endsAt: Date): Promise<{ extendedCount: number; preservedCount: number }> {
   const now = new Date();
-  if (!Number.isFinite(endsAt.getTime())) throw new Error("Valid trial end date is required.");
+  assertValidTrialExtension(endsAt);
 
   if (hasDatabase) {
-    await db.update(users).set({
-      trialEndsAt: endsAt,
-      trialTerminatedAt: null,
-      updatedAt: now
+    return db.transaction(async (tx) => {
+      const existingUsers = await tx.select({ id: users.id, trialEndsAt: users.trialEndsAt }).from(users);
+      const plan = planSitewideTrialExtensions(existingUsers, endsAt);
+      for (const existing of plan.users) {
+        const effectiveEndsAt = existing.effectiveEndsAt;
+
+        await tx.update(users).set({
+          trialEndsAt: effectiveEndsAt,
+          trialTerminatedAt: null,
+          updatedAt: now
+        }).where(eq(users.id, existing.id));
+
+        const trialSubscriptions = await tx.select().from(listingSubscriptions).where(and(eq(listingSubscriptions.userId, existing.id), eq(listingSubscriptions.source, "trial")));
+        if (trialSubscriptions.length === 0) continue;
+        await tx.update(listingSubscriptions).set({
+          status: "active",
+          expiresAt: effectiveEndsAt,
+          cancelledAt: null,
+          updatedAt: now
+        }).where(and(eq(listingSubscriptions.userId, existing.id), eq(listingSubscriptions.source, "trial")));
+        await tx.update(listings).set({
+          status: sql<Listing["status"]>`CASE WHEN moderation_status = 'approved' THEN 'live' WHEN moderation_status = 'rejected' THEN 'rejected' ELSE 'pending_review' END`,
+          expiresAt: effectiveEndsAt,
+          updatedAt: now
+        }).where(inArray(listings.id, trialSubscriptions.map((subscription) => subscription.listingId)));
+      }
+      return { extendedCount: plan.extendedCount, preservedCount: plan.preservedCount };
     });
-    await refreshSitewideTrialBackedListings(endsAt);
-    return;
   }
 
   const state = await getMemoryState();
-  for (const user of state.users) {
-    user.trialEndsAt = endsAt.toISOString();
+  const plan = planSitewideTrialExtensions(state.users.map((user) => ({
+    id: user.id,
+    trialEndsAt: user.trialEndsAt ? new Date(user.trialEndsAt) : new Date(user.trial?.endsAt ?? 0)
+  })), endsAt);
+  for (const plannedUser of plan.users) {
+    const user = state.users.find((candidate) => candidate.id === plannedUser.id)!;
+    const effectiveEndsAt = plannedUser.effectiveEndsAt;
+    user.trialEndsAt = effectiveEndsAt.toISOString();
     user.trialTerminatedAt = undefined;
     user.trial = buildUserTrial(user.trialStartedAt, user.trialEndsAt, user.trialTerminatedAt);
     user.updatedAt = now.toISOString();
+    await refreshTrialBackedListings(user.id, effectiveEndsAt);
   }
-  await refreshSitewideTrialBackedListings(endsAt);
+  return { extendedCount: plan.extendedCount, preservedCount: plan.preservedCount };
 }
 
 export async function terminateSitewideTrial() {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GemsAdminApiClient } from "@gems/api-client";
 import { AdminConsole } from "./features/admin/AdminConsole";
 import { AdminLogin } from "./features/admin/AdminLogin";
@@ -6,8 +6,7 @@ import { AdminShell } from "./features/admin/AdminShell";
 import { useAdminModerationWorkflow } from "./features/admin/useAdminModerationWorkflow";
 import { useAdminSession } from "./features/admin/useAdminSession";
 import { StatusState } from "./shared/StatusState";
-
-type AdminView = "overview" | "moderation" | "listings" | "users" | "payments";
+import { adminViewUrl, parseAdminLocation, resolveAdminDeepLink, type AdminDeepLink, type AdminView } from "./features/admin/adminState";
 
 const defaultApiBaseUrl = window.location.port === "4200" ? "http://127.0.0.1:4100" : "/api/v1";
 
@@ -22,10 +21,38 @@ function AdminApp() {
     setToken: session.setToken,
     setLoadError: session.setLoadError
   });
-  const [activeView, setActiveView] = useState<AdminView>("overview");
+  const initialLocation = useMemo(() => parseAdminLocation(window.location.pathname, window.location.search), []);
+  const [activeView, setActiveView] = useState<AdminView>(initialLocation.view);
+  const [deepLink, setDeepLink] = useState<AdminDeepLink | undefined>(initialLocation.target);
 
-  if (!session.token || !session.admin) {
+  useEffect(() => {
+    const onPopState = () => {
+      const location = parseAdminLocation(window.location.pathname, window.location.search);
+      setActiveView(location.view);
+      setDeepLink(location.target);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (!moderation.snapshot || !deepLink) return;
+    setActiveView(resolveAdminDeepLink(moderation.snapshot, deepLink).view);
+  }, [deepLink, moderation.snapshot]);
+
+  const selectView = (view: AdminView) => {
+    setActiveView(view);
+    setDeepLink(undefined);
+    window.history.pushState(null, "", adminViewUrl(view));
+  };
+
+  if (!session.token) {
     return <AdminLogin error={session.loadError} loading={session.loading} onLogin={session.handleLogin} />;
+  }
+  if (!session.admin) {
+    return session.loading
+      ? <StatusState title="Loading admin console" message="Checking admin session." loading variant="admin" />
+      : <StatusState title="Admin unavailable" message={session.loadError ?? "Unable to verify admin session"} variant="admin" onRetry={session.retry} />;
   }
 
   const snapshot = moderation.snapshot;
@@ -44,18 +71,22 @@ function AdminApp() {
       theme={session.theme} 
       setTheme={session.setTheme}
       activeView={activeView}
-      onSelect={setActiveView}
+      onSelect={selectView}
       moderationCount={moderationCount}
       listingCount={listingCount}
       userCount={userCount}
       paymentCount={paymentCount}
     >
-      {session.loadError && <StatusState title="Admin unavailable" message={session.loadError} variant="admin" />}
-      {(session.loading || moderation.loading || !moderation.snapshot) && !session.loadError && (
+      {session.loadError ? <div className="admin-error" role="alert">{session.loadError}</div> : null}
+      {moderation.error && moderation.snapshot ? <div className="admin-error" role="alert">{moderation.error} <button type="button" onClick={moderation.retry}>Retry</button></div> : null}
+      {(session.loading || (moderation.loading && !moderation.snapshot) || (!moderation.snapshot && !moderation.error)) && (
         <StatusState title="Loading admin console" message="Checking admin session and moderation data." loading variant="admin" />
       )}
-      {!session.loading && !moderation.loading && moderation.snapshot && (
-        <AdminConsole api={api} token={session.token} snapshot={moderation.snapshot} setSnapshot={moderation.setSnapshot} setLoadError={session.setLoadError} activeView={activeView} setActiveView={setActiveView} handleLogout={session.handleLogout} theme={session.theme} setTheme={session.setTheme} />
+      {!moderation.loading && !moderation.snapshot && moderation.error ? (
+        <StatusState title="Admin data unavailable" message={moderation.error} variant="admin" onRetry={moderation.retry} />
+      ) : null}
+      {!session.loading && moderation.snapshot && (
+        <AdminConsole api={api} token={session.token} snapshot={moderation.snapshot} setSnapshot={moderation.setSnapshot} setLoadError={session.setLoadError} activeView={activeView} setActiveView={selectView} deepLink={deepLink} handleLogout={session.handleLogout} theme={session.theme} setTheme={session.setTheme} />
       )}
     </AdminShell>
   );
