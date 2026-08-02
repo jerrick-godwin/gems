@@ -1,5 +1,5 @@
 import type { MarketplaceReferences } from "@gems/api-client";
-import type { MarketplaceAuthUser } from "../firebase";
+import type { CustomerAuthClient, MarketplaceAuthUser } from "../firebase";
 import type { View } from "./types";
 
 export type CustomerAuthState =
@@ -24,4 +24,6 @@ export type AccountSurfaceProps = {
   authState: CustomerAuthState;
   references: MarketplaceReferenceState;
   navigate: (view: View, options?: CustomerNavigationOptions) => void;
+  authClient: CustomerAuthClient;
+  hrefForView: (view: View) => string;
 };

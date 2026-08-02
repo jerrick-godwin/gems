@@ -48,7 +48,7 @@
       "handle": "filesystem"
     },
     {
-      "src": "^/admin/?$",
+      "src": "^/admin(?:/.*)?$",
       "dest": "/admin.html",
       "headers": {
         "X-Robots-Tag": "noindex, follow"

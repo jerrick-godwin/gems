@@ -1518,3 +1518,7 @@
   font-size: 14px;
   animation: slide-down 300ms var(--ease-out);
 }
+.admin-record-highlight {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}

@@ -18,7 +18,7 @@ import {
   WalletCards,
   LogOut
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
@@ -28,9 +28,8 @@ import { publicErrorMessage } from "../../shared/helpers";
 import { ActiveListingRow } from "./ActiveListingRow";
 import { ReportRow } from "./ReportRow";
 import { ReviewRow } from "./ReviewRow";
-import { setImpersonationInfo } from "./ImpersonationBanner";
-
-type AdminView = "overview" | "moderation" | "listings" | "users" | "payments";
+import { waitForImpersonationReady } from "./impersonationMessages";
+import { classifyAdminListing, resolveAdminDeepLink, type AdminDeepLink, type AdminView } from "./adminState";
 
 const ADMIN_VIEW_COPY: Record<AdminView, { title: string; description: string }> = {
   overview: { title: "Overview", description: "A quick view of marketplace activity and work that needs attention." },
@@ -48,6 +47,7 @@ export function AdminConsole({
   setLoadError,
   activeView,
   setActiveView,
+  deepLink,
   handleLogout,
   theme,
   setTheme
@@ -59,43 +59,18 @@ export function AdminConsole({
   setLoadError: (error: string | null) => void;
   activeView: AdminView;
   setActiveView: (view: AdminView) => void;
+  deepLink?: AdminDeepLink;
   handleLogout: () => void;
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
 }) {
   const allListings = Array.from(new Map([...snapshot.listings, ...snapshot.liveListings].map((listing) => [listing.id, listing])).values());
 
-  const isRejectedListing = (listing: Listing) => {
-    return listing.status === "rejected" || listing.moderationStatus === "rejected";
-  };
-
-  const isExpiredListing = (listing: Listing) => {
-    if (listing.status === "expired") return true;
-    if (listing.expiresAt && new Date(listing.expiresAt) <= new Date()) return true;
-    if (listing.subscription?.status === "expired") return true;
-    return false;
-  };
-
-  const isTrulyLiveListing = (listing: Listing) => {
-    if (isRejectedListing(listing)) return false;
-    if (listing.status !== "live" || listing.moderationStatus !== "approved") return false;
-    if (listing.expiresAt && new Date(listing.expiresAt) <= new Date()) return false;
-    if (listing.subscription && listing.subscription.status !== "active") return false;
-    return true;
-  };
-
-  const isUnpaidPendingListing = (listing: Listing) => {
-    if (isRejectedListing(listing)) return false;
-    if (isTrulyLiveListing(listing)) return false;
-    if (listing.moderationStatus === "queued" && listing.subscription?.status === "active") return false;
-    return listing.subscription?.status !== "active" || listing.moderationStatus === "not_submitted";
-  };
-
-  const liveListingsList = allListings.filter(isTrulyLiveListing);
-  const allPending = allListings.filter((listing) => listing.moderationStatus === "queued" && (!listing.subscription || listing.subscription.status === "active"));
+  const listingBuckets = new Map(allListings.map((listing) => [listing.id, classifyAdminListing(listing)]));
+  const liveListingsList = allListings.filter((listing) => listingBuckets.get(listing.id) === "live");
+  const allPending = allListings.filter((listing) => listingBuckets.get(listing.id) === "queued");
   const paidPending = allPending;
-  const unpaidPending = allListings.filter(isUnpaidPendingListing);
-  const pending = paidPending; // Legacy naming for backwards compatibility
+  const unpaidPending = allListings.filter((listing) => listingBuckets.get(listing.id) === "unpaid");
   const openReports = snapshot.reports.filter((report) => report.status !== "resolved");
   const checkedCertificates = snapshot.listings.filter((listing) => listing.attributes.certificateStatus === "admin_verified").length;
   const successfulPayments = snapshot.payments.filter((payment) => payment.status === "succeeded");
@@ -111,18 +86,20 @@ export function AdminConsole({
   const [archivedListingSearch, setArchivedListingSearch] = useState("");
   const [paymentSearch, setPaymentSearch] = useState("");
 
-  const rejectedListings = allListings.filter(isRejectedListing);
-  const archivedListings = allListings.filter((listing) => {
-    if (isTrulyLiveListing(listing) || isUnpaidPendingListing(listing) || isRejectedListing(listing) || allPending.includes(listing)) return false;
-    return isExpiredListing(listing) || listing.status === "paused";
-  });
-  const filteredPending = paidPending.filter((listing) => matchesListingSearch(listing, reviewSearch, snapshot));
-  const filteredUnpaidPending = unpaidPending.filter((listing) => matchesListingSearch(listing, pendingPaymentSearch, snapshot));
-  const filteredReports = openReports.filter((report) => matchesReportSearch(report, reportSearch, snapshot));
-  const filteredActiveListings = liveListingsList.filter((listing) => matchesListingSearch(listing, activeListingSearch, snapshot));
-  const filteredRejectedListings = rejectedListings.filter((listing) => matchesListingSearch(listing, rejectedListingSearch, snapshot));
-  const filteredArchivedListings = archivedListings.filter((listing) => matchesListingSearch(listing, archivedListingSearch, snapshot));
-  const filteredPayments = snapshot.payments.filter((payment) => matchesPaymentSearch(payment, paymentSearch, snapshot));
+  const rejectedListings = allListings.filter((listing) => listingBuckets.get(listing.id) === "rejected");
+  const archivedListings = allListings.filter((listing) => listingBuckets.get(listing.id) === "archived");
+  const listingTargetId = deepLink?.kind === "listing" ? deepLink.id : undefined;
+  const reportTargetId = deepLink?.kind === "report" ? deepLink.id : undefined;
+  const subscriptionTargetId = deepLink?.kind === "subscription" ? deepLink.id : undefined;
+  const filteredPending = paidPending.filter((listing) => listingTargetId ? listing.id === listingTargetId : matchesListingSearch(listing, reviewSearch, snapshot));
+  const filteredUnpaidPending = unpaidPending.filter((listing) => listingTargetId ? listing.id === listingTargetId : matchesListingSearch(listing, pendingPaymentSearch, snapshot));
+  const reportsForView = reportTargetId ? snapshot.reports.filter((report) => report.id === reportTargetId) : openReports;
+  const filteredReports = reportsForView.filter((report) => reportTargetId ? true : matchesReportSearch(report, reportSearch, snapshot));
+  const filteredActiveListings = liveListingsList.filter((listing) => listingTargetId ? listing.id === listingTargetId : matchesListingSearch(listing, activeListingSearch, snapshot));
+  const filteredRejectedListings = rejectedListings.filter((listing) => listingTargetId ? listing.id === listingTargetId : matchesListingSearch(listing, rejectedListingSearch, snapshot));
+  const filteredArchivedListings = archivedListings.filter((listing) => listingTargetId ? listing.id === listingTargetId : matchesListingSearch(listing, archivedListingSearch, snapshot));
+  const filteredPayments = snapshot.payments.filter((payment) => subscriptionTargetId ? payment.subscriptionId === subscriptionTargetId : matchesPaymentSearch(payment, paymentSearch, snapshot));
+  const deepLinkResolution = deepLink ? resolveAdminDeepLink(snapshot, deepLink) : undefined;
   const moderateListing = async (listingId: string, decision: "approve" | "reject", reason?: string) => {
     try {
       const updated = await api.moderateListing(token, listingId, decision, reason);
@@ -169,6 +146,9 @@ export function AdminConsole({
       />
 
       <div className="admin-workspace-content">
+        {deepLinkResolution && !deepLinkResolution.found ? (
+          <div className="admin-error" role="alert">The requested admin record is unavailable or has been removed.</div>
+        ) : null}
         <div className="section-heading admin-view-heading">
           <div>
             <span className="admin-view-eyebrow">Admin workspace</span>
@@ -209,7 +189,7 @@ export function AdminConsole({
               emptyMessage="No listings pending review."
               noMatchesMessage="No queued listings match your search."
             >
-              {filteredPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
+              {filteredPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} initialExpanded={listing.id === listingTargetId} highlighted={listing.id === listingTargetId} key={listing.id} />)}
             </AdminSection>
             <AdminSection
               title="Pending Payment"
@@ -221,11 +201,11 @@ export function AdminConsole({
               emptyMessage="No listings pending payment."
               noMatchesMessage="No unpaid listings match your search."
             >
-              {filteredUnpaidPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} key={listing.id} />)}
+              {filteredUnpaidPending.map((listing) => <ReviewRow api={api} token={token} listing={listing} snapshot={snapshot} onModerate={moderateListing} initialExpanded={listing.id === listingTargetId} highlighted={listing.id === listingTargetId} key={listing.id} />)}
             </AdminSection>
             <AdminSection
               title="Reports"
-              totalCount={openReports.length}
+              totalCount={reportTargetId ? reportsForView.length : openReports.length}
               visibleCount={filteredReports.length}
               searchValue={reportSearch}
               onSearchChange={setReportSearch}
@@ -248,6 +228,8 @@ export function AdminConsole({
                     });
                   }}
                   setLoadError={setLoadError}
+                  initialExpanded={report.id === reportTargetId}
+                  highlighted={report.id === reportTargetId}
                 />
               ))}
             </AdminSection>
@@ -284,6 +266,8 @@ export function AdminConsole({
                     setSnapshot({ ...snapshot, liveListings: snapshot.liveListings.map((item) => item.id === updated.id ? updated : item) });
                   }}
                   onRemove={removeListing}
+                  initialExpanded={listing.id === listingTargetId}
+                  highlighted={listing.id === listingTargetId}
                 />
               ))}
             </AdminSection>
@@ -310,6 +294,8 @@ export function AdminConsole({
                     setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item) });
                   }}
                   onRemove={removeListing}
+                  initialExpanded={listing.id === listingTargetId}
+                  highlighted={listing.id === listingTargetId}
                 />
               ))}
             </AdminSection>
@@ -336,6 +322,8 @@ export function AdminConsole({
                     setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item) });
                   }}
                   onRemove={removeListing}
+                  initialExpanded={listing.id === listingTargetId}
+                  highlighted={listing.id === listingTargetId}
                 />
               ))}
             </AdminSection>
@@ -355,13 +343,8 @@ export function AdminConsole({
               setSnapshot({ ...snapshot, users: snapshot.users.map((user) => user.id === updated.id ? updated : user) });
             }}
             refreshSnapshot={async () => {
-              try {
-                setLoadError(null);
-                const refreshed = await api.moderationSnapshot(token);
-                setSnapshot(refreshed);
-              } catch (e) {
-                setLoadError("Unable to refresh snapshot");
-              }
+              const refreshed = await api.moderationSnapshot(token);
+              setSnapshot(refreshed);
             }}
           />
         )}
@@ -375,6 +358,7 @@ export function AdminConsole({
             search={paymentSearch}
             onSearchChange={setPaymentSearch}
             snapshot={snapshot}
+            highlightedSubscriptionId={subscriptionTargetId}
           />
         )}
       </div>
@@ -566,7 +550,8 @@ function PaymentsPanel({
   successfulCount,
   search,
   onSearchChange,
-  snapshot
+  snapshot,
+  highlightedSubscriptionId
 }: {
   payments: PaymentIntent[];
   filteredPayments: PaymentIntent[];
@@ -575,7 +560,15 @@ function PaymentsPanel({
   search: string;
   onSearchChange: (value: string) => void;
   snapshot: AdminModerationSnapshot;
+  highlightedSubscriptionId?: string;
 }) {
+  const highlightedRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlightedSubscriptionId) {
+      highlightedRef.current?.scrollIntoView({ block: "center" });
+      highlightedRef.current?.focus({ preventScroll: true });
+    }
+  }, [highlightedSubscriptionId]);
   const failedCount = payments.filter((payment) => payment.status === "failed").length;
   const otherCount = payments.length - pendingCount - successfulCount - failedCount;
   return (
@@ -611,7 +604,12 @@ function PaymentsPanel({
             const listing = snapshot.listings.find((item) => item.id === payment.listingId)
               ?? snapshot.liveListings.find((item) => item.id === payment.listingId);
             return (
-              <div className="admin-payment-row card card--inset card--compact" key={payment.id}>
+              <div
+                className={`admin-payment-row card card--inset card--compact${payment.subscriptionId === highlightedSubscriptionId ? " admin-record-highlight" : ""}`}
+                ref={payment.subscriptionId === highlightedSubscriptionId ? highlightedRef : undefined}
+                tabIndex={payment.subscriptionId === highlightedSubscriptionId ? -1 : undefined}
+                key={payment.id}
+              >
                 <div className="admin-payment-identity">
                   <strong>{listing?.title ?? "Unavailable listing"}</strong>
                   <span>{user?.email ?? payment.userId}</span>
@@ -671,6 +669,7 @@ function UserTrialsPanel({
   const [showImpersonatePrompt, setShowImpersonatePrompt] = useState<User | null>(null);
   const [impersonateBusy, setImpersonateBusy] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
+  const [sitewideResult, setSitewideResult] = useState<string | null>(null);
 
   const filteredUsers = users.filter((user) => matchesUserSearch(user, search));
 
@@ -713,23 +712,27 @@ function UserTrialsPanel({
   };
 
   const confirmImpersonate = async (user: User) => {
+    const requestId = crypto.randomUUID();
+    const popup = window.open(`/impersonate?request=${encodeURIComponent(requestId)}`, "_blank");
+    if (!popup) {
+      setImpersonateError("The browser blocked the impersonation tab. Allow popups and try again.");
+      return;
+    }
     setImpersonateBusy(true);
     setImpersonateError(null);
+    const readyPromise = waitForImpersonationReady(popup, requestId);
     try {
-      const { customToken } = await api.impersonateUser(token, user.id);
-      setImpersonationInfo({ uid: user.id, email: user.email });
-      // Sign in with the custom token in the new tab via localStorage to avoid
-      // cross-tab sessionStorage cloning issues. The new tab picks up the key
-      // and signs in, immediately removing it from localStorage.
-      try {
-        window.localStorage.setItem("gems-pending-impersonation-token", customToken);
-      } catch {
-        // localStorage write failure shouldn't block the flow
-      }
-      window.open("/", "_blank");
+      const [{ customToken }] = await Promise.all([
+        api.impersonateUser(token, user.id),
+        readyPromise
+      ]);
+      popup.postMessage({ type: "gems:impersonation-start", requestId, customToken, userId: user.id, email: user.email }, window.location.origin);
       setShowImpersonatePrompt(null);
     } catch (error) {
-      setImpersonateError(error instanceof Error ? error.message : "Unable to start impersonation");
+      const message = error instanceof Error ? error.message : "Unable to start impersonation";
+      await readyPromise.catch(() => undefined);
+      popup.postMessage({ type: "gems:impersonation-error", requestId, message }, window.location.origin);
+      setImpersonateError(message);
     } finally {
       setImpersonateBusy(false);
     }
@@ -743,10 +746,15 @@ function UserTrialsPanel({
   const confirmExtendSitewide = async () => {
     setIsSitewideBusy(true);
     try {
-      await api.extendSitewideTrial(token, new Date(`${sitewideEndDate}T23:59:59`).toISOString());
-      await refreshSnapshot();
+      const result = await api.extendSitewideTrial(token, new Date(`${sitewideEndDate}T23:59:59`).toISOString());
+      setSitewideResult(`${result.extendedCount} user${result.extendedCount === 1 ? "" : "s"} extended; ${result.preservedCount} later expiry date${result.preservedCount === 1 ? "" : "s"} preserved.`);
+      try {
+        await refreshSnapshot();
+        setLoadError(null);
+      } catch {
+        setLoadError("Trials were updated, but the admin snapshot could not be refreshed.");
+      }
       setSitewideEndDate("");
-      setLoadError(null);
       setShowExtendSitewidePrompt(false);
     } catch (error) {
       setLoadError(publicErrorMessage(error, "Unable to extend sitewide trial"));
@@ -763,8 +771,12 @@ function UserTrialsPanel({
     setIsSitewideBusy(true);
     try {
       await api.terminateSitewideTrial(token);
-      await refreshSnapshot();
-      setLoadError(null);
+      try {
+        await refreshSnapshot();
+        setLoadError(null);
+      } catch {
+        setLoadError("Trials were terminated, but the admin snapshot could not be refreshed.");
+      }
       setShowTerminateSitewidePrompt(false);
     } catch (error) {
       setLoadError(publicErrorMessage(error, "Unable to terminate sitewide trial"));
@@ -805,6 +817,7 @@ function UserTrialsPanel({
             <button type="button" className="active-listing-action danger" disabled={isSitewideBusy} onClick={() => void handleTerminateSitewide()}>
               <Ban size={16} /> Terminate All
             </button>
+            {sitewideResult ? <span role="status" className="admin-inline-note">{sitewideResult}</span> : null}
           </div>
         </>
       )}
@@ -829,7 +842,7 @@ function UserTrialsPanel({
                   <input
                     type="date"
                     value={trialEndDates[user.id] ?? dateInputValue(trial?.endsAt)}
-                    min={dateInputValue(trial?.endsAt)}
+                    min={laterDateInputValue(trial?.endsAt)}
                     onChange={(event) => setTrialEndDates((current) => ({ ...current, [user.id]: event.target.value }))}
                     disabled={busy}
                   />
@@ -1040,6 +1053,12 @@ function dateInputValue(value?: string) {
   return value ? new Date(value).toISOString().slice(0, 10) : "";
 }
 
+function laterDateInputValue(value?: string) {
+  const today = dateInputValue(new Date().toISOString());
+  const current = dateInputValue(value);
+  return current > today ? current : today;
+}
+
 function matchesListingSearch(listing: Listing, query: string, snapshot: AdminModerationSnapshot) {
   const normalizedQuery = normalizeSearch(query);
   if (!normalizedQuery) return true;
@@ -1125,6 +1144,7 @@ function matchesPaymentSearch(payment: PaymentIntent, query: string, snapshot: A
     payment.amountLkr,
     payment.gateway,
     payment.gatewayReference,
+    payment.subscriptionId,
     payment.stripeInvoiceId,
     payment.quote.plan.name,
     user?.name,
@@ -1162,5 +1182,3 @@ function searchableText(values: Array<string | number | undefined | null>) {
 function normalizeSearch(value: string) {
   return value.trim().toLowerCase();
 }
-
-

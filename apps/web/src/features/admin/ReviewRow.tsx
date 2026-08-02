@@ -1,5 +1,5 @@
 import { ReceiptText, XCircle, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AdminModerationSnapshot, GemsAdminApiClient } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent } from "@gems/schemas";
@@ -13,17 +13,29 @@ export function ReviewRow({
   token,
   listing,
   snapshot,
-  onModerate
+  onModerate,
+  initialExpanded = false,
+  highlighted = false
 }: {
   api: GemsAdminApiClient;
   token: string;
   listing: Listing;
   snapshot: AdminModerationSnapshot;
   onModerate: (listingId: string, decision: "approve" | "reject", reason?: string) => Promise<void>;
+  initialExpanded?: boolean;
+  highlighted?: boolean;
 }) {
   const isQueued = listing.moderationStatus === "queued";
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const rowRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (highlighted) {
+      setExpanded(true);
+      rowRef.current?.scrollIntoView({ block: "center" });
+      rowRef.current?.focus({ preventScroll: true });
+    }
+  }, [highlighted]);
   const [showRejectPrompt, setShowRejectPrompt] = useState(false);
   const [showApprovePrompt, setShowApprovePrompt] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -80,7 +92,7 @@ export function ReviewRow({
   };
   
   return (
-    <article className="review-row card card--surface card--compact">
+    <article ref={rowRef} tabIndex={highlighted ? -1 : undefined} className={`review-row card card--surface card--compact${highlighted ? " admin-record-highlight" : ""}`}>
       <div className="review-row-main">
         <AdminMediaPreview media={listing.media.find((item) => item.kind !== "certificate") ?? listing.media[0]} alt={listing.title} />
         <div className="review-row-identity">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, onIdTokenChanged, signInWithEmailAndPassword, signOut, type Auth } from "firebase/auth";
-import type { GemsAdminApiClient, AdminSession } from "@gems/api-client";
+import { isAuthenticationError, type GemsAdminApiClient, type AdminSession } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
 import { publicErrorMessage } from "../../shared/helpers";
 
@@ -42,6 +42,7 @@ export function useAdminSession(api: GemsAdminApiClient) {
   const [theme, setTheme] = useTheme("admin-theme");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!auth) return undefined;
@@ -106,8 +107,8 @@ export function useAdminSession(api: GemsAdminApiClient) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        clearAdminSession(setToken);
-        setLoadError(publicErrorMessage(error, "Admin session expired"));
+        if (isAuthenticationError(error)) clearAdminSession(setToken);
+        setLoadError(publicErrorMessage(error, isAuthenticationError(error) ? "Admin session expired" : "Unable to verify admin session"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -116,7 +117,7 @@ export function useAdminSession(api: GemsAdminApiClient) {
     return () => {
       active = false;
     };
-  }, [api, token]);
+  }, [api, retryKey, token]);
 
   const handleLogin = async (email: string, password: string) => {
     setLoading(true);
@@ -139,5 +140,5 @@ export function useAdminSession(api: GemsAdminApiClient) {
     setLoadError(null);
   };
 
-  return { token, setToken, admin, theme, setTheme, loadError, setLoadError, loading, handleLogin, handleLogout };
+  return { token, setToken, admin, theme, setTheme, loadError, setLoadError, loading, retry: () => setRetryKey((value) => value + 1), handleLogin, handleLogout };
 }
