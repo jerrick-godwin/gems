@@ -1,3 +1,4 @@
+import { paymentOrigin } from "./payment-origin.js";
 import Stripe from "stripe";
 import {
   type PaymentIntent,
@@ -46,7 +47,7 @@ function stripeCurrency() {
 }
 
 function publicSiteUrl() {
-  return process.env.PUBLIC_SITE_URL?.replace(/\/+$/, "") || `http://localhost:${process.env.PORT ?? 4100}`;
+  return paymentOrigin(process.env.PUBLIC_SITE_URL, process.env.NODE_ENV === "production", process.env.PORT);
 }
 
 function stripe() {
@@ -54,6 +55,8 @@ function stripe() {
   if (!secretKey) throw new Error("Payment service is not configured.");
   stripeClient ??= new Stripe(secretKey, {
     apiVersion: STRIPE_API_VERSION as never,
+    timeout: 10000,
+    maxNetworkRetries: 1,
     appInfo: {
       name: "gemslanka.lk",
       version: "0.1.0"
@@ -177,16 +180,21 @@ export async function retrieveStripeCheckoutSession(sessionId: string) {
     session.status === "expired" ? "expired" as const :
     paymentStatus === "paid" ? "succeeded" as const :
     session.status === "complete" ? "pending" as const :
-    "failed" as const;
+    "pending" as const;
 
   return {
     status,
     reference: stripeId(session.subscription) ?? session.id,
+    checkoutStatus: session.status,
     stripeCheckoutSessionId: session.id,
     stripeSubscriptionId: stripeId(session.subscription),
     stripeCustomerId: stripeId(session.customer),
     stripeInvoiceId: stripeId((session as any).invoice)
   };
+}
+
+export function retrieveStripeSubscription(subscriptionId: string) {
+  return stripe().subscriptions.retrieve(subscriptionId);
 }
 
 export function constructStripeWebhookEvent(payload: Buffer, signature: string | string[] | undefined) {
@@ -329,4 +337,14 @@ function stripeId(value: unknown) {
     return (value as { id: string }).id;
   }
   return undefined;
+}
+
+export async function retrieveInvoicePayment(invoiceId: string, expectedSubscription: string) {
+  const invoice = await stripe().invoices.retrieve(invoiceId, { expand: ["confirmation_secret"] });
+  const subscription = stripeId(invoice.parent?.subscription_details?.subscription);
+  if (subscription !== expectedSubscription) throw new Error("Invoice does not belong to this subscription.");
+  const status = invoice.status === "paid" ? "succeeded" : invoice.status === "open" ? "pending" : "unavailable";
+  return { invoiceId: invoice.id, status, clientSecret: status === "pending" ? invoice.confirmation_secret?.client_secret ?? undefined : undefined,
+    publishableKey: stripePublishableKey(), amount: invoice.amount_remaining, currency: invoice.currency,
+    billingReason: invoice.billing_reason ?? undefined };
 }

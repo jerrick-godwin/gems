@@ -72,12 +72,17 @@ test("SSR response contains the established marketplace UI, listing content, and
   assert.match(html, /rel="manifest" href="\/site\.webmanifest"/);
   assert.match(html, /property="og:image" content="https:\/\/gemslanka\.lk\/assets\/gem-triptych\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
-  assert.match(html, /googletagmanager\.com\/gtag\/js\?id=G-PBC7B30RE3/);
-  assert.match(html, /gtag\('config', 'G-PBC7B30RE3'\)/);
-  assert.match(html, /pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js\?client=ca-pub-1870465390690184/);
+  assert.doesNotMatch(html, /adsbygoogle|googlesyndication|data-ad-slot|googletagmanager/);
+  assert.match(html, /data-analytics-id="G-PBC7B30RE3"/);
   assert.match(html, /name="google-adsense-account" content="ca-pub-1870465390690184"/);
   assert.match(html, /"@type":"Organization"/);
   assert.match(html, /"@type":"WebSite"/);
+  assert.match(html, /<title>Gemslanka \| Sri Lankan Gemstone Marketplace<\/title>/);
+  assert.match(html, /"alternateName":\["Gems Lanka"/);
+  assert.match(html, /Gemslanka \(Gems Lanka\) is a Sri Lankan gemstone marketplace/);
+  assert.match(html, /gemslanka-logo-64\.webp/);
+  assert.doesNotMatch(html, /gemslanka-logo\.png/);
+  assert.match(html, /<div class="marketplace-results-header" role="search"/);
   assert.match(html, /Buy and Sell Gemstones Worldwide with Gemslanka/);
   assert.match(html, /href="\/buy-gemstones"/);
   assert.match(html, /class="marketplace-seo-placement marketplace-seo-placement-top"/);
@@ -227,7 +232,7 @@ test("listing details omit missing certificates and render provided certificates
     attributes: { ...listing.attributes, certificateStatus: "seller_provided" },
     media: [...listing.media, { id: "certificate-1", listingId: listing.id, kind: "certificate", url: "/certificate.pdf", alt: "Gem certificate", order: 1, moderationStatus: "approved" }]
   });
-  assert.match(withCertificate, /Gem Certificate is Provided/);
+  assert.match(withCertificate, /Seller-provided lab report/);
   assert.match(withCertificate, /href="\/certificate\.pdf"/);
 });
 
@@ -306,7 +311,7 @@ async function renderLandingPage(page: SeoLandingPageId) {
   return html;
 }
 
-test("all six landing pages render the configured related navigation before the marketplace notice", async () => {
+test("all landing pages render the configured related navigation before the marketplace notice", async () => {
   for (const page of Object.keys(seoLandingPages) as SeoLandingPageId[]) {
     const html = await renderLandingPage(page);
     const relatedStart = html.indexOf('class="seo-section seo-related-pages"');
@@ -397,4 +402,27 @@ test("legal policy pages and contact remain indexable for search and AdSense rev
   const base = { origin: "https://gemslanka.lk", theme: "light" as const, year: 2026, assets: { clientEntry: "/public.js", stylesheets: [], modulePreloads: [] } };
   assert.equal(metadataFor({ ...base, url: "/privacy-policy", route: { kind: "content", page: "privacy" } }).robots, "index,follow,max-image-preview:large");
   assert.equal(metadataFor({ ...base, url: "/contact-us", route: { kind: "content", page: "contact" } }).robots, "index,follow,max-image-preview:large");
+});
+
+test("the sapphire pricing guide renders its canonical and dated asking-price examples", async () => {
+  const stream = await renderPublicPage({
+    url: "/guides/blue-sapphire-price-sri-lanka",
+    origin: "https://gemslanka.lk",
+    theme: "light",
+    year: 2026,
+    route: {
+      kind: "landing",
+      page: "sapphire-price-guide",
+      gemTypes: [],
+      sapphireExamples: { observedDate: "9 Nov 2026", listings: [{ id: "blue-test", title: "Blue Sapphire", carat: 2, priceLkr: 120000 }] }
+    },
+    assets: { clientEntry: "/public.js", stylesheets: [], modulePreloads: [] }
+  });
+  let html = "";
+  for await (const chunk of stream) html += chunk;
+  assert.match(html, /rel="canonical" href="https:\/\/gemslanka\.lk\/guides\/blue-sapphire-price-sri-lanka"/);
+  const rendered = html.replace(/<!--.*?-->/g, "");
+  assert.match(rendered, /Seller asking prices observed on 9 Nov 2026/);
+  assert.match(html, /href="\/listings\/blue-test"/);
+  assert.match(rendered, /60,000 per carat/);
 });

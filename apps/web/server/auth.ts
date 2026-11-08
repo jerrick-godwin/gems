@@ -9,6 +9,11 @@ export interface FirebaseAuthClaims {
   uid: string;
   email: string;
   name: string;
+  emailVerified?: boolean;
+}
+
+function adminUids() {
+  return (process.env.ADMIN_FIREBASE_UIDS ?? "").split(",").map((uid) => uid.trim()).filter(Boolean);
 }
 
 const currentDir = fileURLToPath(new URL(".", import.meta.url));
@@ -80,7 +85,7 @@ export async function verifyFirebaseIdToken(token: string, options: { allowDevel
     throw new Error("Authentication token is missing required claims");
   }
 
-  return { uid, email, name };
+  return { uid, email, name, emailVerified: decodedToken.email_verified === true };
 }
 
 export async function verifyAdminFirebaseIdToken(token: string): Promise<{ email: string, role: "admin" }> {
@@ -88,14 +93,11 @@ export async function verifyAdminFirebaseIdToken(token: string): Promise<{ email
     throw new Error("Admin authentication service is not initialized.");
   }
 
-  const decodedToken = await getAuth(adminFirebaseApp).verifyIdToken(token);
-  
-  const email = decodedToken.email;
-  if (!email) {
-    throw new Error("Authentication token is missing email claim");
+  const decodedToken = await getAuth(adminFirebaseApp).verifyIdToken(token, true);
+  if (!decodedToken.email || !adminUids().includes(decodedToken.uid)) {
+    throw new Error("Admin role required.");
   }
-
-  return { email, role: "admin" };
+  return { email: decodedToken.email, role: "admin" };
 }
 
 export async function generatePasswordResetLink(email: string, redirectUrl: string): Promise<string> {
@@ -127,8 +129,13 @@ export async function getActiveAdminEmails(): Promise<string[]> {
   }
 
   try {
-    const listUsersResult = await getAuth(adminFirebaseApp).listUsers();
-    return listUsersResult.users
+    const allowed = adminUids();
+    const users = [];
+    for (let offset = 0; offset < allowed.length; offset += 100) {
+      const result = await getAuth(adminFirebaseApp).getUsers(allowed.slice(offset, offset + 100).map((uid) => ({ uid })));
+      users.push(...result.users);
+    }
+    return users
       .filter((user) => !user.disabled && user.email)
       .map((user) => user.email as string);
   } catch (error) {

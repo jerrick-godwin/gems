@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
@@ -15,10 +16,25 @@ if (!connectionString) {
 const client = postgres(connectionString || "", { 
   max: process.env.DB_MAX_CONNECTIONS ? parseInt(process.env.DB_MAX_CONNECTIONS, 10) : (process.env.VERCEL ? 1 : undefined),
   prepare: false,
+  connection: { TimeZone: "UTC" },
   onnotice: () => {} 
 });
 export const databaseClient = client;
-export const db = drizzle(client, { schema });
+const rootDb = drizzle(client, { schema });
+type Transaction = Parameters<Parameters<typeof rootDb.transaction>[0]>[0];
+const transactionContext = new AsyncLocalStorage<Transaction>();
+// Repository helpers share the current transaction, including nested calls.
+export const db: typeof rootDb = new Proxy(rootDb, {
+  get(target, property) {
+    const connection = transactionContext.getStore() ?? target;
+    const value = Reflect.get(connection, property);
+    return typeof value === "function" ? value.bind(connection) : value;
+  }
+});
+export async function withDatabaseTransaction<T>(work: () => Promise<T>): Promise<T> {
+  if (!hasDatabase || transactionContext.getStore()) return work();
+  return rootDb.transaction((tx) => transactionContext.run(tx, work));
+}
 
 let compatibilityPromise: Promise<void> | undefined;
 

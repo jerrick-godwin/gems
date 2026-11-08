@@ -1,3 +1,4 @@
+import { InvoicePaymentPage } from "./features/account/InvoicePaymentPage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GemsApiClient } from "@gems/api-client";
 import { useTheme } from "@gems/ui";
@@ -20,10 +21,10 @@ import { listingCheckoutTokenFromPathname, pathForView, protectedViews, shouldLo
 import type { AccountSurfaceProps, CustomerNavigationOptions } from "./shared/customer";
 import { ContactUs, PrivacyPolicy, RefundPolicy, TermsAndConditions } from "./features/account/PolicyPages";
 import { paymentNoticeFromResult, type PaymentNotice } from "./shared/helpers";
-import { footerDescription, siteName } from "./shared/seo";
+import { footerDescription, marketplaceTitle } from "./shared/seo";
 
 const siteOrigin = "https://gemslanka.lk";
-const homepageTitle = `${siteName} | Buy and Sell Gemstones Worldwide`;
+const homepageTitle = marketplaceTitle;
 const homepageDescription = footerDescription;
 
 const viewSeo: Record<View, { title: string; description: string; robots: "index,follow" | "noindex,follow" }> = {
@@ -97,6 +98,7 @@ const viewSeo: Record<View, { title: string; description: string; robots: "index
     description: "Manage your Gemslanka.lk gemstone listings.",
     robots: "noindex,follow"
   },
+  invoice_payment: { title: "Pay invoice | Gemslanka.lk", description: "Pay your listing subscription invoice.", robots: "noindex,follow" },
   receipt: {
     title: "Receipt | Gemslanka.lk",
     description: "View a Gemslanka.lk listing payment receipt.",
@@ -219,8 +221,9 @@ function App({ view, authState, references, navigate, authClient, hrefForView }:
     navigate(notice ? "my_listings" : view, { replace: true, path: `${url.pathname}${url.search}${url.hash}` });
   }, [navigate, view]);
 
+  const hasPaymentNotice = Boolean(paymentNotice);
   useEffect(() => {
-    if (!paymentNotice || !isSignedIn) return;
+    if (!hasPaymentNotice || !isSignedIn) return;
     let active = true;
     api.dashboard()
       .then((nextDashboard) => {
@@ -238,7 +241,7 @@ function App({ view, authState, references, navigate, authClient, hrefForView }:
     return () => {
       active = false;
     };
-  }, [api, account.setDashboard, isSignedIn, paymentNotice]);
+  }, [api, account.setDashboard, isSignedIn, hasPaymentNotice]);
 
   const frameProps = {
     isSignedIn,
@@ -279,7 +282,7 @@ function App({ view, authState, references, navigate, authClient, hrefForView }:
   if (authResolved && !isSignedIn && protectedViews.has(view)) {
     return (
       <AppFrame {...frameProps}>
-        <LoginPage onSignedIn={() => navigateToView(view, { replace: true })} onNavigate={navigateToView} />
+        <LoginPage onSignedIn={() => navigateToView(view, { replace: true, path: `${window.location.pathname}${window.location.search}` })} onNavigate={navigateToView} />
       </AppFrame>
     );
   }
@@ -327,6 +330,8 @@ function App({ view, authState, references, navigate, authClient, hrefForView }:
       </AppFrame>
     );
   }
+
+  if (view === "invoice_payment") return <AppFrame {...frameProps}><InvoicePaymentPage api={api} /></AppFrame>;
 
   if (view === "receipt") {
     return (
@@ -387,6 +392,13 @@ function App({ view, authState, references, navigate, authClient, hrefForView }:
           selectedLocations={marketplace.selectedLocations}
           setSelectedLocations={marketplace.setSelectedLocations}
           sourceListingCount={marketplace.approvedListings.length}
+          resultCount={marketplace.resultCount}
+          onClearFilters={() => {
+            marketplace.setGemType("all");
+            marketplace.setSelectedLocations([]);
+            marketplace.setTreatment("all");
+            marketplace.setCertificate("all");
+          }}
           filteredListings={marketplace.filteredListings}
           page={marketplace.page}
           setPage={marketplace.setPage}
@@ -406,9 +418,7 @@ function App({ view, authState, references, navigate, authClient, hrefForView }:
           setSort={marketplace.setSort}
           selectedId={marketplace.selectedId ?? ""}
           setSelectedId={(listingId) => marketplace.setSelectedId(listingId || null)}
-          previewPhone={marketplace.selectedId ? marketplace.previewPhones[marketplace.selectedId] : undefined}
           revealedPhone={marketplace.selectedId ? marketplace.fullPhones[marketplace.selectedId] : undefined}
-          previewPhoneNumber={marketplace.handlePreviewPhone}
           revealPhone={marketplace.handleRevealPhone}
           isSignedIn={isSignedIn}
           reportedListingIds={marketplace.reportedListingIds}

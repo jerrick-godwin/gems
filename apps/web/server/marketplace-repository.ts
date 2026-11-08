@@ -1,8 +1,10 @@
+import { validateCampaign, validateModeration } from "./admin-validation.js";
 import type { Conversation, Listing, ListingSearchItem, MarketplaceContent, MarketplaceFilters, MarketplaceListingPage, PaginatedResponse, PromotionCampaign, PromotionType, Report, SavedSearch, SellerProfile } from "@gems/schemas";
 import { eq, ne, and, or, ilike, desc, asc, sql, inArray } from "drizzle-orm";
 import { sendAdminNotificationEmail } from "./email.js";
-import { db, hasDatabase } from "./db/index.js";
+import { db, hasDatabase, withDatabaseTransaction } from "./db/index.js";
 import {
+  listingCheckoutSessions, policyAcceptances,
   cartItems as cartItemTable,
   conversations as conversationTable,
   gemTypes as gemTypeTable,
@@ -47,12 +49,10 @@ export async function getMutableMarketplaceDatabase() {
 
 export async function getMarketplaceSnapshot() {
   if (hasDatabase) {
-    const [gemTypeRows, listingRows, sellerRows, conversationRows, savedSearchRows, locationRows, subscriptionPlanRows, merchantDisclosureRows] = await Promise.all([
+    const [gemTypeRows, listingRows, sellerRows, locationRows, subscriptionPlanRows, merchantDisclosureRows] = await Promise.all([
       db.select().from(gemTypeTable).orderBy(asc(gemTypeTable.name)),
       db.select().from(listingTable).where(publicListingPredicate()),
       db.select().from(sellerProfileTable),
-      db.select().from(conversationTable),
-      db.select().from(savedSearchTable),
       db.select().from(locationsTable),
       db.select().from(subscriptionPlanTable).orderBy(asc(subscriptionPlanTable.priceLkr)),
       db.select().from(merchantDisclosureTable).limit(1)
@@ -62,8 +62,8 @@ export async function getMarketplaceSnapshot() {
       locations: locationRows.map((row) => row.name),
       listings: listingRows.map(toListing),
       sellers: sellerRows.map(toSellerProfile),
-      conversations: conversationRows.map(toConversation),
-      savedSearches: savedSearchRows.map(toSavedSearch),
+      conversations: [],
+      savedSearches: [],
       content: {
         safetyTips: [],
         promotions: [],
@@ -140,7 +140,14 @@ function marketplaceOrder(sort: MarketplaceFilters["sort"]) {
   if (sort === "price-high") return [desc(listingTable.priceLkr), desc(listingTable.publishedAt), asc(listingTable.id)];
   if (sort === "newest") return [desc(listingTable.publishedAt), asc(listingTable.id)];
   if (sort === "oldest") return [asc(listingTable.publishedAt), asc(listingTable.id)];
-  return [sql`jsonb_array_length(${listingTable.promoted}) DESC`, desc(listingTable.publishedAt), asc(listingTable.id)];
+  return [sql`(select count(distinct promotion) from (
+    select jsonb_array_elements_text(${listingTable.promoted}) as promotion
+    union all
+    select campaign->>'type' from jsonb_array_elements(${listingTable.campaigns}) campaign
+    where campaign->>'status' = 'active'
+      and campaign->>'startsAt' <= to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      and campaign->>'endsAt' >= to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+    ) active_promotions) DESC`, desc(listingTable.publishedAt), asc(listingTable.id)];
 }
 
 export async function getMarketplaceListingPage(filters: MarketplaceFilters): Promise<MarketplaceListingPage> {
@@ -501,14 +508,15 @@ export async function getConversations() {
   return (await getMutableMarketplaceDatabase()).conversations;
 }
 
-async function populateListingSubscriptions(listings: Listing[]) {
+export async function populateListingSubscriptions(listings: Listing[]) {
   if (listings.length === 0) return listings;
   const listingIds = listings.map((l) => l.id);
   if (hasDatabase) {
     const subscriptions = await db
       .select()
       .from(listingSubscriptionsTable)
-      .where(inArray(listingSubscriptionsTable.listingId, listingIds));
+      .where(inArray(listingSubscriptionsTable.listingId, listingIds))
+      .orderBy(desc(listingSubscriptionsTable.createdAt), desc(listingSubscriptionsTable.id));
     for (const listing of listings) {
       const sub = subscriptions.find((s) => s.listingId === listing.id);
       if (sub) {
@@ -649,6 +657,7 @@ export async function getAllSellers() {
 }
 
 export async function updateListingModeration(listingId: string, decision: "approve" | "reject", reason?: string) {
+  validateModeration(decision, reason);
   const now = new Date();
   
   if (hasDatabase) {
@@ -667,6 +676,10 @@ export async function updateListingModeration(listingId: string, decision: "appr
         
       const latestSub = latestSubResult[0];
       
+      if (!latestSub || !["active", "expired"].includes(latestSub.status) ||
+          (latestSub.source === "trial" && (!latestSub.expiresAt || latestSub.expiresAt <= now))) {
+        throw new Error("Listing requires paid or active trial access before approval");
+      }
       if (latestSub) {
         if (latestSub.startsAt && latestSub.expiresAt && latestSub.startsAt < now) {
           const duration = latestSub.expiresAt.getTime() - latestSub.startsAt.getTime();
@@ -693,6 +706,7 @@ export async function updateListingModeration(listingId: string, decision: "appr
       ? {
           status: "live" as const,
           moderationStatus: "approved" as const,
+          rejectionReason: null,
           publishedAt: now,
           ...(nextExpiresAt ? { expiresAt: nextExpiresAt } : {}),
           updatedAt: now
@@ -762,7 +776,14 @@ export async function getLiveListings() {
 }
 
 export async function updateListingStatus(listingId: string, status: "live" | "paused") {
+  if (!["live", "paused"].includes(status)) throw new Error("Invalid listing status");
+  return withDatabaseTransaction(async () => {
   if (hasDatabase) {
+    const [existing] = await db.select().from(listingTable).where(eq(listingTable.id, listingId)).limit(1).for("update");
+    if (!existing) return undefined;
+    if (existing.moderationStatus !== "approved" || !["live", "paused"].includes(existing.status) || (existing.expiresAt && existing.expiresAt <= new Date())) {
+      throw new Error("Only approved, unexpired listings can be paused or resumed");
+    }
     const rows = await db.update(listingTable).set({ status, updatedAt: new Date() }).where(eq(listingTable.id, listingId)).returning();
     return rows[0] ? toListing(rows[0]) : undefined;
   }
@@ -773,14 +794,19 @@ export async function updateListingStatus(listingId: string, status: "live" | "p
     listing.updatedAt = new Date().toISOString();
   }
   return listing;
+  });
 }
 
 export async function removeListing(listingId: string) {
+  await cancelListingSubscriptionsForListing(listingId);
+  return withDatabaseTransaction(async () => {
   if (hasDatabase) {
     const rows = await db.select().from(listingTable).where(eq(listingTable.id, listingId)).limit(1);
     const listing = rows[0];
     if (!listing) return undefined;
 
+    await db.delete(listingCheckoutSessions).where(eq(listingCheckoutSessions.listingId, listingId));
+    await db.update(policyAcceptances).set({ listingId: null }).where(eq(policyAcceptances.listingId, listingId));
     await db.delete(cartItemTable).where(eq(cartItemTable.listingId, listingId));
     await db.delete(conversationTable).where(eq(conversationTable.listingId, listingId));
     await db.delete(listingContactTable).where(eq(listingContactTable.listingId, listingId));
@@ -798,6 +824,7 @@ export async function removeListing(listingId: string) {
   database.conversations = database.conversations.filter((conversation) => conversation.listingId !== listingId);
   delete database.listingContacts[listingId];
   return listing;
+  });
 }
 
 export async function resolveReport(reportId: string) {
@@ -814,8 +841,10 @@ export async function resolveReport(reportId: string) {
 }
 
 export async function createPromotionCampaign(listingId: string, campaign: PromotionCampaign) {
+  campaign = validateCampaign(campaign);
+  return withDatabaseTransaction(async () => {
   if (hasDatabase) {
-    const rows = await db.select({ campaigns: listingTable.campaigns }).from(listingTable).where(eq(listingTable.id, listingId)).limit(1);
+    const rows = await db.select({ campaigns: listingTable.campaigns }).from(listingTable).where(eq(listingTable.id, listingId)).limit(1).for("update");
     if (!rows[0]) return undefined;
     const campaigns = rows[0].campaigns ?? [];
     campaigns.push(campaign);
@@ -828,16 +857,18 @@ export async function createPromotionCampaign(listingId: string, campaign: Promo
   listing.campaigns = listing.campaigns ?? [];
   listing.campaigns.push(campaign);
   return listing;
+  });
 }
 
 export async function updatePromotionCampaign(listingId: string, campaignId: string, updates: Partial<PromotionCampaign>) {
+  return withDatabaseTransaction(async () => {
   if (hasDatabase) {
-    const rows = await db.select({ campaigns: listingTable.campaigns }).from(listingTable).where(eq(listingTable.id, listingId)).limit(1);
+    const rows = await db.select({ campaigns: listingTable.campaigns }).from(listingTable).where(eq(listingTable.id, listingId)).limit(1).for("update");
     if (!rows[0]) return undefined;
     const campaigns = rows[0].campaigns ?? [];
     const index = campaigns.findIndex((c) => c.id === campaignId);
     if (index !== -1) {
-      campaigns[index] = { ...campaigns[index], ...updates };
+      campaigns[index] = validateCampaign({ ...campaigns[index], ...updates }, campaigns[index]);
       const [updated] = await db.update(listingTable).set({ campaigns, updatedAt: new Date() }).where(eq(listingTable.id, listingId)).returning();
       return updated ? toListing(updated) : undefined;
     }
@@ -849,13 +880,13 @@ export async function updatePromotionCampaign(listingId: string, campaignId: str
   listing.campaigns = listing.campaigns ?? [];
   const index = listing.campaigns.findIndex((c) => c.id === campaignId);
   if (index !== -1) {
-    listing.campaigns[index] = { ...listing.campaigns[index], ...updates };
+    listing.campaigns[index] = validateCampaign({ ...listing.campaigns[index], ...updates }, listing.campaigns[index]);
   }
   return listing;
+  });
 }
 
-
-function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
+export function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
   const campaigns = (row as any).campaigns ?? [];
   const now = new Date().toISOString();
   const activePromotions = new Set<PromotionType>((row as any).promoted ?? []);
@@ -901,7 +932,7 @@ function toListing(row: typeof listingTable.$inferSelect | Listing): Listing {
   };
 }
 
-function toSellerProfile(row: typeof sellerProfileTable.$inferSelect): SellerProfile {
+export function toSellerProfile(row: typeof sellerProfileTable.$inferSelect): SellerProfile {
   return {
     id: row.id,
     userId: row.userId,
@@ -943,7 +974,7 @@ function toConversation(row: typeof conversationTable.$inferSelect): Conversatio
   };
 }
 
-function toReport(row: typeof reportTable.$inferSelect): Report {
+export function toReport(row: typeof reportTable.$inferSelect): Report {
   return {
     id: row.id,
     listingId: row.listingId ?? "",

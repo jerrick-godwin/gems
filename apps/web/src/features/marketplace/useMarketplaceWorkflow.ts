@@ -26,8 +26,8 @@ export function useMarketplaceWorkflow({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<MarketplacePageSize>(20);
   const [totalPages, setTotalPages] = useState(1);
+  const [resultCount, setResultCount] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [previewPhones, setPreviewPhones] = useState<Record<string, string>>({});
   const [fullPhones, setFullPhones] = useState<Record<string, string>>({});
   const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
 
@@ -52,7 +52,7 @@ export function useMarketplaceWorkflow({
       setSnapshot(nextSnapshot);
       setFilteredListings(searchResult.items);
       setTotalPages(searchResult.totalPages);
-      setPreviewPhones({});
+      setResultCount(searchResult.total);
       setFullPhones({});
       setLoadError(null);
     } catch (error: unknown) {
@@ -71,6 +71,7 @@ export function useMarketplaceWorkflow({
         const publicListings = nextSnapshot.listings.filter((listing) => listing.moderationStatus === "approved");
         setFilteredListings(publicListings.slice(0, pageSize));
         setTotalPages(Math.max(1, Math.ceil(publicListings.length / pageSize)));
+        setResultCount(publicListings.length);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -109,6 +110,7 @@ export function useMarketplaceWorkflow({
           if (!active) return;
           setFilteredListings(res.items);
           setTotalPages(res.totalPages);
+          setResultCount(res.total);
         })
         .catch(console.error);
     }, 300);
@@ -120,12 +122,6 @@ export function useMarketplaceWorkflow({
   }, [api, certificate, enabled, gemType, page, pageSize, query, selectedLocations, sort, treatment]);
 
   const selectedListing = filteredListings.find((listing) => listing.id === selectedId);
-
-  const handlePreviewPhone = async (listingId: string) => {
-    const result = await api.previewPhone(listingId);
-    setPreviewPhones((current) => ({ ...current, [listingId]: result.phone }));
-    return result.phone;
-  };
 
   const handleRevealPhone = async (listingId: string) => {
     const result = await api.revealPhone(listingId);
@@ -162,16 +158,15 @@ export function useMarketplaceWorkflow({
     pageSize,
     setPageSize,
     totalPages,
+    resultCount,
     selectedId,
     setSelectedId,
-    previewPhones,
     fullPhones,
     filteredListings,
     approvedListings,
     selectedListing,
     reportedListingIds,
     refreshSnapshot,
-    handlePreviewPhone,
     handleRevealPhone,
     handleReportListing,
     handleRecordInteraction

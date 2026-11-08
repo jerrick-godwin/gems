@@ -105,6 +105,7 @@ export function ActiveListingRow({
   const receiptPayment = latestReceiptPaymentForListing(payments, listing.id);
   const photos = listing.media.filter((media) => media.kind !== "certificate");
   const certificates = listing.media.filter((media) => media.kind === "certificate");
+  const certificateStatus = listing.attributes.certificateStatus?.replaceAll("_", " ");
   const hasActiveCampaign = (listing.campaigns || []).some((campaign) => campaign.status === "active" && new Date(campaign.endsAt) > new Date());
   const canViewReceipt = Boolean(receiptPayment);
 
@@ -124,7 +125,7 @@ export function ActiveListingRow({
             </span>
             <div className="active-listing-badges">
               <span className="active-listing-pill">{displayStatus}</span>
-              {listing.attributes.certificateStatus !== "none" && <span className="active-listing-pill">{listing.attributes.certificateStatus.replace("_", " ")}</span>}
+              {certificateStatus && certificateStatus !== "none" && <span className="active-listing-pill">{certificateStatus}</span>}
               {hasActiveCampaign && <span className="active-listing-pill promoted">Promoted</span>}
             </div>
           </div>
@@ -176,7 +177,7 @@ export function ActiveListingRow({
             <section className="active-listing-detail-section media">
               <div className="active-listing-section-head">
                 <h4>Certificate</h4>
-                {listing.attributes.certificateStatus !== "none" && <span>{listing.attributes.certificateStatus.replace("_", " ")}</span>}
+                {certificateStatus && certificateStatus !== "none" && <span>{certificateStatus}</span>}
               </div>
               {certificates.length > 0 ? (
                 <div className="active-listing-media-grid">
@@ -200,8 +201,8 @@ export function ActiveListingRow({
                 <Detail label="Carat" value={String(listing.attributes.carat)} />
                 <Detail label="Color" value={listing.attributes.color} />
                 <Detail label="Origin" value={listing.attributes.origin} />
-                <Detail label="Treatment" value={listing.attributes.treatment.replace("_", " ")} />
-                <Detail label="Certificate status" value={listing.attributes.certificateStatus.replace("_", " ")} />
+                <Detail label="Treatment" value={listing.attributes.treatment?.replaceAll("_", " ")} />
+                <Detail label="Certificate status" value={certificateStatus} />
               </dl>
             </section>
 

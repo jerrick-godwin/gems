@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { CustomerAuthClient } from "../firebase";
-import { createImpersonationAuthClient } from "../firebase";
 import { CustomerRoot } from "./CustomerRoot";
 import type { ImpersonationInfo } from "../features/admin/ImpersonationBanner";
 import { isImpersonationErrorMessage, isImpersonationStartMessage, type ImpersonationReadyMessage } from "../features/admin/impersonationMessages";
@@ -23,7 +22,7 @@ export function ImpersonationEntry() {
     let unsubscribe: (() => void) | undefined;
     let client: CustomerAuthClient | undefined;
 
-    void createImpersonationAuthClient().then((nextClient) => {
+    void import("../firebase.js").then(({ createImpersonationAuthClient }) => createImpersonationAuthClient()).then((nextClient) => {
       if (!active) return;
       client = nextClient;
       setAuthClient(nextClient);

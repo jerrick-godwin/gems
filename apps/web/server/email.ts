@@ -103,8 +103,7 @@ Gemslanka LK Support Team
       console.error("Failed to send email:", err);
       throw err;
     }
-  } else {
-    // For local dev if no key is provided
+  } else if (process.env.NODE_ENV === "development" && !process.env.VERCEL) {
     console.info("Mock email sent. Reset Link:", resetLink);
   }
 }
@@ -114,6 +113,7 @@ export async function sendAdminNotificationEmail(
   details: Record<string, any>,
   adminLink?: string
 ) {
+  if (!resend) return;
   try {
     const { getActiveAdminEmails } = await import("./auth.js");
     const emails = await getActiveAdminEmails();

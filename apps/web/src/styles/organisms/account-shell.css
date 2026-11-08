@@ -29,6 +29,6 @@
 }
 
 .section-heading {
-  margin-bottom: 22px;
+  margin-bottom: clamp(28px, 4vw, 48px);
   animation: fade-in var(--duration-slow) var(--ease-out);
 }

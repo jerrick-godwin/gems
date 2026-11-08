@@ -23,11 +23,9 @@
   top: 0;
   z-index: 50;
   min-height: var(--topbar-h);
-  border-bottom: 1px solid var(--line-strong);
-  background: rgba(var(--bg-rgb), 0.72);
-  backdrop-filter: blur(24px) saturate(1.8);
-  -webkit-backdrop-filter: blur(24px) saturate(1.8);
-  box-shadow: 0 1px 0 var(--line-strong), 0 4px 24px rgba(0, 0, 0, 0.12);
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
+  box-shadow: none;
 }
 
 .payment-notice {
@@ -149,11 +147,11 @@
   top: calc(100% + 19px);
   right: 0;
   background: var(--dropdown-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-menu);
   padding: 10px;
   min-width: 260px;
   max-width: min(320px, calc(100vw - 24px));
@@ -330,9 +328,8 @@
 .site-footer {
   margin-top: auto;
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(var(--foreground-rgb), 0.025) 0%, rgba(var(--foreground-rgb), 0.055) 100%),
-    var(--bg);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
 }
 
 
@@ -368,9 +365,9 @@
   flex: 0 0 auto;
   width: 52px;
   height: 52px;
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
   border: 1px solid var(--line-strong);
 }
 
@@ -438,12 +435,12 @@
 
 .footer-col-heading {
   margin: 0;
-  color: var(--ink);
+  color: var(--accent);
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  opacity: 0.5;
+  opacity: 1;
 }
 
 .footer-col-links {
@@ -525,10 +522,9 @@
 
 .footer-copy {
   margin: 0;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   font-weight: 500;
-  opacity: 0.7;
 }
 
 .footer-made-in {
@@ -1007,6 +1003,7 @@
 }
 
 .brand-mark-main {
+  display: none;
   width: 36px;
   height: 36px;
 }
@@ -1044,18 +1041,18 @@
   align-items: center;
   color: var(--ink);
   font-size: clamp(15px, 1.15vw, 18px);
-  font-weight: 900;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   line-height: 0.95;
 }
 
 .brand-wordmark-domain {
   margin-left: 5px;
   padding: 2px 5px;
-  border: 1px solid rgba(184, 135, 0, 0.36);
-  border-radius: 5px;
-  background: rgba(253, 212, 4, 0.12);
-  color: var(--brand-yellow-dark);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
   font-size: 0.66em;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -1076,7 +1073,7 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius);
   color: var(--bg);
   background: var(--brand-yellow);
 }
@@ -1087,6 +1084,11 @@
   height: 100%;
   border-radius: inherit;
   object-fit: cover;
+}
+
+/* Keep the compact wordmark, but omit the image mark from the customer nav. */
+.customer-topbar-inner .brand-mark-main {
+  display: none;
 }
 
 .admin-brand-label {
@@ -1137,7 +1139,7 @@
 .post-form select:hover,
 .post-form textarea:hover {
   background-color: var(--field-bg-hover);
-  border-color: rgba(253, 212, 4, 0.32);
+  border-color: var(--emerald-light);
 }
 
 .post-form input::placeholder,
@@ -1214,8 +1216,8 @@
   justify-content: center;
   gap: 8px;
   min-height: 40px;
-  border: none;
-  border-radius: var(--radius-full);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
   background: var(--panel-strong);
   color: var(--ink);
   font-size: 14px;
@@ -1223,7 +1225,11 @@
   white-space: nowrap;
   position: relative;
   overflow: hidden;
-  transition: all 0.2s;
+  transition:
+    border-color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out);
 }
 
 .nav-actions > button:hover:not(:disabled),
@@ -1240,7 +1246,8 @@
 .report-listing-detail button:hover:not(:disabled),
 .admin-session button:hover:not(:disabled),
 .admin-login-form button:hover:not(:disabled) {
-  filter: brightness(1.1);
+  border-color: var(--emerald);
+  filter: none;
   transform: translateY(-1px);
 }
 
@@ -1263,7 +1270,7 @@
 }
 
 .nav-actions .login-button {
-  border-color: transparent;
+  border-color: var(--emerald);
   background: var(--emerald);
   color: var(--bg);
 }
@@ -1296,41 +1303,33 @@
 .primary-action,
 .admin-session button,
 .admin-login-form button {
-  border-color: transparent;
+  border-color: var(--emerald);
   background: var(--emerald);
   color: var(--bg);
-  box-shadow:
-    0 6px 20px rgba(253, 212, 4, 0.28),
-    0 2px 6px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(var(--foreground-rgb), 0.2);
+  box-shadow: none;
 }
 
 .nav-menu-panel > button.active,
 .nav-menu-panel > a.active,
 .nav-menu-panel .nav-menu-action.active {
-  background: var(--ink);
-  color: var(--canvas);
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(var(--foreground-rgb), 0.1);
+  border-color: var(--emerald);
+  background: var(--surface-tint);
+  color: var(--emerald-dark);
+  box-shadow: none;
 }
 
 .nav-menu-panel > button.active:hover,
 .nav-menu-panel > a.active:hover,
 .nav-menu-panel .nav-menu-action.active:hover {
-  box-shadow:
-    0 10px 26px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(var(--foreground-rgb), 0.14);
+  box-shadow: none;
 }
 
 .post-button:hover,
 .primary-action:hover,
 .admin-session button:hover,
 .admin-login-form button:hover {
-  box-shadow:
-    0 10px 28px rgba(253, 212, 4, 0.36),
-    0 4px 10px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(var(--foreground-rgb), 0.3);
+  background: var(--emerald-dark);
+  box-shadow: none;
 }
 
 .primary-action.btn-blue {
@@ -1368,10 +1367,10 @@
   z-index: 1000;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-menu);
   padding: 16px 20px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: none;
 }
 
 .cookie-consent-content {
@@ -1385,7 +1384,7 @@
   flex: 1;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--muted);
+  color: var(--ink-soft);
 }
 
 .cookie-consent-title {
@@ -1400,12 +1399,13 @@
   margin: 0;
 }
 
+.cookie-consent-text a,
 .cookie-consent-text .btn-link {
   background: none;
   border: none;
   padding: 0;
   font: inherit;
-  color: var(--gold-accent, #d4af37);
+  color: var(--ink);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -1415,6 +1415,12 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.cookie-consent-actions .primary-action {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
 }
 
 @media (max-width: 640px) {

@@ -1,7 +1,7 @@
 import { Camera, ChevronRight, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { GemsApiClient, type MarketplaceSnapshot } from "@gems/api-client";
-import type { ListingCheckoutMedia, ListingCheckoutMediaInput, Treatment } from "@gems/schemas";
+import { formatLkr, type ListingCheckoutMedia, type ListingCheckoutMediaInput, type ListingSubscriptionPlan, type Treatment } from "@gems/schemas";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { ClassicLoader } from "../../shared/ClassicLoader";
 import { formatPriceInput, parsePriceInput, isUploadableUrl, publicErrorMessage } from "../../shared/helpers";
@@ -30,6 +30,10 @@ export function PostGem({
   onCheckoutCreated: (token: string, checkoutUrl: string) => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
+  const [plans, setPlans] = useState<ListingSubscriptionPlan[]>([]);
+  const [plansUnavailable, setPlansUnavailable] = useState(false);
+  const [pendingCheckoutToken, setPendingCheckoutToken] = useState<string>();
+  const [uploadProgress, setUploadProgress] = useState<{ name: string; index: number; total: number; percent: number }>();
   const [photos, setPhotos] = useState<File[]>([]);
   const [retainedMedia, setRetainedMedia] = useState<ListingCheckoutMedia[]>([]);
   const [certificate, setCertificateFile] = useState<File | null>(null);
@@ -44,6 +48,17 @@ export function PostGem({
   const isEditingCheckout = Boolean(editCheckoutToken);
   const isSubmitting = submitAction.busy || status === "Loading saved draft..." || status === "Creating secure checkout..." || status === "Updating secure checkout..." || status === "Uploading media...";
   const referencesReady = !referencesLoading && !referencesError && gemTypes.length > 0 && locations.length > 0;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void api.listingSubscriptionPlans(controller.signal).then((nextPlans) => {
+      setPlans(nextPlans);
+      setPlansUnavailable(nextPlans.length === 0);
+    }).catch(() => {
+      if (!controller.signal.aborted) setPlansUnavailable(true);
+    });
+    return () => controller.abort();
+  }, [api]);
 
   useEffect(() => {
     let active = true;
@@ -131,6 +146,8 @@ export function PostGem({
   };
 
   const handleClear = () => {
+    setPendingCheckoutToken(undefined);
+    setUploadProgress(undefined);
     setPhotos([]);
     setRetainedMedia([]);
     setCertificateFile(null);
@@ -195,27 +212,41 @@ export function PostGem({
           media
         };
 
-        const checkout = editCheckoutToken
-          ? await api.updateListingCheckoutDraft(editCheckoutToken, {
+        const draftToken = pendingCheckoutToken ?? editCheckoutToken;
+        const checkout = draftToken
+          ? await api.updateListingCheckoutDraft(draftToken, {
               ...checkoutRequest,
               retainedMediaIds: retainedMedia.map((item) => item.id)
             })
           : await api.createListingCheckoutSession(checkoutRequest);
 
+        setPendingCheckoutToken(checkout.token);
         setStatus("Uploading media...");
         const filesToUpload = certificate ? [...photos, certificate] : photos;
-        for (const [index, target] of checkout.uploadTargets.entries()) {
-          const file = filesToUpload[index];
-          if (!file || !isUploadableUrl(target.uploadUrl)) continue;
-          const uploadResponse = await fetch(target.uploadUrl, {
-            method: "PUT",
-            body: file,
-            headers: {
-              "Content-Type": file.type || "application/octet-stream",
-              "x-ms-blob-type": "BlockBlob"
-            }
-          });
-          if (!uploadResponse.ok) throw new Error(`Unable to upload ${file.name}.`);
+        const successfulPhotos = new Set<File>();
+        const uploadedMedia: ListingCheckoutMedia[] = [];
+        let certificateUploaded = false;
+        try {
+          if (checkout.uploadTargets.length !== filesToUpload.length) throw new Error("Upload targets were incomplete. Please retry.");
+          for (const [index, target] of checkout.uploadTargets.entries()) {
+            const file = filesToUpload[index];
+            const item = checkout.session.media.find((entry) => entry.id === target.mediaId);
+            if (!item || !isUploadableUrl(target.uploadUrl)) throw new Error(`Unable to upload ${file.name}.`);
+            setUploadProgress({ name: file.name, index: index + 1, total: filesToUpload.length, percent: 0 });
+            await uploadCheckoutFile(target.uploadUrl, file, item.contentType, (percent) => {
+              setUploadProgress({ name: file.name, index: index + 1, total: filesToUpload.length, percent });
+            });
+            uploadedMedia.push(item);
+            if (file === certificate) certificateUploaded = true;
+            else successfulPhotos.add(file);
+          }
+        } catch (error) {
+          setRetainedMedia([...retainedMedia, ...uploadedMedia]);
+          setPhotos((current) => current.filter((file) => !successfulPhotos.has(file)));
+          if (certificateUploaded) setCertificateFile(null);
+          throw error;
+        } finally {
+          setUploadProgress(undefined);
         }
 
         if (!editCheckoutToken) {
@@ -238,7 +269,26 @@ export function PostGem({
           <h1>Post a Gem Listing</h1>
           <p>Build a clear listing for moderation. Complete each section for faster approval.</p>
         </div>
+        <section className="card card--surface post-reference-status" aria-label="Listing fees and trial">
+          <p>Eligible new accounts receive a 14-day listing trial. Review your total and renewal terms before publishing.</p>
+          {plans.length > 0 && (
+            <ul>
+              {plans.map((plan) => (
+                <li key={plan.id}>
+                  <strong>{plan.name}</strong> — {formatLkr(plan.priceLkr)} every {plan.validityMonths === 1 ? "month" : `${plan.validityMonths} months`}. {plan.includedPhotos} photos included, {formatLkr(plan.extraPhotoPriceLkr)} per extra photo.
+                </li>
+              ))}
+            </ul>
+          )}
+          {plansUnavailable && <p>Paid plans renew according to the plan you choose. Extra photos may cost more. Current fees are shown at checkout.</p>}
+        </section>
         <form ref={formRef} className="post-form" id="post-gem-form" onSubmit={handleSubmit} onReset={handleClear}>
+          {uploadProgress && (
+            <div className="post-reference-status" role="status">
+              <span>Uploading {uploadProgress.name} ({uploadProgress.index} of {uploadProgress.total})</span>
+              <progress max={100} value={uploadProgress.percent} aria-label={`Upload progress for ${uploadProgress.name}`} />
+            </div>
+          )}
           {(referencesLoading || referencesError) && (
             <div className={`post-reference-status${referencesError ? " is-error" : ""}`} role={referencesError ? "alert" : "status"} aria-live="polite">
               <span>{referencesError ?? "Loading gem types and locations…"}</span>
@@ -285,7 +335,7 @@ export function PostGem({
               <input
                 ref={photosInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
                 multiple
                 disabled={isSubmitting}
                 onChange={(e) => addPhotos(e.target.files)}
@@ -495,7 +545,7 @@ export function PostGem({
                 </>
               ) : (
                 <>
-                  {isEditingCheckout ? "Update Checkout" : "Continue to Checkout"}
+                  {pendingCheckoutToken ? "Retry remaining uploads" : isEditingCheckout ? "Update Checkout" : "Continue to Checkout"}
                   <ChevronRight size={17} strokeWidth={2.2} />
                 </>
               )}
@@ -514,4 +564,21 @@ export function PostGem({
 function setFieldValue(form: HTMLFormElement, id: string, value: string) {
   const field = form.querySelector(`#${id}`) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
   if (field) field.value = value;
+}
+
+function uploadCheckoutFile(url: string, file: File, contentType: string, onProgress: (percent: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", url);
+    request.timeout = 60_000;
+    request.setRequestHeader("Content-Type", contentType);
+    request.setRequestHeader("x-ms-blob-type", "BlockBlob");
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round(100 * event.loaded / event.total));
+    };
+    const fail = () => reject(new Error(`Unable to upload ${file.name}. Retry to continue.`));
+    request.onload = () => request.status >= 200 && request.status < 300 ? resolve() : fail();
+    request.onerror = request.ontimeout = request.onabort = fail;
+    request.send(file);
+  });
 }

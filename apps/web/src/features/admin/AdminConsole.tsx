@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { GemsAdminApiClient, type AdminModerationSnapshot } from "@gems/api-client";
+import { GemsAdminApiClient, type AdminModerationSnapshot, type AdminCounts } from "@gems/api-client";
 import { formatLkr, type Listing, type PaymentIntent, type Report, type User } from "@gems/schemas";
 import { ThemeSwitcher, type ThemePreference } from "@gems/ui";
 import { Metric } from "../../shared/Metric";
@@ -43,6 +43,8 @@ export function AdminConsole({
   api,
   token,
   snapshot,
+  counts,
+  refreshSnapshot,
   setSnapshot,
   setLoadError,
   activeView,
@@ -55,6 +57,8 @@ export function AdminConsole({
   api: GemsAdminApiClient;
   token: string;
   snapshot: AdminModerationSnapshot;
+  counts: AdminCounts;
+  refreshSnapshot: () => Promise<void>;
   setSnapshot: (snapshot: AdminModerationSnapshot) => void;
   setLoadError: (error: string | null) => void;
   activeView: AdminView;
@@ -78,13 +82,20 @@ export function AdminConsole({
   const activeTrials = snapshot.users.filter((user) => user.trial?.status === "active").length;
   const expiredTrials = snapshot.users.filter((user) => user.trial?.status === "expired").length;
   const terminatedTrials = snapshot.users.filter((user) => user.trial?.status === "terminated").length;
-  const [reviewSearch, setReviewSearch] = useState("");
-  const [pendingPaymentSearch, setPendingPaymentSearch] = useState("");
-  const [reportSearch, setReportSearch] = useState("");
-  const [activeListingSearch, setActiveListingSearch] = useState("");
-  const [rejectedListingSearch, setRejectedListingSearch] = useState("");
-  const [archivedListingSearch, setArchivedListingSearch] = useState("");
-  const [paymentSearch, setPaymentSearch] = useState("");
+  const reviewSearch = "";
+  const setReviewSearch = (_value: string) => {};
+  const pendingPaymentSearch = "";
+  const setPendingPaymentSearch = (_value: string) => {};
+  const reportSearch = "";
+  const setReportSearch = (_value: string) => {};
+  const activeListingSearch = "";
+  const setActiveListingSearch = (_value: string) => {};
+  const rejectedListingSearch = "";
+  const setRejectedListingSearch = (_value: string) => {};
+  const archivedListingSearch = "";
+  const setArchivedListingSearch = (_value: string) => {};
+  const paymentSearch = "";
+  const setPaymentSearch = (_value: string) => {};
 
   const rejectedListings = allListings.filter((listing) => listingBuckets.get(listing.id) === "rejected");
   const archivedListings = allListings.filter((listing) => listingBuckets.get(listing.id) === "archived");
@@ -113,6 +124,7 @@ export function AdminConsole({
       setLoadError(null);
     } catch (error) {
       setLoadError(publicErrorMessage(error, "Unable to update listing moderation"));
+      throw error;
     }
   };
 
@@ -136,10 +148,10 @@ export function AdminConsole({
       <AdminNavigation
         activeView={activeView}
         onSelect={selectView}
-        moderationCount={allPending.length + openReports.length}
-        listingCount={allListings.length}
-        userCount={snapshot.users.length}
-        paymentCount={pendingPayments.length}
+        moderationCount={counts.queued + counts.reports}
+        listingCount={counts.listings}
+        userCount={counts.users}
+        paymentCount={counts.pending}
         handleLogout={handleLogout}
         theme={theme}
         setTheme={setTheme}
@@ -159,14 +171,14 @@ export function AdminConsole({
 
         {activeView === "overview" && (
           <AdminOverview
-            pendingReviews={allPending.length}
-            openReports={openReports.length}
-            checkedCertificates={checkedCertificates}
-            paidSubscriptions={successfulPayments.length}
-            activeTrials={activeTrials}
-            liveListings={liveListingsList.length}
-            totalUsers={snapshot.users.length}
-            pendingPayments={pendingPayments.length}
+            pendingReviews={counts.queued}
+            openReports={counts.reports}
+            checkedCertificates={counts.checked}
+            paidSubscriptions={counts.succeeded}
+            activeTrials={counts.activeTrials}
+            liveListings={counts.live}
+            totalUsers={counts.users}
+            pendingPayments={counts.pending}
             onNavigate={selectView}
           />
         )}
@@ -174,10 +186,10 @@ export function AdminConsole({
         {activeView === "moderation" && (
           <div className="admin-console-stack">
             <div className="metric-grid admin-view-metrics">
-              <Metric icon={ClipboardCheck} label="Queued listings" value={String(paidPending.length)} accent="var(--gold)" />
-              <Metric icon={CreditCard} label="Pending payment" value={String(unpaidPending.length)} accent="var(--muted)" />
-              <Metric icon={Flag} label="Open reports" value={String(openReports.length)} accent="var(--danger)" />
-              <Metric icon={BadgeCheck} label="Checked certs" value={String(checkedCertificates)} accent="var(--emerald)" />
+              <Metric icon={ClipboardCheck} label="Queued listings" value={String(counts.queued)} accent="var(--gold)" />
+              <Metric icon={CreditCard} label="Pending payment" value={String(counts.unpaid)} accent="var(--muted)" />
+              <Metric icon={Flag} label="Open reports" value={String(counts.reports)} accent="var(--danger)" />
+              <Metric icon={BadgeCheck} label="Checked certs" value={String(counts.checked)} accent="var(--emerald)" />
             </div>
             <AdminSection
               title="Review Queue"
@@ -239,9 +251,9 @@ export function AdminConsole({
         {activeView === "listings" && (
           <div className="admin-console-stack">
             <div className="metric-grid admin-view-metrics">
-              <Metric icon={Gem} label="Live listings" value={String(liveListingsList.length)} accent="var(--emerald)" />
-              <Metric icon={CircleAlert} label="Rejected" value={String(rejectedListings.length)} accent="var(--danger)" />
-              <Metric icon={Clock} label="Archived" value={String(archivedListings.length)} accent="var(--muted)" />
+              <Metric icon={Gem} label="Live listings" value={String(counts.live)} accent="var(--emerald)" />
+              <Metric icon={CircleAlert} label="Rejected" value={String(counts.rejected)} accent="var(--danger)" />
+              <Metric icon={Clock} label="Archived" value={String(counts.archived)} accent="var(--muted)" />
             </div>
             <AdminSection
               title="Active listings"
@@ -263,7 +275,7 @@ export function AdminConsole({
                   sellers={snapshot.sellers}
                   users={snapshot.users}
                   onUpdate={(updated) => {
-                    setSnapshot({ ...snapshot, liveListings: snapshot.liveListings.map((item) => item.id === updated.id ? updated : item) });
+                    setSnapshot({ ...snapshot, listings: snapshot.listings.map((item) => item.id === updated.id ? updated : item), liveListings: snapshot.liveListings.map((item) => item.id === updated.id ? updated : item) });
                   }}
                   onRemove={removeListing}
                   initialExpanded={listing.id === listingTargetId}
@@ -330,31 +342,37 @@ export function AdminConsole({
           </div>
         )}
 
+        {activeView === "listings" && allListings.some(listing => listingBuckets.get(listing.id) === "other") && (
+          <section><h2>Other listings</h2>{allListings.filter(listing => listingBuckets.get(listing.id) === "other").map(listing =>
+            <ActiveListingRow key={listing.id} api={api} token={token} listing={listing} payments={snapshot.payments}
+              sellers={snapshot.sellers} users={snapshot.users} onRemove={removeListing}
+              onUpdate={updated => setSnapshot({ ...snapshot, listings: snapshot.listings.map(item => item.id === updated.id ? updated : item) })} />
+          )}</section>
+        )}
+
         {activeView === "users" && (
           <UserTrialsPanel
             users={snapshot.users}
             api={api}
             token={token}
-            activeTrials={activeTrials}
-            expiredTrials={expiredTrials}
-            terminatedTrials={terminatedTrials}
+            activeTrials={counts.activeTrials}
+            expiredTrials={counts.expiredTrials}
+            terminatedTrials={counts.terminatedTrials}
             setLoadError={setLoadError}
             onUserUpdate={(updated) => {
               setSnapshot({ ...snapshot, users: snapshot.users.map((user) => user.id === updated.id ? updated : user) });
             }}
-            refreshSnapshot={async () => {
-              const refreshed = await api.moderationSnapshot(token);
-              setSnapshot(refreshed);
-            }}
+            refreshSnapshot={refreshSnapshot}
           />
         )}
 
         {activeView === "payments" && (
           <PaymentsPanel
+            counts={counts}
             payments={snapshot.payments}
             filteredPayments={filteredPayments}
-            pendingCount={pendingPayments.length}
-            successfulCount={successfulPayments.length}
+            pendingCount={counts.pending}
+            successfulCount={counts.succeeded}
             search={paymentSearch}
             onSearchChange={setPaymentSearch}
             snapshot={snapshot}
@@ -544,6 +562,7 @@ function OverviewAction({
 }
 
 function PaymentsPanel({
+  counts,
   payments,
   filteredPayments,
   pendingCount,
@@ -553,6 +572,7 @@ function PaymentsPanel({
   snapshot,
   highlightedSubscriptionId
 }: {
+  counts: AdminCounts;
   payments: PaymentIntent[];
   filteredPayments: PaymentIntent[];
   pendingCount: number;
@@ -569,8 +589,8 @@ function PaymentsPanel({
       highlightedRef.current?.focus({ preventScroll: true });
     }
   }, [highlightedSubscriptionId]);
-  const failedCount = payments.filter((payment) => payment.status === "failed").length;
-  const otherCount = payments.length - pendingCount - successfulCount - failedCount;
+  const failedCount = counts.failed;
+  const otherCount = counts.payments - pendingCount - successfulCount - failedCount;
   return (
     <div className="admin-console-stack">
       <div className="metric-grid admin-view-metrics admin-payment-metrics">
@@ -662,7 +682,8 @@ function UserTrialsPanel({
   const [isSitewideBusy, setIsSitewideBusy] = useState(false);
   const [sitewideEndDate, setSitewideEndDate] = useState<string>("");
   const [trialEndDates, setTrialEndDates] = useState<Record<string, string>>({});
-  const [search, setSearch] = useState("");
+  const search = "";
+  const setSearch = (_value: string) => {};
   const [showTerminateUserPrompt, setShowTerminateUserPrompt] = useState<User | null>(null);
   const [showExtendSitewidePrompt, setShowExtendSitewidePrompt] = useState(false);
   const [showTerminateSitewidePrompt, setShowTerminateSitewidePrompt] = useState(false);
@@ -1022,10 +1043,7 @@ function AdminSection({
           <h2>{title}</h2>
           <span>{countLabel} item{pluralCount === 1 ? "" : "s"}</span>
         </div>
-        <label className="admin-section-search">
-          <Search size={16} aria-hidden="true" />
-          <input value={searchValue} onChange={(event) => onSearchChange(event.target.value)} placeholder={searchPlaceholder} aria-label={searchPlaceholder} />
-        </label>
+
       </div>
       {summary}
       <div className="admin-section-scroll">

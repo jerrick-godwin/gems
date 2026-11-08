@@ -15,11 +15,11 @@ test("CSS cascade layers and shared layout tokens are declared once", () => {
   assert.match(globalCss, /@layer foundations, atoms, molecules, organisms, pages, utilities;/);
   assert.match(globalCss, /cards\.css" layer\(molecules\)/);
   assert.match(globalCss, /search\.css" layer\(molecules\)/);
-  assert.match(foundationCss, /--layout-wide:\s*1180px/);
-  assert.match(foundationCss, /--layout-prose:\s*840px/);
-  assert.match(foundationCss, /--layout-gutter:\s*clamp\(14px,\s*2vw,\s*24px\)/);
-  assert.match(foundationCss, /--section-gap:\s*clamp\(24px,\s*4vw,\s*48px\)/);
-  assert.match(foundationCss, /--topbar-h:\s*80px/);
+  assert.match(foundationCss, /--layout-wide:\s*1440px/);
+  assert.match(foundationCss, /--layout-prose:\s*760px/);
+  assert.match(foundationCss, /--layout-gutter:\s*clamp\(20px,\s*3vw,\s*48px\)/);
+  assert.match(foundationCss, /--section-gap:\s*clamp\(36px,\s*6vw,\s*84px\)/);
+  assert.match(foundationCss, /--topbar-h:\s*88px/);
   assert.match(responsiveCss, /@media \(max-width:\s*760px\)[\s\S]*?\.nav-actions\s*>\s*\.mobile-nav-toggle\s*\{[\s\S]*?display:\s*inline-flex/);
   assert.match(responsiveCss, /\.nav-menu-panel\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*var\(--topbar-h\) 0 0;[\s\S]*?display:\s*none[\s\S]*?width:\s*100vw/);
   assert.match(responsiveCss, /\.nav-menu-panel\.is-open\s*\{[\s\S]*?display:\s*grid/);
