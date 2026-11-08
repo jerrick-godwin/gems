@@ -202,6 +202,7 @@ test("replaces unresolved auth controls directly with the signed-in profile", as
   await expect(page.locator("#nav-login")).toHaveCount(0);
   await expect(page.getByLabel("Profile menu")).toHaveCount(0);
 
+  await page.waitForFunction(() => typeof (window as Window & { __resolveCustomerAuth?: () => void }).__resolveCustomerAuth === "function");
   await page.evaluate(() => (window as Window & { __resolveCustomerAuth: () => void }).__resolveCustomerAuth());
 
   await expect(page.getByLabel("Profile menu")).toBeVisible();

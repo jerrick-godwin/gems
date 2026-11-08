@@ -20,6 +20,7 @@ required POSTGRES_ADMIN_PASSWORD
 required ADMIN_EMAIL
 required ADMIN_PASSWORD
 required ADMIN_SESSION_SECRET
+required ADMIN_FIREBASE_UIDS
 
 if ! command -v az >/dev/null 2>&1; then
   echo "Azure CLI is not installed. Install it first: https://learn.microsoft.com/cli/azure/install-azure-cli-macos" >&2
@@ -51,6 +52,7 @@ az deployment group create \
     adminSessionSecret="${ADMIN_SESSION_SECRET}" \
     firebaseServiceAccount="${FIREBASE_JSON_CONTENT}" \
     adminFirebaseServiceAccount="${ADMIN_FIREBASE_JSON_CONTENT}" \
+    adminFirebaseUids="${ADMIN_FIREBASE_UIDS}" \
     stripePublishableKey="${STRIPE_PUBLISHABLE_KEY:-}" \
     stripeSecretKey="${STRIPE_SECRET_KEY:-}" \
     stripeCurrency="${STRIPE_CURRENCY:-LKR}" \

@@ -109,6 +109,7 @@ Backend variables belong in the root `.env.azure.local` for local development or
 | `DATABASE_URL` | PostgreSQL connection string; required |
 | `FIREBASE_SERVICE_ACCOUNT` | Buyer/seller Firebase service-account JSON |
 | `ADMIN_FIREBASE_SERVICE_ACCOUNT` | Admin Firebase service-account JSON |
+| `ADMIN_FIREBASE_UIDS` | Comma-separated Firebase UIDs allowed to use the admin API |
 | `PUBLIC_SITE_URL` | Canonical public origin and Stripe return URL base |
 | `GOOGLE_SITE_VERIFICATION` | Optional Google Search Console URL-prefix verification token |
 | `BING_SITE_VERIFICATION` | Optional Bing Webmaster Tools verification token |
@@ -125,14 +126,17 @@ Backend variables belong in the root `.env.azure.local` for local development or
 
 ## Search Engine Setup
 
-The public server renders crawlable marketplace, landing, gemstone category, and listing pages. It also generates the live sitemap at `/sitemap.xml`. After deployment:
+The public server renders crawlable marketplace, landing, gemstone category, and listing pages. It also generates the live sitemap at `/sitemap.xml`. Before rollout, export the previous 28 days of Sri Lanka Search Console data for the exact queries `gemslanka` and `gems lanka` separately.
 
-1. Verify `gemslanka.lk` in Google Search Console (DNS domain verification is preferred) and submit `https://gemslanka.lk/sitemap.xml`.
+1. Verify `gemslanka.lk` in Google Search Console (DNS domain verification is preferred). After deployment, submit `https://gemslanka.lk/sitemap.xml` and request recrawls for the homepage and the sapphire pricing guide.
 2. Verify or import the property in Bing Webmaster Tools and submit the same sitemap.
 3. Set `INDEXNOW_KEY` to enable automatic IndexNow notifications when public listing state changes. The server exposes the required key file at `/<key>.txt`.
 4. Inspect the homepage, one `/gemstones/:slug` category, and one `/listings/:id` URL in both webmaster tools. Validate listing schema with Google's Rich Results Test and the Schema.org validator.
+5. Compare both branded queries with their baselines 28 and 56 days after Google recrawls the homepage. Check impressions for Sri Lankan sapphire price queries on the new guide.
 
 Search engines choose titles, site names, rich results, and sitelinks algorithmically. The application provides the technical signals and internal structure, but cannot guarantee a particular search-result layout.
+
+AdSense ad requests are disabled while the site awaits approval. Match the homepage verification meta tag and root `ads.txt` to the publisher account, verify both on the deployed site, and check **Sites** and **Policy Center** before the account owner requests review. Enable a configured placement only after AdSense marks the site Ready.
 
 Never commit either local environment file or Firebase service-account JSON.
 
@@ -143,6 +147,8 @@ Buyer and seller authentication uses the public Firebase project. Configure its 
 Admin authentication uses a separate Firebase project. Configure `VITE_ADMIN_FIREBASE_*` and `ADMIN_FIREBASE_SERVICE_ACCOUNT`. Email/Password sign-in must be enabled in Firebase, and each local or deployed hostname must be listed as an authorized domain.
 
 Service-account variables contain the complete JSON document, not the public Firebase web configuration.
+
+Before deploying the admin authorization change, verify each existing administrator’s UID in the dedicated Firebase project and set `ADMIN_FIREBASE_UIDS` in staging and production. Verify that a listed user can sign in and that an unlisted or revoked user cannot. An empty list denies admin API access. Apply the database migrations before deploying to enable shared password-reset throttling. Hosted uploads require the Azure storage configuration. The local file endpoints are development-only.
 
 ## Stripe Setup
 

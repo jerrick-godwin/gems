@@ -69,7 +69,7 @@ export function MarketplaceRoute({
     return <AppFrame {...frameProps}>{page}</AppFrame>;
   }
   if (initialRoute.kind === "landing") {
-    return <AppFrame {...frameProps}><SeoLandingPage page={initialRoute.page} gemTypes={initialRoute.gemTypes} /></AppFrame>;
+    return <AppFrame {...frameProps}><SeoLandingPage page={initialRoute.page} gemTypes={initialRoute.gemTypes} sapphireExamples={initialRoute.sapphireExamples} /></AppFrame>;
   }
   if (initialRoute.kind === "error") {
     return <AppFrame {...frameProps}><StatusState title={initialRoute.status === 404 ? "Page not found" : "Marketplace unavailable"} message={initialRoute.message} /></AppFrame>;
@@ -102,7 +102,6 @@ function InteractiveMarketplace({
 }) {
   const [data, setData] = useState(initialData);
   const [selectedListing, setSelectedListing] = useState<Listing | undefined>(initialRoute.kind === "listing" ? initialRoute.listing : undefined);
-  const [previewPhones, setPreviewPhones] = useState<Record<string, string>>({});
   const [fullPhones, setFullPhones] = useState<Record<string, string>>({});
   const requestRef = useRef<AbortController>();
   const queryTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -155,6 +154,7 @@ function InteractiveMarketplace({
   }, [data, initialRoute, onRouteStateChange, selectedListing, sellers]);
 
   const change = (patch: Partial<MarketplaceFilters>) => {
+    if (queryTimerRef.current) clearTimeout(queryTimerRef.current);
     const filters = { ...data.filters, ...patch, page: patch.page ?? 1 };
     void load(filters).catch((error) => {
       if (!(error instanceof DOMException && error.name === "AbortError")) window.location.assign(browserHref(filters));
@@ -177,11 +177,11 @@ function InteractiveMarketplace({
     onPublicUrlChange?.(`/listings/${encodeURIComponent(id)}`);
     void fetch(`/api/v1/listings/${encodeURIComponent(id)}/interactions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "view" }) });
   };
-  const revealPhone = async (id: string, full: boolean) => {
-    const response = await fetch(`/api/v1/listings/${encodeURIComponent(id)}/reveal-phone${full ? "?full=1" : ""}`, { method: "POST" });
+  const revealPhone = async (id: string) => {
+    const response = await fetch(`/api/v1/listings/${encodeURIComponent(id)}/reveal-phone?full=1`, { method: "POST" });
     if (!response.ok) throw new Error("Unable to reveal phone");
     const result = await response.json() as { phone: string };
-    (full ? setFullPhones : setPreviewPhones)((current) => ({ ...current, [id]: result.phone }));
+    setFullPhones((current) => ({ ...current, [id]: result.phone }));
     return result.phone;
   };
 
@@ -199,6 +199,9 @@ function InteractiveMarketplace({
       selectedLocations={data.filters.locations}
       setSelectedLocations={(locations) => change({ locations })}
       sourceListingCount={data.page.total}
+      resultCount={data.page.total}
+      lockedGemType={Boolean(category)}
+      onClearFilters={() => change({ gemType: category?.id ?? "", locations: [], treatment: "", certificate: "" })}
       filteredListings={listings}
       page={data.page.page}
       setPage={(page) => change({ page })}
@@ -224,10 +227,8 @@ function InteractiveMarketplace({
       setSort={(sort) => change({ sort })}
       selectedId={selectedListing?.id ?? ""}
       setSelectedId={(id) => void selectListing(id)}
-      previewPhone={selectedListing ? previewPhones[selectedListing.id] : undefined}
       revealedPhone={selectedListing ? fullPhones[selectedListing.id] : undefined}
-      previewPhoneNumber={(id) => revealPhone(id, false)}
-      revealPhone={(id) => revealPhone(id, true)}
+      revealPhone={revealPhone}
       isSignedIn={false}
       reportedListingIds={[]}
       onRefresh={() => load(data.filters, false)}

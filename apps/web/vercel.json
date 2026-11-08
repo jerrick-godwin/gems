@@ -9,6 +9,17 @@
   },
   "routes": [
     {
+      "src": "^/.*$",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000",
+        "Content-Security-Policy-Report-Only": "default-src 'self'; script-src 'self' https://www.googletagmanager.com https://apis.google.com https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.google-analytics.com https://*.blob.core.windows.net https://api.stripe.com; frame-src 'self' https://*.firebaseapp.com https://js.stripe.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+      },
+      "continue": true
+    },
+    {
       "src": "^/api/v1(?:/.*)?$",
       "dest": "/api/index.ts"
     },
@@ -33,7 +44,7 @@
       "dest": "/api/index.ts"
     },
     {
-      "src": "^/(?:buy-gemstones|sell-gemstones|about-us|gemstones|guides/buying-gemstones-online|guides/gemstone-certification-and-treatments)/?$",
+      "src": "^/(?:buy-gemstones|sell-gemstones|about-us|gemstones|guides/buying-gemstones-online|guides/gemstone-certification-and-treatments|guides/blue-sapphire-price-sri-lanka)/?$",
       "dest": "/api/index.ts"
     },
     {
@@ -55,7 +66,7 @@
       }
     },
     {
-      "src": "^/(?:login|signup|forgot-password|post(?:/.*)?|profile|reports|listings|receipt)/?$",
+      "src": "^/(?:login|signup|forgot-password|reset-password|post(?:/.*)?|profile|reports|listings(?:/pay)?|receipt)/?$",
       "dest": "/index.html",
       "headers": {
         "X-Robots-Tag": "noindex, follow"

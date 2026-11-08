@@ -1,11 +1,10 @@
-import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Filter, Flag, MapPin, Phone, SlidersHorizontal, Star, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { BadgeCheck, Check, ChevronLeft, ChevronRight, Download, Filter, Flag, MapPin, Phone, SlidersHorizontal, Star, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MarketplaceSnapshot } from "@gems/api-client";
 import { formatLkr, type CertificateStatus, type Listing, type MarketplacePageSize, type SellerProfile, type Treatment } from "@gems/schemas";
 import { MultiSelectDropdown } from "../../shared/MultiSelectDropdown";
 import { StatusState } from "../../shared/StatusState";
-import { AdSenseUnit } from "../../shared/AdSenseUnit";
 import { publicErrorMessage, formatTimeAgo, formatPostedDate } from "../../shared/helpers";
 import type { SortKey } from "../../shared/types";
 import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
@@ -19,6 +18,9 @@ export interface MarketplaceProps {
   selectedLocations: string[];
   setSelectedLocations: (locations: string[]) => void;
   sourceListingCount: number;
+  resultCount: number;
+  onClearFilters: () => void;
+  lockedGemType?: boolean;
   filteredListings: Listing[];
   page: number;
   setPage: (page: number) => void;
@@ -39,9 +41,7 @@ export interface MarketplaceProps {
   setSort: (value: SortKey) => void;
   selectedId: string;
   setSelectedId: (id: string) => void;
-  previewPhone?: string;
   revealedPhone?: string;
-  previewPhoneNumber: (listingId: string) => Promise<string>;
   revealPhone: (listingId: string) => Promise<string>;
   isSignedIn: boolean;
   reportedListingIds: string[];
@@ -52,13 +52,19 @@ export interface MarketplaceProps {
 }
 
 export function Marketplace(props: MarketplaceProps) {
-  const hasActiveDiscovery = Boolean(
-    props.query.trim()
-    || props.gemType !== "all"
-    || props.treatment !== "all"
-    || props.certificate !== "all"
-    || props.selectedLocations.length
-  );
+  const filters = [
+    ...(!props.lockedGemType && props.gemType !== "all" ? [{
+      label: props.gemTypes.find((gem) => gem.id === props.gemType)?.name ?? "Gem type",
+      remove: () => props.setGemType("all")
+    }] : []),
+    ...(props.treatment !== "all" ? [{ label: formatTreatment(props.treatment), remove: () => props.setTreatment("all") }] : []),
+    ...(props.certificate !== "all" ? [{ label: certificateLabel(props.certificate), remove: () => props.setCertificate("all") }] : []),
+    ...props.selectedLocations.map((location) => ({
+      label: location,
+      remove: () => props.setSelectedLocations(props.selectedLocations.filter((item) => item !== location))
+    }))
+  ];
+  const hasActiveDiscovery = Boolean(props.query.trim() || filters.length);
   if (!props.selectedListing && props.sourceListingCount === 0 && !hasActiveDiscovery) {
     return <StatusState title="No listings available" message="Try refreshing once gemstone listings have been published." onRetry={props.onRefresh} headingLevel={2} />;
   }
@@ -66,45 +72,43 @@ export function Marketplace(props: MarketplaceProps) {
   return (
     <section className="market-grid">
       <section className="feed marketplace-results-card card card--surface" aria-label="Gemstone listings">
-        <header className="marketplace-results-header" role="search" aria-label="Search gemstone listings">
+        <div className="marketplace-results-header" role="search" aria-label="Search gemstone listings">
           <MarketplaceSearch id="marketplace-results-search-input" value={props.query} onChange={props.setQuery} className="marketplace-results-search" />
-        </header>
+        </div>
+        <div className="marketplace-result-tools">
+          <p role="status">{props.resultCount} {props.resultCount === 1 ? "listing" : "listings"}</p>
+          {filters.length > 0 && <div className="marketplace-active-filters" role="group" aria-label="Applied filters">
+            {filters.map(({ label, remove }, index) => (
+              <button key={`${index}-${label}`} className="subtle-action" type="button" onClick={remove} aria-label={`Remove ${label} filter`}>
+                {label}<X size={14} aria-hidden="true" />
+              </button>
+            ))}
+            {props.resultCount > 0 && <button className="subtle-action" type="button" onClick={props.onClearFilters}>Clear filters</button>}
+          </div>}
+        </div>
         {props.filteredListings.length === 0 ? (
           <div className="empty-results">
             <h2>No matches found</h2>
             <p>Adjust your search or filters to browse the available listings.</p>
+            {filters.length > 0 && <button className="subtle-action" type="button" onClick={props.onClearFilters}>Clear filters</button>}
           </div>
         ) : (
           <div className="listing-list">
-            {props.filteredListings.map((listing, index) => {
-              const card = (
-                <ListingCard
-                  key={listing.id}
-                  listing={listing}
-                  gemTypes={props.gemTypes}
-                  sellers={props.sellers}
-                  selected={props.selectedId === listing.id}
-                  eager={index < 4}
-                  priority={index === 0}
-                  onSelect={() => {
-                    props.setSelectedId(listing.id);
-                    props.onRecordInteraction(listing.id, "view");
-                  }}
-                />
-              );
-
-              if (index > 0 && (index + 4) % 8 === 0) {
-                return (
-                  <Fragment key={`ad-${listing.id}`}>
-                    {card}
-                    <div className="feed-ad-container" style={{ gridColumn: "1 / -1", padding: "16px 0" }}>
-                      <AdSenseUnit format="fluid" layoutKey="-gw-1+2a-9x+5y" slot="TODO_IN_FEED_SLOT_ID" />
-                    </div>
-                  </Fragment>
-                );
-              }
-              return card;
-            })}
+            {props.filteredListings.map((listing, index) => (
+              <ListingCard
+                key={listing.id}
+                listing={listing}
+                gemTypes={props.gemTypes}
+                sellers={props.sellers}
+                selected={props.selectedId === listing.id}
+                eager={index < 4}
+                priority={index === 0}
+                onSelect={() => {
+                  props.setSelectedId(listing.id);
+                  void props.onRecordInteraction(listing.id, "view");
+                }}
+              />
+            ))}
           </div>
         )}
         {(props.totalPages > 1 || (props.pageSize && props.setPageSize)) && (
@@ -196,17 +200,16 @@ export function Marketplace(props: MarketplaceProps) {
         <div className="modal-overlay" onClick={() => props.setSelectedId("")}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-close-container">
-              <button className="modal-close" onClick={() => props.setSelectedId("")}>
+              <button className="modal-close" aria-label="Close listing details" onClick={() => props.setSelectedId("")}>
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
             <ListingDetail
+              key={props.selectedListing.id}
               listing={props.selectedListing}
               gemTypes={props.gemTypes}
               sellers={props.sellers}
-              previewPhone={props.previewPhone}
               revealedPhone={props.revealedPhone}
-              onPreviewPhone={() => props.previewPhoneNumber(props.selectedListing!.id)}
               onReveal={() => props.revealPhone(props.selectedListing!.id)}
               isSignedIn={props.isSignedIn}
               isReported={props.reportedListingIds.includes(props.selectedListing.id)}
@@ -221,8 +224,7 @@ export function Marketplace(props: MarketplaceProps) {
 }
 
 function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, onSelect }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; selected: boolean; eager: boolean; priority: boolean; onSelect: () => void; }) {
-  const hasImage = Boolean(listing.media[0]?.thumbnailUrl ?? listing.media[0]?.url);
-  const [imageLoading, setImageLoading] = useState(hasImage);
+  const image = listing.media.find((media) => media.kind === "photo");
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const sellerRating = seller?.rating ?? 0;
@@ -237,12 +239,7 @@ function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, on
     <article className={`listing-card card card--media card--interactive${selected ? " selected" : ""}`} id={`listing-${listing.id}`}>
       <a className="listing-card-link" href={`/listings/${encodeURIComponent(listing.id)}`} onClick={(event) => { event.preventDefault(); onSelect(); }}>
       <div className="listing-media">
-        {imageLoading && (
-          <div className="image-loading-overlay">
-            <ClassicLoader className="icon-spinner" size={24} />
-          </div>
-        )}
-        <img className={imageLoading ? "loading" : ""} src={listing.media[0]?.thumbnailUrl ?? listing.media[0]?.url} alt={listing.media[0]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} width={listing.media[0]?.width ?? 800} height={listing.media[0]?.height ?? 600} loading={eager ? "eager" : "lazy"} {...(priority ? { fetchpriority: "high" } : {})} onLoad={() => setImageLoading(false)} onError={() => setImageLoading(false)} ref={img => { if (img?.complete) setImageLoading(false); }} />
+        {image && <img src={image.thumbnailUrl ?? image.url} alt={image.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} width={image.width ?? 800} height={image.height ?? 600} loading={eager ? "eager" : "lazy"} {...(priority ? { fetchpriority: "high" } : {})} />}
         <div className="listing-badges">
           {listing.promoted.includes("top") && <span className="listing-badge listing-badge-top"><Star size={11} />Top</span>}
           {listing.promoted.includes("urgent") && <span className="listing-badge listing-badge-urgent">Urgent</span>}
@@ -268,13 +265,10 @@ function ListingCard({ listing, gemTypes, sellers, selected, eager, priority, on
   );
 }
 
-function maskPhoneNumber(phone?: string) {
-  if (!phone) return phone;
-  let visibleDigits = 0;
-  return phone.replace(/\d/g, (digit) => {
-    visibleDigits += 1;
-    return visibleDigits <= 3 ? digit : "•";
-  });
+function certificateLabel(status: CertificateStatus) {
+  if (status === "admin_verified") return "Lab report on file";
+  if (status === "seller_provided") return "Seller-provided lab report";
+  return "No lab report";
 }
 
 export type PhonePreviewState = "idle" | "loading" | "available" | "unavailable" | "error";
@@ -287,92 +281,41 @@ export function phonePreviewLabel(state: PhonePreviewState, phoneText: string, i
   return "Phone number";
 }
 
-function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone, onPreviewPhone, onReveal, isSignedIn, isReported, onReport, headingLevel }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; previewPhone?: string; revealedPhone?: string; onPreviewPhone: () => Promise<string>; onReveal: () => Promise<string>; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; headingLevel: 1 | 2; }) {
+function ListingDetail({ listing, gemTypes, sellers, revealedPhone, onReveal, isSignedIn, isReported, onReport, headingLevel }: { listing: Listing; gemTypes: MarketplaceSnapshot["gemTypes"]; sellers: SellerProfile[]; revealedPhone?: string; onReveal: () => Promise<string>; isSignedIn: boolean; isReported: boolean; onReport: (listingId: string, reason: string, notes: string) => Promise<void>; headingLevel: 1 | 2; }) {
   const seller = sellers.find((item) => item.id === listing.sellerId);
   const gemType = gemTypes.find((item) => item.id === listing.gemTypeId);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
   const [reported, setReported] = useState(false);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [isFullRevealLoading, setIsFullRevealLoading] = useState(false);
-  const [fullPhoneVisible, setFullPhoneVisible] = useState(false);
-  const [phonePreviewState, setPhonePreviewState] = useState<PhonePreviewState>(previewPhone ? "available" : "idle");
+  const [phoneState, setPhoneState] = useState<PhonePreviewState>("idle");
+  const [copyMessage, setCopyMessage] = useState("");
   const [reportReason, setReportReason] = useState("");
   const reportAction = useSingleFlightAction();
-  const images = useMemo(() => listing.media.filter((media) => media.kind !== "certificate"), [listing.media]);
+  const images = useMemo(() => listing.media.filter((media) => media.kind === "photo"), [listing.media]);
   const certificate = listing.media.find((media) => media.kind === "certificate");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const hasImage = Boolean(listing.media.filter((media) => media.kind !== "certificate")[0]?.url);
-  const [imageLoading, setImageLoading] = useState(hasImage);
-  const requestedPhoneListingId = useRef<string>();
+  const image = images[currentImageIndex];
   const attributes = getListingAttributes(listing, gemType?.name);
+  const SpecHeading = headingLevel === 1 ? "h2" : "h3";
+  const dialNumber = revealedPhone?.replace(/[^+0-9]/g, "");
 
-  useEffect(() => {
-    setImageLoading(Boolean(images[currentImageIndex]?.url));
-  }, [currentImageIndex, images]);
-
-  useEffect(() => {
-    if (images.length <= 1) return;
-    const interval = setInterval(() => setCurrentImageIndex((prev) => (prev + 1) % images.length), 5000);
-    return () => clearInterval(interval);
-  }, [images.length]);
-
-  const previewPhoneText = maskPhoneNumber(previewPhone);
-  const phoneText = fullPhoneVisible && revealedPhone ? revealedPhone : previewPhoneText ?? "";
-
-  useEffect(() => {
-    requestedPhoneListingId.current = undefined;
-    setFullPhoneVisible(false);
-    setPhonePreviewState("idle");
-  }, [listing.id]);
-
-  useEffect(() => {
-    if (revealedPhone) {
-      setFullPhoneVisible(true);
-      return;
-    }
-  }, [revealedPhone]);
-
-  useEffect(() => {
-    if (previewPhone || requestedPhoneListingId.current === listing.id) return;
-    let active = true;
-    requestedPhoneListingId.current = listing.id;
-    setIsPreviewLoading(true);
-    setPhonePreviewState("loading");
-    Promise.resolve(onPreviewPhone())
-      .then((phone) => {
-        if (!active) return;
-        setPhonePreviewState(phone.trim() ? "available" : "unavailable");
-      })
-      .catch((error) => {
-        if (!active) return;
-        requestedPhoneListingId.current = undefined;
-        setPhonePreviewState("error");
-        console.error("Unable to load phone number", error);
-      })
-      .finally(() => {
-        if (active) setIsPreviewLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [listing.id, onPreviewPhone, previewPhone]);
-
-  const handlePhoneToggle = async () => {
-    if (revealedPhone) {
-      setFullPhoneVisible((current) => !current);
-      return;
-    }
-    if (isFullRevealLoading) return;
+  const revealSellerPhone = async () => {
+    if (phoneState === "loading") return;
+    setPhoneState("loading");
     try {
-      setIsFullRevealLoading(true);
-      const phone = await onReveal();
-      setPhonePreviewState(phone.trim() ? "available" : "unavailable");
-    } catch (error) {
-      setPhonePreviewState("error");
-      alert(`Unable to load phone number: ${publicErrorMessage(error, "Unknown error")}`);
-    } finally {
-      setIsFullRevealLoading(false);
+      setPhoneState((await onReveal()).trim() ? "available" : "unavailable");
+    } catch {
+      setPhoneState("error");
+    }
+  };
+
+  const copySellerPhone = async () => {
+    if (!revealedPhone) return;
+    try {
+      await navigator.clipboard.writeText(revealedPhone);
+      setCopyMessage("Number copied.");
+    } catch {
+      setCopyMessage("Could not copy the number. You can select and copy it manually.");
     }
   };
 
@@ -402,12 +345,7 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
   return (
     <article className="detail-card card card--media" id="listing-detail">
       <div className="detail-image-container">
-        {imageLoading && (
-          <div className="image-loading-overlay">
-            <ClassicLoader className="icon-spinner" size={32} />
-          </div>
-        )}
-        <img className={`detail-image ${imageLoading ? "loading" : ""}`} src={images[currentImageIndex]?.url} alt={images[currentImageIndex]?.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} onLoad={() => setImageLoading(false)} onError={() => setImageLoading(false)} ref={img => { if (img?.complete) setImageLoading(false); }} />
+        {image && <img className="detail-image" src={image.url} alt={image.alt ?? listing.title} style={gemImageStyle(listing.gemTypeId)} width={image.width ?? 800} height={image.height ?? 500} loading="eager" {...(currentImageIndex === 0 ? { fetchpriority: "high" } : {})} />}
         {images.length > 1 && <>
           <button
             className="carousel-nav prev"
@@ -427,11 +365,28 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
       </div>
       <div className="detail-body">
         <div className="detail-title-row">{headingLevel === 1 ? <h1>{listing.title}</h1> : <h2>{listing.title}</h2>}<span>{formatLkr(listing.priceLkr)}</span></div>
+        <dl className="listing-key-facts">
+          <div><dt>Origin</dt><dd>{listing.attributes.origin || "Not disclosed"}</dd></div>
+          <div><dt>Treatment</dt><dd>{formatTreatment(listing.attributes.treatment)}</dd></div>
+          <div><dt>Lab report</dt><dd>{certificateLabel(listing.attributes.certificateStatus)}</dd></div>
+        </dl>
+        <div className="seller-contact-actions">
+          {revealedPhone ? <>
+            <span dir="ltr">{revealedPhone}</span>
+            {dialNumber && <a className="primary-action" href={`tel:${dialNumber}`}><Phone size={16} aria-hidden="true" /> Call seller</a>}
+            <button type="button" className="subtle-action" onClick={() => void copySellerPhone()}>Copy number</button>
+          </> : phoneState !== "unavailable" && (
+            <button type="button" className="primary-action" onClick={() => void revealSellerPhone()} disabled={phoneState === "loading"}>
+              <Phone size={16} aria-hidden="true" /> {phoneState === "loading" ? "Loading phone number…" : phoneState === "error" ? "Retry seller phone number" : "Show seller phone number"}
+            </button>
+          )}
+          <span role="status">{phoneState === "unavailable" || phoneState === "error" ? phonePreviewLabel(phoneState, "") : copyMessage}</span>
+        </div>
         <p className="listing-description">{listing.description}</p>
         <div className="spec-sections">
           {attributes.map((section) => (
             <div key={section.title} className="spec-section">
-              <h3 className="spec-section-title">{section.title}</h3>
+              <SpecHeading className="spec-section-title">{section.title}</SpecHeading>
               <dl className="spec-grid">
                 {section.items.map((attribute) => (
                   <div key={attribute.label}>
@@ -444,9 +399,9 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
           ))}
           {certificate && (
             <div className="spec-section">
-              <h3 className="spec-section-title">Certificate</h3>
+              <SpecHeading className="spec-section-title">Certificate</SpecHeading>
               <div className="certificate-box certificate-row">
-                <div className="certificate-label"><BadgeCheck size={17} strokeWidth={2} /><span>Gem Certificate is Provided</span></div>
+                <div className="certificate-label"><BadgeCheck size={17} strokeWidth={2} /><span>{certificateLabel(listing.attributes.certificateStatus)}</span></div>
                 <a href={certificate.url} target="_blank" rel="noreferrer" className="primary-action btn-blue certificate-download"><Download size={14} />Download</a>
               </div>
             </div>
@@ -466,23 +421,6 @@ function ListingDetail({ listing, gemTypes, sellers, previewPhone, revealedPhone
             </div>
           </div>
           <div className="sleek-actions">
-            <div className={`phone-reveal${phoneText ? " has-number" : ""}`}>
-              <Phone size={18} />
-              <span className="phone-reveal-text" aria-live="polite">
-                <span>{phonePreviewLabel(phonePreviewState, phoneText, isPreviewLoading)}</span>
-              </span>
-              {phonePreviewState !== "unavailable" && (
-                <button
-                  type="button"
-                  className="phone-eye-action"
-                  onClick={handlePhoneToggle}
-                  disabled={isFullRevealLoading || (!phoneText && isPreviewLoading)}
-                  aria-label={phonePreviewState === "error" ? "Retry loading phone number" : fullPhoneVisible && revealedPhone ? "Hide phone number" : "Show full phone number"}
-                >
-                  {isFullRevealLoading ? <ClassicLoader className="icon-spinner" size={18} /> : fullPhoneVisible && revealedPhone ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              )}
-            </div>
             {isReported || reported ? (
               <button className="subtle-action reported-subtle" aria-label="Listing already reported"><Check size={14} strokeWidth={2.5} /> Listing Reported</button>
             ) : (
@@ -537,13 +475,6 @@ function getListingAttributes(listing: Listing, gemTypeName?: string): Attribute
         ["Shape", listing.attributes.shape],
         ["Cut", listing.attributes.cut],
         ["Dimensions", listing.attributes.dimensions]
-      ])
-    },
-    {
-      title: "Origin & Treatment",
-      items: processGroup([
-        ["Origin", listing.attributes.origin],
-        ["Treatment", formatTreatment(listing.attributes.treatment)]
       ])
     }
   ].filter(group => group.items.length > 0);

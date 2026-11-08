@@ -4,7 +4,7 @@ import { GemsApiClient } from "@gems/api-client";
 import { formatLkr, quoteListingSubscription, type ListingCheckoutSession, type ListingSubscriptionPlan, type UserDashboard } from "@gems/schemas";
 import { authClient } from "../../firebase";
 import { publicErrorMessage } from "../../shared/helpers";
-import { createIdempotencyKey, useSingleFlightAction } from "../../shared/useSingleFlightAction";
+import { useSingleFlightAction } from "../../shared/useSingleFlightAction";
 import { ClassicLoader } from "../../shared/ClassicLoader";
 import type { View } from "../../shared/types";
 import { authErrorMessage, hasAuthErrors, validateLoginFields, validateSignupFields, type AuthFieldErrors } from "./authValidation";
@@ -103,21 +103,24 @@ export function PostGemCheckout({
     }
 
     await completeAction.run(async () => {
-      const checkoutKey = createIdempotencyKey("listing-checkout");
       try {
         setStatus(activeTrial ? "Submitting listing..." : "Creating payment...");
         const result = await api.completeListingCheckoutSession(token, {
           selectedPlanId,
           acceptedPolicies
-        }, { idempotencyKey: checkoutKey });
-        onDashboardChange(await api.dashboard());
+        });
         if (result.mode === "trial") {
+          void api.dashboard().then(onDashboardChange).catch(() => {});
           setStatus("Listing submitted with your free trial.");
           onNavigate("my_listings");
           completeAction.release();
           return;
         }
         const paymentIntent = result.paymentIntent;
+        if (paymentIntent.status === "succeeded") {
+          onNavigate("my_listings");
+          return;
+        }
         if (paymentIntent.paymentUrl) {
           window.location.href = paymentIntent.paymentUrl;
           return;

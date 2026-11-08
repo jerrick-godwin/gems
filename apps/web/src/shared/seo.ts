@@ -1,4 +1,6 @@
 export const siteName = "Gemslanka";
+export const siteAlias = "Gems Lanka";
+export const marketplaceTitle = `${siteName} | Sri Lankan Gemstone Marketplace`;
 
 export const footerDescription =
   "Your trusted all-in-one gemstone marketplace for buying and selling valuable gemstones with passion, transparency, and confidence.";
@@ -30,7 +32,8 @@ export type SeoLandingPageId =
   | "about"
   | "gemstones"
   | "buying-guide"
-  | "certification-guide";
+  | "certification-guide"
+  | "sapphire-price-guide";
 
 export interface SeoLandingPageDefinition {
   path: string;
@@ -89,6 +92,14 @@ export const seoLandingPages: Record<SeoLandingPageId, SeoLandingPageDefinition>
     heading: "Gemstone Certification, Lab Reports, and Treatments",
     introduction: "A lab report can describe a gemstone's tested characteristics, while treatment disclosure explains whether its appearance has been altered. Neither a photograph nor a certificate label alone replaces careful verification with the issuing laboratory and qualified professionals.",
     updatedAt: "2026-07-16"
+  },
+  "sapphire-price-guide": {
+    path: "/guides/blue-sapphire-price-sri-lanka",
+    title: "Blue Sapphire Price in Sri Lanka | Gemslanka",
+    description: "Compare blue sapphire asking prices in Sri Lanka in LKR per carat. Learn how colour, treatment, origin, weight, and lab reports affect comparisons.",
+    heading: "Blue Sapphire Price in Sri Lanka",
+    introduction: "A blue sapphire’s asking price depends on the individual stone. Start by comparing prices in LKR per carat, then compare stones with similar colour, cut, weight, treatment, and evidence of origin.",
+    updatedAt: "2026-11-09"
   }
 };
 
@@ -103,7 +114,8 @@ export const seoLandingLinkContent: Record<SeoLandingPageId, SeoLandingLinkConte
   about: { label: "About Us", description: "Understand Gemslanka's listing-only marketplace." },
   gemstones: { label: "Gemstone Types", description: "Explore gemstone categories and current listings." },
   "buying-guide": { label: "Buying Guide", description: "Follow a due-diligence checklist before buying." },
-  "certification-guide": { label: "Certification & Treatments", description: "Understand lab reports, treatments, and disclosure." }
+  "certification-guide": { label: "Certification & Treatments", description: "Understand lab reports, treatments, and disclosure." },
+  "sapphire-price-guide": { label: "Blue Sapphire Prices", description: "Compare blue sapphire asking prices per carat in Sri Lanka." }
 };
 
 export interface SeoLandingCrossLinksDefinition {
@@ -135,6 +147,10 @@ export const seoLandingCrossLinks: Record<SeoLandingPageId, SeoLandingCrossLinks
   "certification-guide": {
     cards: ["gemstones", "buy", "about"],
     inline: { target: "sell", before: "Sellers can also review ", label: "how to create a clear gemstone listing", after: "." }
+  },
+  "sapphire-price-guide": {
+    cards: ["buy", "buying-guide", "gemstones"],
+    inline: { target: "certification-guide", before: "For help checking a seller’s claims, see ", label: "the guide to gemstone lab reports and treatments", after: "." }
   }
 };
 
@@ -216,7 +232,7 @@ const priorityGemIntroductions: Partial<Record<(typeof priorityGemSlugs)[number]
   ruby: "Ruby is the red variety of corundum. Compare colour, transparency, treatment disclosure, inclusions, weight, and any laboratory report when reviewing ruby listings.",
   spinel: "Spinel occurs in vivid red, pink, blue, purple, and other colours and has a long history in Asian gem markets. Check colour, clarity, origin claims, treatment disclosure, and report details for each stone.",
   "cats-eye": "Cat's-eye gemstones display a moving band of light known as chatoyancy. Ask which mineral species the name refers to, then compare the sharpness of the eye, body colour, transparency, treatment, and report details.",
-  moonstone: "Moonstone is valued for adularescence, the light that appears to float across the stone. Compare body colour, strength and colour of the effect, transparency, cut, fractures, and stated origin.",
+  moonstone: "Sri Lanka’s Export Development Board identifies Meetiyagoda as a major local source of moonstone. Compare the light effect known as adularescence, as well as body colour, transparency, cut, fractures, and the seller’s stated origin.",
   alexandrite: "Alexandrite is a colour-change variety of chrysoberyl. Assess the colours shown under different lighting, strength of the change, clarity, treatment disclosure, and independent laboratory findings.",
   zircon: "Natural zircon is distinct from synthetic cubic zirconia and occurs in several colours. Confirm the material named in the listing and compare colour, brilliance, heat-treatment disclosure, wear, and report information.",
   garnet: "Garnet is a family of related gemstones available in a broad range of colours. Identify the stated variety where possible and compare colour, clarity, size, treatment disclosure, and laboratory information.",

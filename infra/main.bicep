@@ -35,6 +35,10 @@ param firebaseServiceAccount string
 @description('Admin Firebase Service Account JSON string.')
 param adminFirebaseServiceAccount string
 
+@description('Comma-separated UIDs authorized in the dedicated Firebase admin project.')
+@minLength(1)
+param adminFirebaseUids string
+
 @description('Stripe publishable key. Leave blank to keep Stripe disabled.')
 param stripePublishableKey string = ''
 
@@ -236,6 +240,10 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'ADMIN_FIREBASE_SERVICE_ACCOUNT'
           value: '@Microsoft.KeyVault(SecretUri=${adminFirebaseServiceAccountSecret.properties.secretUri})'
+        }
+        {
+          name: 'ADMIN_FIREBASE_UIDS'
+          value: adminFirebaseUids
         }
         {
           name: 'STRIPE_PUBLISHABLE_KEY'

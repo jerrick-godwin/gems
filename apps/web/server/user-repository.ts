@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
   Cart,
@@ -36,13 +36,13 @@ import type {
 import { orderStatuses, quoteListingSubscription, validateCheckoutRequest, type ListingSubscriptionPlan } from "@gems/schemas";
 import type { FirebaseAuthClaims } from "./auth.js";
 import { sendPasswordResetEmail, sendAdminNotificationEmail } from "./email.js";
-import { db, hasDatabase } from "./db/index.js";
+import { db, hasDatabase, withDatabaseTransaction } from "./db/index.js";
 import { cartItems, carts, conversations, listingCheckoutSessions, listingContacts, listingMedia, listingSubscriptions, listings, orderItems, orders, paymentIntents, policyAcceptances, renewalEvents, reports, sellerProfiles, userSettings, users, subscriptionPlans } from "./db/schema.js";
 import { normalizeListingTitle } from "./listing-title.js";
 import { effectiveListingPaymentStatus, listingPaymentRecoveryKind } from "./listing-payment-recovery.js";
 import { getMutableMarketplaceDatabase, type MarketplaceDatabase } from "./marketplace-repository.js";
-import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob, ensureListingCardThumbnail } from "./storage.js";
-import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeHostedInvoiceUrl, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
+import { createListingCheckoutUploadTarget, createUserUploadTarget, createSignedReadUrl, deleteBlob, ensureListingCardThumbnail, uploadExtension, verifyStoredUpload } from "./storage.js";
+import { createStripeCheckoutSession, isStripeConfigured, setStripeSubscriptionCancelAtPeriodEnd, retrieveStripeHostedInvoiceUrl, retrieveStripeCheckoutSession, retrieveInvoicePayment, retrieveStripeInvoiceUrl, retrieveStripeReceiptPdf } from "./stripe.js";
 
 type UserPatch = Partial<Pick<User, "name" | "phone" | "address" | "locale" | "profileImageKey" | "profileImageUrl">>;
 type SettingsPatch = Partial<Pick<UserSettings, "theme" | "notificationsEnabled" | "language" | "dashboardDefaultView" | "savedMarketplaceFilters">>;
@@ -157,6 +157,7 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
 
     const existingByEmail = await db.select().from(users).where(eq(users.email, claims.email)).limit(1);
     if (existingByEmail[0]) {
+      if (existingByEmail[0].firebaseUid || !claims.emailVerified) throw new Error("Account identity does not match.");
       const [updated] = await db
         .update(users)
         .set({
@@ -164,8 +165,9 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
           name: existingByEmail[0].name || claims.name,
           updatedAt: new Date()
         })
-        .where(eq(users.id, existingByEmail[0].id))
+        .where(and(eq(users.id, existingByEmail[0].id), isNull(users.firebaseUid)))
         .returning();
+      if (!updated) throw new Error("Account identity does not match.");
       await ensureSettings(updated.id);
       return toUser(updated);
     }
@@ -196,19 +198,14 @@ export async function getOrCreateUserFromClaims(claims: FirebaseAuthClaims) {
         return toUser(createdByUid);
       }
 
-      const [createdByEmail] = await db.select().from(users).where(eq(users.email, claims.email)).limit(1);
-      if (createdByEmail) {
-        await ensureSettings(createdByEmail.id);
-        return toUser(createdByEmail);
-      }
-
       throw error;
     }
   }
 
   const state = await getMemoryState();
-  const existing = state.users.find((user) => user.firebaseUid === claims.uid || user.email === claims.email);
+  const existing = state.users.find((user) => user.firebaseUid === claims.uid);
   if (existing) return existing;
+  if (state.users.some((user) => user.email === claims.email)) throw new Error("Account identity does not match.");
 
   const user: User = {
     id: claims.uid === "local-user" ? "user-local" : `user-${randomUUID()}`,
@@ -266,6 +263,7 @@ export function planSitewideTrialExtensions(entries: Array<{ id: string; trialEn
 }
 
 export async function extendUserTrial(userId: string, endsAt: Date) {
+  return withDatabaseTransaction(async () => {
   const now = new Date();
   assertValidTrialExtension(endsAt);
 
@@ -291,9 +289,11 @@ export async function extendUserTrial(userId: string, endsAt: Date) {
   user.updatedAt = now.toISOString();
   await refreshTrialBackedListings(userId, endsAt);
   return user;
+  });
 }
 
 export async function terminateUserTrial(userId: string) {
+  return withDatabaseTransaction(async () => {
   const now = new Date();
 
   if (hasDatabase) {
@@ -312,6 +312,7 @@ export async function terminateUserTrial(userId: string) {
   user.updatedAt = now.toISOString();
   await expireTrialBackedListings(userId, now);
   return user;
+  });
 }
 
 export async function extendSitewideTrial(endsAt: Date): Promise<{ extendedCount: number; preservedCount: number }> {
@@ -395,6 +396,13 @@ export async function getUserProfile(userId: string) {
 export async function updateUserProfile(userId: string, patch: UserPatch) {
   const currentUser = await getUser(userId);
   const changedPatch = getChangedUserProfilePatch(currentUser, patch);
+  if (changedPatch.profileImageKey !== undefined || changedPatch.profileImageUrl !== undefined) {
+    const key = changedPatch.profileImageKey ?? currentUser.profileImageKey;
+    if (!key || !isOwnedUploadKey(key, `users/${userId}/profile/`)) throw new Error("Invalid profile image.");
+    await verifyStoredUpload(key);
+    changedPatch.profileImageKey = key;
+    changedPatch.profileImageUrl = key;
+  }
 
   if (Object.keys(changedPatch).length === 0) return currentUser;
 
@@ -782,12 +790,20 @@ export async function startListingSubscriptionPayment(userId: string, subscripti
       return paymentRecoveryResponse(intent.paymentUrl, "pending_payment");
     }
     if (recoveryKind === "hosted_invoice") {
-      const hostedInvoiceUrl = existing?.stripeInvoiceId ? await retrieveStripeHostedInvoiceUrl(existing.stripeInvoiceId) : undefined;
-      if (!hostedInvoiceUrl) throw new Error("The renewal invoice is not available. Please contact support.");
-      return paymentRecoveryResponse(hostedInvoiceUrl, "past_due", "failed");
+      if (!existing?.stripeInvoiceId) throw new Error("The renewal invoice is not available. Please contact support.");
+      return paymentRecoveryResponse(`/listings/pay?subscriptionId=${encodeURIComponent(subscriptionId)}`, "past_due", "failed");
     }
     if (recoveryKind === "reuse_checkout" && existing?.paymentUrl) {
-      return paymentRecoveryResponse(existing.paymentUrl, subscription.status);
+      const sessionId = existing.stripeCheckoutSessionId ?? existing.gatewayReference;
+      if (!sessionId?.startsWith("cs_")) throw new Error("The saved checkout cannot be verified. Please contact support.");
+      const session = await retrieveStripeCheckoutSession(sessionId);
+      if (session.status === "succeeded") {
+        await confirmPaymentIntent(existing.id, "succeeded", session.reference, session);
+        return paymentRecoveryResponse("/listings?payment=success", "active", "paid");
+      }
+      if (session.checkoutStatus === "complete") return paymentRecoveryResponse("/listings?payment=pending", subscription.status);
+      if (session.status !== "expired") return paymentRecoveryResponse(existing.paymentUrl, subscription.status);
+      await confirmPaymentIntent(existing.id, "expired", session.reference, session);
     }
     if (recoveryKind === "not_recoverable") throw new Error("Subscription payment is not recoverable.");
 
@@ -880,12 +896,20 @@ export async function startListingSubscriptionPayment(userId: string, subscripti
     return paymentRecoveryResponse(intent.paymentUrl, "pending_payment");
   }
   if (recoveryKind === "hosted_invoice") {
-    const hostedInvoiceUrl = existing?.stripeInvoiceId ? await retrieveStripeHostedInvoiceUrl(existing.stripeInvoiceId) : undefined;
-    if (!hostedInvoiceUrl) throw new Error("The renewal invoice is not available. Please contact support.");
-    return paymentRecoveryResponse(hostedInvoiceUrl, "past_due", "failed");
+    if (!existing?.stripeInvoiceId) throw new Error("The renewal invoice is not available. Please contact support.");
+    return paymentRecoveryResponse(`/listings/pay?subscriptionId=${encodeURIComponent(subscriptionId)}`, "past_due", "failed");
   }
   if (recoveryKind === "reuse_checkout" && existing?.paymentUrl) {
-    return paymentRecoveryResponse(existing.paymentUrl, subscription.status);
+    const sessionId = existing.stripeCheckoutSessionId ?? existing.gatewayReference;
+      if (!sessionId?.startsWith("cs_")) throw new Error("The saved checkout cannot be verified. Please contact support.");
+      const session = await retrieveStripeCheckoutSession(sessionId);
+      if (session.status === "succeeded") {
+        await confirmPaymentIntent(existing.id, "succeeded", session.reference, session);
+        return paymentRecoveryResponse("/listings?payment=success", "active", "paid");
+      }
+      if (session.checkoutStatus === "complete") return paymentRecoveryResponse("/listings?payment=pending", subscription.status);
+      if (session.status !== "expired") return paymentRecoveryResponse(existing.paymentUrl, subscription.status);
+      await confirmPaymentIntent(existing.id, "expired", session.reference, session);
   }
   if (recoveryKind === "not_recoverable") throw new Error("Subscription payment is not recoverable.");
 
@@ -1208,11 +1232,11 @@ export async function createListing(userId: string, input: ListingInput, idempot
       clarity: input.attributes?.clarity ?? "",
       origin: input.attributes?.origin ?? "",
       treatment: input.attributes?.treatment ?? "untreated",
-      certificateStatus: input.attributes?.certificateStatus ?? "none",
+      certificateStatus: "none",
       labName: input.attributes?.labName,
       reportNumber: input.attributes?.reportNumber
     },
-    media: input.media ?? [],
+    media: [],
     promoted: [],
     campaigns: [],
     stats: { views: 0, saves: 0, phoneReveals: 0, chats: 0, whatsappClicks: 0 },
@@ -1337,162 +1361,184 @@ export async function createListingCheckoutSession(
   };
 }
 
-export async function getListingCheckoutSession(token: string): Promise<ListingCheckoutSession | undefined> {
+export async function getListingCheckoutSession(token: string, userId?: string): Promise<ListingCheckoutSession | undefined> {
   const record = await getListingCheckoutSessionRecord(token);
-  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+  if (!canAccessCheckoutDraft(record, userId)) return undefined;
   return publicListingCheckoutSession(token, record);
 }
 
-export async function updateListingCheckoutSession(token: string, request: UpdateListingCheckoutSessionRequest) {
-  const record = await getListingCheckoutSessionRecord(token);
-  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+export async function updateListingCheckoutSession(token: string, request: UpdateListingCheckoutSessionRequest, userId?: string) {
+  return withDatabaseTransaction(async () => {
+    const record = await getListingCheckoutSessionRecord(token, true);
+    if (!canAccessCheckoutDraft(record, userId)) return undefined;
 
-  const updates: Partial<ListingCheckoutSessionRecord> = {
-    updatedAt: new Date().toISOString()
-  };
-  if (request.selectedPlanId !== undefined) updates.selectedPlanId = normalizeOptionalString(request.selectedPlanId);
-  if (request.acceptedPolicies !== undefined) updates.acceptedPolicies = request.acceptedPolicies === true;
+    const updates: Partial<ListingCheckoutSessionRecord> = {
+      updatedAt: new Date().toISOString()
+    };
+    if (request.selectedPlanId !== undefined) updates.selectedPlanId = normalizeOptionalString(request.selectedPlanId);
+    if (request.acceptedPolicies !== undefined) updates.acceptedPolicies = request.acceptedPolicies === true;
 
-  const next = await updateListingCheckoutSessionRecord(record.id, updates);
-  return publicListingCheckoutSession(token, next);
+    const next = await updateListingCheckoutSessionRecord(record.id, updates);
+    return publicListingCheckoutSession(token, next);
+  });
 }
 
 export async function updateListingCheckoutDraft(
   token: string,
   request: UpdateListingCheckoutDraftRequest,
-  siteUrl: string
+  siteUrl: string,
+  userId?: string
 ): Promise<CreateListingCheckoutSessionResponse | undefined> {
-  const record = await getListingCheckoutSessionRecord(token);
-  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
+  return withDatabaseTransaction(async () => {
+    const record = await getListingCheckoutSessionRecord(token, true);
+    if (!canAccessCheckoutDraft(record, userId)) return undefined;
 
-  const draft = normalizeListingCheckoutDraft(request.draft);
-  const retainedIds = new Set(Array.isArray(request.retainedMediaIds) ? request.retainedMediaIds.filter((id): id is string => typeof id === "string") : []);
-  const retainedMedia = record.media.filter((item) => retainedIds.has(item.id));
-  const mediaInputs = normalizeListingCheckoutMediaInputs([...retainedMedia.map((item) => ({
-    kind: item.kind,
-    fileName: item.fileName,
-    contentType: item.contentType,
-    size: item.size
-  })), ...(Array.isArray(request.media) ? request.media : [])]);
-  const newMediaInputs = mediaInputs.slice(retainedMedia.length);
-  const uploadTargets = [];
-  const newMedia: ListingCheckoutMedia[] = [];
-  const photoOffset = retainedMedia.filter((item) => item.kind === "photo").length;
-
-  for (const [index, item] of newMediaInputs.entries()) {
-    const target = await createListingCheckoutUploadTarget(record.id, item);
-    const mediaId = `checkout-media-${randomUUID()}`;
-    newMedia.push({
-      id: mediaId,
+    const draft = normalizeListingCheckoutDraft(request.draft);
+    const retainedIds = new Set(Array.isArray(request.retainedMediaIds) ? request.retainedMediaIds.filter((id): id is string => typeof id === "string") : []);
+    const retainedMedia = record.media.filter((item) => retainedIds.has(item.id));
+    const mediaInputs = normalizeListingCheckoutMediaInputs([...retainedMedia.map((item) => ({
       kind: item.kind,
       fileName: item.fileName,
       contentType: item.contentType,
-      size: item.size,
-      blobKey: target.blobKey,
-      readUrl: target.readUrl,
-      order: item.kind === "photo" ? photoOffset + index : 0
+      size: item.size
+    })), ...(Array.isArray(request.media) ? request.media : [])]);
+    const newMediaInputs = mediaInputs.slice(retainedMedia.length);
+    const uploadTargets = [];
+    const newMedia: ListingCheckoutMedia[] = [];
+    const photoOffset = retainedMedia.filter((item) => item.kind === "photo").length;
+
+    for (const [index, item] of newMediaInputs.entries()) {
+      const target = await createListingCheckoutUploadTarget(record.id, item);
+      const mediaId = `checkout-media-${randomUUID()}`;
+      newMedia.push({
+        id: mediaId,
+        kind: item.kind,
+        fileName: item.fileName,
+        contentType: item.contentType,
+        size: item.size,
+        blobKey: target.blobKey,
+        readUrl: target.readUrl,
+        order: item.kind === "photo" ? photoOffset + index : 0
+      });
+      uploadTargets.push({ mediaId, ...target });
+    }
+
+    let nextPhotoOrder = 0;
+    const nextMedia = [...retainedMedia, ...newMedia].map((item) => ({
+      ...item,
+      order: item.kind === "photo" ? nextPhotoOrder++ : 0
+    }));
+
+    const next = await updateListingCheckoutSessionRecord(record.id, {
+      draft,
+      media: nextMedia,
+      updatedAt: new Date().toISOString()
     });
-    uploadTargets.push({ mediaId, ...target });
-  }
-
-  let nextPhotoOrder = 0;
-  const nextMedia = [...retainedMedia, ...newMedia].map((item) => ({
-    ...item,
-    order: item.kind === "photo" ? nextPhotoOrder++ : 0
-  }));
-
-  const next = await updateListingCheckoutSessionRecord(record.id, {
-    draft,
-    media: nextMedia,
-    updatedAt: new Date().toISOString()
+    return {
+      token,
+      checkoutUrl: `${siteUrl.replace(/\/+$/, "")}/post/checkout/${encodeURIComponent(token)}`,
+      session: publicListingCheckoutSession(token, next),
+      uploadTargets
+    };
   });
-  return {
-    token,
-    checkoutUrl: `${siteUrl.replace(/\/+$/, "")}/post/checkout/${encodeURIComponent(token)}`,
-    session: publicListingCheckoutSession(token, next),
-    uploadTargets
-  };
 }
 
 export async function completeListingCheckoutSession(
   userId: string,
   token: string,
-  request: UpdateListingCheckoutSessionRequest,
-  idempotencyKey?: string
+  request: UpdateListingCheckoutSessionRequest
 ): Promise<ListingCheckoutCompletionResult | undefined> {
-  const record = await getListingCheckoutSessionRecord(token);
-  if (!record || isListingCheckoutSessionExpired(record) || record.status === "used") return undefined;
-  if (record.claimedUserId && record.claimedUserId !== userId) {
-    throw new Error("Checkout session is already linked to another account.");
-  }
+  return withDatabaseTransaction(async () => {
+    const record = await getListingCheckoutSessionRecord(token, true);
+    if (record?.status === "used" && record.claimedUserId === userId && !isListingCheckoutSessionExpired(record)) {
+      if (record.paymentIntentId) {
+        const paymentIntent = await getPaymentIntent(record.paymentIntentId);
+        return paymentIntent?.userId === userId ? { mode: "payment", paymentIntent } : undefined;
+      }
+      if (!record.listingId) return undefined;
+      const listing = await getListingForUser(userId, record.listingId);
+      const subscription = (await getListingSubscriptions(userId)).find((item) => item.listingId === record.listingId && item.source === "trial");
+      const { trial } = await getUser(userId);
+      return listing && subscription && trial ? { mode: "trial", listing, subscription, trial } : undefined;
+    }
+    if (!canAccessCheckoutDraft(record, userId)) return undefined;
+    for (const item of record.media) {
+      try {
+        await verifyStoredUpload(item.blobKey, item.size);
+      } catch {
+        throw new Error(`Checkout session file "${item.fileName}" is missing or invalid. Return to the draft to replace it.`);
+      }
+    }
 
-  const selectedPlanId = normalizeOptionalString(request.selectedPlanId) ?? record.selectedPlanId ?? "pro";
-  const acceptedPolicies = request.acceptedPolicies === true || record.acceptedPolicies;
-  const now = new Date().toISOString();
+    const selectedPlanId = normalizeOptionalString(request.selectedPlanId) ?? record.selectedPlanId ?? "pro";
+    const acceptedPolicies = request.acceptedPolicies === true || record.acceptedPolicies;
+    const now = new Date().toISOString();
 
-  await updateListingCheckoutSessionRecord(record.id, {
-    status: "claimed",
-    claimedUserId: userId,
-    selectedPlanId,
-    acceptedPolicies,
-    updatedAt: now
-  });
+    await updateListingCheckoutSessionRecord(record.id, {
+      status: "claimed",
+      claimedUserId: userId,
+      selectedPlanId,
+      acceptedPolicies,
+      updatedAt: now
+    });
 
-  const listingKey = idempotencyKey ? `${idempotencyKey}:listing` : `listing-checkout:${record.id}:listing`;
-  const paymentKey = idempotencyKey ? `${idempotencyKey}:payment` : `listing-checkout:${record.id}:payment`;
-  const listing = await createListing(userId, record.draft, listingKey);
-  const listingMediaItems = record.media.map((item): ListingMedia => ({
-    id: item.blobKey,
-    listingId: listing.id,
-    kind: item.kind,
-    url: createSignedReadUrl(item.blobKey),
-    alt: item.fileName,
-    order: item.kind === "photo" ? item.order : 0,
-    moderationStatus: "not_submitted"
-  }));
+    const listingKey = `listing-checkout:${record.id}:listing`;
+    const paymentKey = `listing-checkout:${record.id}:payment`;
+    const listing = await createListing(userId, record.draft, listingKey);
+    const listingMediaItems = record.media.map((item): ListingMedia => ({
+      id: item.blobKey,
+      listingId: listing.id,
+      kind: item.kind,
+      url: createSignedReadUrl(item.blobKey),
+      alt: item.fileName,
+      order: item.kind === "photo" ? item.order : 0,
+      moderationStatus: "not_submitted"
+    }));
 
-  if (listingMediaItems.length > 0) {
-    await updateUserListing(userId, listing.id, { media: listingMediaItems });
-  }
+    if (listingMediaItems.length > 0) {
+      await updateUserListing(userId, listing.id, { media: listingMediaItems }, record.id);
+    }
 
-  const user = await getUser(userId);
-  if (isTrialActiveForUser(user)) {
-    const subscription = await createTrialListingSubscription(user, listing.id, selectedPlanId, record.media.filter((item) => item.kind === "photo").length, acceptedPolicies);
+    const user = await getUser(userId);
+    if (isTrialActiveForUser(user)) {
+      const subscription = await createTrialListingSubscription(user, listing.id, selectedPlanId, record.media.filter((item) => item.kind === "photo").length, acceptedPolicies);
+      await updateListingCheckoutSessionRecord(record.id, {
+        status: "used",
+        claimedUserId: userId,
+        listingId: listing.id,
+        updatedAt: new Date().toISOString()
+      });
+      return {
+        mode: "trial",
+        listing: (await getListingForUser(userId, listing.id)) ?? listing,
+        subscription,
+        trial: user.trial!
+      };
+    }
+
+    const intent = await createListingPaymentIntent(userId, listing.id, {
+      planId: selectedPlanId,
+      photoCount: record.media.filter((item) => item.kind === "photo").length,
+      acceptedPolicies
+    }, paymentKey);
+
     await updateListingCheckoutSessionRecord(record.id, {
       status: "used",
       claimedUserId: userId,
       listingId: listing.id,
+      paymentIntentId: intent.id,
       updatedAt: new Date().toISOString()
     });
-    return {
-      mode: "trial",
-      listing: (await getListingForUser(userId, listing.id)) ?? listing,
-      subscription,
-      trial: user.trial!
-    };
-  }
 
-  const intent = await createListingPaymentIntent(userId, listing.id, {
-    planId: selectedPlanId,
-    photoCount: record.media.filter((item) => item.kind === "photo").length,
-    acceptedPolicies
-  }, paymentKey);
-
-  await updateListingCheckoutSessionRecord(record.id, {
-    status: "used",
-    claimedUserId: userId,
-    listingId: listing.id,
-    paymentIntentId: intent.id,
-    updatedAt: new Date().toISOString()
+    return { mode: "payment", paymentIntent: intent };
   });
-
-  return { mode: "payment", paymentIntent: intent };
 }
 
-async function getListingForUser(userId: string, listingId: string): Promise<Listing | undefined> {
+async function getListingForUser(userId: string, listingId: string, lock = false): Promise<Listing | undefined> {
   const seller = await ensureSellerProfile(userId);
   if (hasDatabase) {
-    const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+    const query = db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+    const rows = await (lock ? query.for("update") : query);
     return rows[0] ? toListing(rows[0]) : undefined;
   }
   return (await getMemoryState()).database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
@@ -1657,84 +1703,182 @@ export async function removeUserListing(userId: string, listingId: string) {
   return deletedFromDb || deletedFromJson;
 }
 
-export async function updateUserListing(userId: string, listingId: string, input: Partial<ListingInput>) {
-  const seller = await ensureSellerProfile(userId);
-  if (hasDatabase) {
-    const existingRows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
-    if (!existingRows[0]) return undefined;
+export async function updateUserListing(userId: string, listingId: string, input: Partial<ListingInput>, checkoutSessionId?: string) {
+  return withDatabaseTransaction(async () => {
+    const seller = await ensureSellerProfile(userId);
+    if (hasDatabase) {
+      const existingRows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1).for("update");
+      if (!existingRows[0]) return undefined;
 
-    const existing = existingRows[0];
-    const updatedAttributes = { ...existing.attributes, ...input.attributes };
-    
-    const updates: any = {};
-    if (input.title !== undefined) updates.title = normalizeListingTitle(input.title);
-    if (input.description !== undefined) updates.description = input.description;
-    if (input.priceLkr !== undefined) updates.priceLkr = Number(input.priceLkr);
-    if (input.location !== undefined) updates.location = input.location;
-    if (input.gemTypeId !== undefined) updates.gemTypeId = input.gemTypeId;
-    if (input.media !== undefined) updates.media = await withCardThumbnails(input.media);
-    if (input.attributes !== undefined) updates.attributes = updatedAttributes;
-    
-    if (existing.moderationStatus !== "not_submitted" || existing.status !== "draft") {
-      updates.moderationStatus = "queued";
-      updates.status = "pending_review";
+      const existing = existingRows[0];
+      const updatedAttributes = { ...existing.attributes, ...input.attributes, certificateStatus: existing.attributes.certificateStatus };
+
+      const updates: any = {};
+      if (input.title !== undefined) updates.title = normalizeListingTitle(input.title);
+      if (input.description !== undefined) updates.description = input.description;
+      if (input.priceLkr !== undefined) updates.priceLkr = Number(input.priceLkr);
+      if (input.location !== undefined) updates.location = input.location;
+      if (input.gemTypeId !== undefined) updates.gemTypeId = input.gemTypeId;
+      if (input.media !== undefined) {
+        updates.media = await validateListingMedia(input.media, existing.media, userId, listingId, checkoutSessionId);
+        await assertPaidPhotoAllowance(userId, listingId, updates.media);
+        updatedAttributes.certificateStatus = updates.media.some((item: ListingMedia) => item.kind === "certificate") ? "seller_provided" : "none";
+      }
+      if (input.attributes !== undefined || input.media !== undefined) updates.attributes = updatedAttributes;
+
+      if (existing.moderationStatus !== "not_submitted" || existing.status !== "draft") {
+        updates.moderationStatus = "queued";
+        updates.status = "pending_review";
+      }
+      updates.updatedAt = new Date();
+
+      const [updated] = await db.update(listings).set(updates).where(eq(listings.id, listingId)).returning();
+      return toListing(updated);
     }
-    updates.updatedAt = new Date();
 
-    const [updated] = await db.update(listings).set(updates).where(eq(listings.id, listingId)).returning();
-    return toListing(updated);
-  }
-
-  const state = await getMemoryState();
-  const listing = state.database.listings.find((l) => l.id === listingId && l.sellerId === seller.id);
-  if (!listing) return undefined;
-  
-  if (input.title !== undefined) listing.title = normalizeListingTitle(input.title);
-  if (input.description !== undefined) listing.description = input.description;
-  if (input.priceLkr !== undefined) listing.priceLkr = Number(input.priceLkr);
-  if (input.location !== undefined) listing.location = input.location;
-  if (input.gemTypeId !== undefined) listing.gemTypeId = input.gemTypeId;
-  if (input.media !== undefined) listing.media = await withCardThumbnails(input.media);
-  if (input.attributes !== undefined) listing.attributes = { ...listing.attributes, ...input.attributes } as GemAttributes;
-  
-  if (listing.moderationStatus !== "not_submitted" || listing.status !== "draft") {
-    listing.moderationStatus = "queued";
-    listing.status = "pending_review";
-  }
-  return listing;
+    const state = await getMemoryState();
+    const listing = state.database.listings.find((l) => l.id === listingId && l.sellerId === seller.id);
+    if (!listing) return undefined;
+    
+    if (input.title !== undefined) listing.title = normalizeListingTitle(input.title);
+    if (input.description !== undefined) listing.description = input.description;
+    if (input.priceLkr !== undefined) listing.priceLkr = Number(input.priceLkr);
+    if (input.location !== undefined) listing.location = input.location;
+    if (input.gemTypeId !== undefined) listing.gemTypeId = input.gemTypeId;
+    if (input.media !== undefined) {
+      const media = await validateListingMedia(input.media, listing.media, userId, listingId, checkoutSessionId);
+      await assertPaidPhotoAllowance(userId, listingId, media);
+      listing.media = media;
+      listing.attributes.certificateStatus = listing.media.some((item) => item.kind === "certificate") ? "seller_provided" : "none";
+    }
+    if (input.attributes !== undefined) listing.attributes = { ...listing.attributes, ...input.attributes, certificateStatus: listing.attributes.certificateStatus };
+    
+    if (listing.moderationStatus !== "not_submitted" || listing.status !== "draft") {
+      listing.moderationStatus = "queued";
+      listing.status = "pending_review";
+    }
+    return listing;
+  });
 }
 
 export async function createListingPaymentIntent(userId: string, listingId: string, request: { planId: string; photoCount: number; acceptedPolicies: boolean }, idempotencyKey?: string): Promise<PaymentIntent> {
-  const seller = await ensureSellerProfile(userId);
-  const planId = request.planId as ListingSubscriptionPlanId;
-  if (!request.acceptedPolicies) {
-    throw new Error("Terms and Privacy Policy acceptance is required before payment.");
-  }
-
-  const plan = await fetchSubscriptionPlan(request.planId);
-  if (!plan) throw new Error("Unknown plan");
-  const quote = quoteListingSubscription(plan, request.photoCount);
-  const now = new Date();
-  const policyVersion = "2026-06-11";
-  const gateway = listingPaymentGateway();
-  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
-
-  if (hasDatabase) {
-    const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
-    if (!rows[0]) throw new Error("Listing not found.");
-
-    if (normalizedIdempotencyKey) {
-      const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
-      if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+  return withDatabaseTransaction(async () => {
+    const seller = await ensureSellerProfile(userId);
+    const planId = request.planId as ListingSubscriptionPlanId;
+    if (!request.acceptedPolicies) {
+      throw new Error("Terms and Privacy Policy acceptance is required before payment.");
     }
 
-    const subscriptionId = normalizedIdempotencyKey ? stableIdFromKey("sub", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `sub-${randomUUID()}`;
-    const intentId = normalizedIdempotencyKey ? stableIdFromKey("pay", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `pay-${randomUUID()}`;
-    let intent: PaymentIntent = {
-      id: intentId,
+    const plan = await fetchSubscriptionPlan(request.planId);
+    if (!plan) throw new Error("Unknown plan");
+    const ownedListing = await getListingForUser(userId, listingId, true);
+    if (!ownedListing) throw new Error("Listing not found.");
+    const quote = quoteListingSubscription(plan, countListingPhotos(ownedListing.media));
+    const now = new Date();
+    const policyVersion = "2026-06-11";
+    const gateway = listingPaymentGateway();
+    const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+
+    if (hasDatabase) {
+      const rows = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, seller.id))).limit(1);
+      if (!rows[0]) throw new Error("Listing not found.");
+
+      if (normalizedIdempotencyKey) {
+        const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+        if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+      }
+
+      const subscriptionId = normalizedIdempotencyKey ? stableIdFromKey("sub", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `sub-${randomUUID()}`;
+      const intentId = normalizedIdempotencyKey ? stableIdFromKey("pay", `${userId}:${listingId}:${normalizedIdempotencyKey}`) : `pay-${randomUUID()}`;
+      let intent: PaymentIntent = {
+        id: intentId,
+        userId,
+        listingId,
+        subscriptionId,
+        purpose: "listing_subscription",
+        status: "pending",
+        planId,
+        quote,
+        amountLkr: quote.totalLkr,
+        currency: "LKR",
+        gateway,
+        policyVersion,
+        policyAcceptedAt: now.toISOString(),
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      };
+
+      let inserted: typeof paymentIntents.$inferSelect;
+      try {
+        const subscription = {
+          id: subscriptionId,
+          userId,
+          listingId,
+          planId,
+          status: "pending_payment" as ListingSubscriptionStatus,
+          source: "paid" as const,
+          autoRenew: true,
+          createdAt: now,
+          updatedAt: now
+        };
+        await db.insert(listingSubscriptions).values(subscription).onConflictDoNothing({ target: listingSubscriptions.id });
+
+        [inserted] = await db.insert(paymentIntents).values({
+          id: intent.id,
+          userId,
+          listingId,
+          idempotencyKey: normalizedIdempotencyKey,
+          subscriptionId,
+          purpose: intent.purpose,
+          status: intent.status,
+          planId,
+          quote,
+          amountLkr: intent.amountLkr,
+          currency: intent.currency,
+          gateway: intent.gateway,
+          policyVersion,
+          policyAcceptedAt: now,
+          createdAt: now,
+          updatedAt: now
+        }).returning();
+
+        await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscriptionId));
+        await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
+      } catch (error) {
+        if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
+        const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
+        if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
+        throw error;
+      }
+
+      return ensurePaymentIntentCheckoutUrl(toPaymentIntent(inserted));
+    }
+
+    const state = await getMemoryState();
+    const listing = state.database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
+    if (!listing) throw new Error("Listing not found.");
+    const memoryKey = normalizedIdempotencyKey ? `${userId}:${listingId}:${normalizedIdempotencyKey}` : "";
+    const existingIntentId = memoryKey ? state.paymentIntentIdempotencyKeys[memoryKey] : undefined;
+    const existingIntent = existingIntentId ? state.paymentIntents.find((item) => item.id === existingIntentId) : undefined;
+    if (existingIntent) return existingIntent.paymentUrl ? existingIntent : prepareAndUpdateMemoryPaymentIntent(existingIntent);
+
+    const subscription: ListingSubscription = {
+      id: normalizedIdempotencyKey ? stableIdFromKey("sub", memoryKey) : `sub-${randomUUID()}`,
       userId,
       listingId,
-      subscriptionId,
+      planId,
+      status: "pending_payment",
+      source: "paid",
+      autoRenew: true,
+      paymentIntentId: undefined,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    };
+    let intent: PaymentIntent = {
+      id: normalizedIdempotencyKey ? stableIdFromKey("pay", memoryKey) : `pay-${randomUUID()}`,
+      userId,
+      listingId,
+      subscriptionId: subscription.id,
       purpose: "listing_subscription",
       status: "pending",
       planId,
@@ -1747,95 +1891,18 @@ export async function createListingPaymentIntent(userId: string, listingId: stri
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
+    subscription.paymentIntentId = intent.id;
+    state.listingSubscriptions.push(subscription);
+    state.paymentIntents.push(intent);
+    if (memoryKey) state.paymentIntentIdempotencyKeys[memoryKey] = intent.id;
+    return prepareAndUpdateMemoryPaymentIntent(intent);
+  });
+}
 
-    let inserted: typeof paymentIntents.$inferSelect;
-    try {
-      const subscription = {
-        id: subscriptionId,
-        userId,
-        listingId,
-        planId,
-        status: "pending_payment" as ListingSubscriptionStatus,
-        source: "paid" as const,
-        autoRenew: true,
-        createdAt: now,
-        updatedAt: now
-      };
-      await db.insert(listingSubscriptions).values(subscription).onConflictDoNothing({ target: listingSubscriptions.id });
-
-      [inserted] = await db.insert(paymentIntents).values({
-        id: intent.id,
-        userId,
-        listingId,
-        idempotencyKey: normalizedIdempotencyKey,
-        subscriptionId,
-        purpose: intent.purpose,
-        status: intent.status,
-        planId,
-        quote,
-        amountLkr: intent.amountLkr,
-        currency: intent.currency,
-        gateway: intent.gateway,
-        policyVersion,
-        policyAcceptedAt: now,
-        createdAt: now,
-        updatedAt: now
-      }).returning();
-
-      await db.update(listingSubscriptions).set({ paymentIntentId: intent.id }).where(eq(listingSubscriptions.id, subscriptionId));
-      await db.insert(policyAcceptances).values({ id: `policy-${randomUUID()}`, userId, listingId, paymentIntentId: intent.id, policyVersion, acceptedAt: now });
-    } catch (error) {
-      if (!normalizedIdempotencyKey || !isUniqueConstraintError(error)) throw error;
-      const existingRows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId), eq(paymentIntents.idempotencyKey, normalizedIdempotencyKey))).limit(1);
-      if (existingRows[0]) return ensurePaymentIntentCheckoutUrl(toPaymentIntent(existingRows[0]));
-      throw error;
-    }
-
-    return ensurePaymentIntentCheckoutUrl(toPaymentIntent(inserted));
-  }
-
-  const state = await getMemoryState();
-  const listing = state.database.listings.find((item) => item.id === listingId && item.sellerId === seller.id);
-  if (!listing) throw new Error("Listing not found.");
-  const memoryKey = normalizedIdempotencyKey ? `${userId}:${listingId}:${normalizedIdempotencyKey}` : "";
-  const existingIntentId = memoryKey ? state.paymentIntentIdempotencyKeys[memoryKey] : undefined;
-  const existingIntent = existingIntentId ? state.paymentIntents.find((item) => item.id === existingIntentId) : undefined;
-  if (existingIntent) return existingIntent.paymentUrl ? existingIntent : prepareAndUpdateMemoryPaymentIntent(existingIntent);
-
-  const subscription: ListingSubscription = {
-    id: normalizedIdempotencyKey ? stableIdFromKey("sub", memoryKey) : `sub-${randomUUID()}`,
-    userId,
-    listingId,
-    planId,
-    status: "pending_payment",
-    source: "paid",
-    autoRenew: true,
-    paymentIntentId: undefined,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString()
-  };
-  let intent: PaymentIntent = {
-    id: normalizedIdempotencyKey ? stableIdFromKey("pay", memoryKey) : `pay-${randomUUID()}`,
-    userId,
-    listingId,
-    subscriptionId: subscription.id,
-    purpose: "listing_subscription",
-    status: "pending",
-    planId,
-    quote,
-    amountLkr: quote.totalLkr,
-    currency: "LKR",
-    gateway,
-    policyVersion,
-    policyAcceptedAt: now.toISOString(),
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString()
-  };
-  subscription.paymentIntentId = intent.id;
-  state.listingSubscriptions.push(subscription);
-  state.paymentIntents.push(intent);
-  if (memoryKey) state.paymentIntentIdempotencyKeys[memoryKey] = intent.id;
-  return prepareAndUpdateMemoryPaymentIntent(intent);
+export async function getListingSubscriptionPlans() {
+  return hasDatabase
+    ? db.select().from(subscriptionPlans).orderBy(subscriptionPlans.priceLkr)
+    : (await getMemoryState()).subscriptionPlans;
 }
 
 async function fetchSubscriptionPlan(planId: string) {
@@ -1872,8 +1939,9 @@ async function prepareAndUpdateMemoryPaymentIntent(intent: PaymentIntent) {
 }
 
 export async function confirmPaymentIntent(intentId: string, status: PaymentStatus, gatewayReference?: string, stripeState: StripePaymentState = {}) {
+  return withDatabaseTransaction(async () => {
   if (hasDatabase) {
-    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1);
+    const rows = await db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1).for("update");
     const existingRow = rows[0];
     if (!existingRow) return undefined;
     const existing = toPaymentIntent(existingRow);
@@ -1920,6 +1988,7 @@ export async function confirmPaymentIntent(intentId: string, status: PaymentStat
     await applyListingSubscriptionPaymentStatus(intent.subscriptionId, nextStatus);
   }
   return intent;
+  });
 }
 
 export async function recordStripeSubscriptionInvoicePayment(input: {
@@ -1928,10 +1997,15 @@ export async function recordStripeSubscriptionInvoicePayment(input: {
   stripePaymentIntentId?: string;
   billingReason?: string;
 }) {
+  return withDatabaseTransaction(async () => {
   if (!input.stripeSubscriptionId || !input.stripeInvoiceId) return undefined;
 
   const intent = await getPaymentIntentByStripeSubscription(input.stripeSubscriptionId);
   if (!intent) return undefined;
+  if (hasDatabase && intent.subscriptionId) {
+    await db.select({ id: paymentIntents.id }).from(paymentIntents).where(eq(paymentIntents.id, intent.id)).for("update");
+    await db.select({ id: listingSubscriptions.id }).from(listingSubscriptions).where(eq(listingSubscriptions.id, intent.subscriptionId)).for("update");
+  }
   const paidEventId = `${input.stripeInvoiceId}:paid`;
 
   if (input.billingReason === "subscription_create") {
@@ -1954,6 +2028,7 @@ export async function recordStripeSubscriptionInvoicePayment(input: {
   }, `${(process.env.PUBLIC_SITE_URL || "https://gemslanka.lk").replace(/\/$/, "")}/admin/subscriptions/${intent.subscriptionId}`);
 
   return getPaymentIntent(intent.id);
+  });
 }
 
 export async function markStripeSubscriptionPastDue(
@@ -1962,21 +2037,32 @@ export async function markStripeSubscriptionPastDue(
   status = "payment_failed",
   notes = "Subscription invoice payment failed."
 ) {
-  const intent = await getPaymentIntentByStripeSubscription(stripeSubscriptionId);
-  if (!intent?.subscriptionId) return undefined;
-  await recordRenewalEventOnce(intent.subscriptionId, `${stripeInvoiceId}:${status}`, undefined, status, notes);
-  await updatePaymentStripeState(intent.id, { stripeSubscriptionId, stripeInvoiceId });
+  return withDatabaseTransaction(async () => {
+    const intent = await getPaymentIntentByStripeSubscription(stripeSubscriptionId);
+    if (!intent?.subscriptionId) return undefined;
+    const paidEventId = `${stripeInvoiceId}:paid`;
+    if (hasDatabase) {
+      await db.select({ id: paymentIntents.id }).from(paymentIntents).where(eq(paymentIntents.id, intent.id)).for("update");
+      await db.select({ id: listingSubscriptions.id }).from(listingSubscriptions).where(eq(listingSubscriptions.id, intent.subscriptionId)).for("update");
+      const [paid] = await db.select({ id: renewalEvents.id }).from(renewalEvents).where(eq(renewalEvents.id, paidEventId)).limit(1);
+      if (paid) return undefined;
+    } else if (processedMemoryRenewalEventIds.has(paidEventId)) {
+      return undefined;
+    }
+    if (!await recordRenewalEventOnce(intent.subscriptionId, `${stripeInvoiceId}:${status}`, undefined, status, notes)) return undefined;
+    await updatePaymentStripeState(intent.id, { stripeSubscriptionId, stripeInvoiceId });
 
-  if (hasDatabase) {
-    const [updated] = await db.update(listingSubscriptions).set({ status: "past_due", updatedAt: new Date() }).where(eq(listingSubscriptions.id, intent.subscriptionId)).returning();
-    return updated ? toListingSubscription(updated) : undefined;
-  }
+    if (hasDatabase) {
+      const [updated] = await db.update(listingSubscriptions).set({ status: "past_due", updatedAt: new Date() }).where(eq(listingSubscriptions.id, intent.subscriptionId)).returning();
+      return updated ? toListingSubscription(updated) : undefined;
+    }
 
-  const subscription = (await getMemoryState()).listingSubscriptions.find((item) => item.id === intent.subscriptionId);
-  if (!subscription) return undefined;
-  subscription.status = "past_due";
-  subscription.updatedAt = new Date().toISOString();
-  return subscription;
+    const subscription = (await getMemoryState()).listingSubscriptions.find((item) => item.id === intent.subscriptionId);
+    if (!subscription) return undefined;
+    subscription.status = "past_due";
+    subscription.updatedAt = new Date().toISOString();
+    return subscription;
+  });
 }
 
 export async function syncStripeSubscriptionStatus(input: {
@@ -2103,6 +2189,9 @@ export async function cancelListingSubscriptionsForListing(listingId: string) {
 }
 
 export async function createStorageUpload(userId: string, request: StorageUploadRequest) {
+  if (request.scope !== "profile" && (!request.listingId || !/^[a-zA-Z0-9_-]+$/.test(request.listingId) || !await getListingForUser(userId, request.listingId))) {
+    return undefined;
+  }
   return createUserUploadTarget(userId, request);
 }
 
@@ -2325,10 +2414,7 @@ function normalizeListingCheckoutMediaInputs(input: unknown): Array<{ kind: "pho
     const contentType = normalizeRequiredString(value.contentType, "File type is required.").toLowerCase();
     const size = normalizePositiveNumber(value.size, "File size is required.");
     if (size > maxListingCheckoutFileSize) throw new Error(`${fileName} exceeds the 2MB limit.`);
-    if (kind === "photo" && !contentType.startsWith("image/")) throw new Error("Gem photos must be image files.");
-    if (kind === "certificate" && contentType !== "application/pdf" && !contentType.startsWith("image/")) {
-      throw new Error("Certificate must be a PDF or image file.");
-    }
+    uploadExtension(contentType, kind === "certificate");
     return { kind, fileName, contentType, size };
   });
   const photoCount = media.filter((item) => item.kind === "photo").length;
@@ -2373,13 +2459,19 @@ function publicListingCheckoutSession(token: string, record: ListingCheckoutSess
   };
 }
 
-async function getListingCheckoutSessionRecord(token: string): Promise<ListingCheckoutSessionRecord | undefined> {
+function canAccessCheckoutDraft(record: ListingCheckoutSessionRecord | undefined, userId?: string): record is ListingCheckoutSessionRecord {
+  return Boolean(record && !isListingCheckoutSessionExpired(record) && record.status !== "used"
+    && (!record.claimedUserId || record.claimedUserId === userId));
+}
+
+async function getListingCheckoutSessionRecord(token: string, lock = false): Promise<ListingCheckoutSessionRecord | undefined> {
   const normalizedToken = token.trim();
   if (!normalizedToken) return undefined;
   const tokenHash = hashListingCheckoutToken(normalizedToken);
 
   if (hasDatabase) {
-    const rows = await db.select().from(listingCheckoutSessions).where(eq(listingCheckoutSessions.tokenHash, tokenHash)).limit(1);
+    const query = db.select().from(listingCheckoutSessions).where(eq(listingCheckoutSessions.tokenHash, tokenHash)).limit(1);
+    const rows = await (lock ? query.for("update") : query);
     return rows[0] ? toListingCheckoutSessionRecord(rows[0]) : undefined;
   }
 
@@ -2832,7 +2924,7 @@ async function activateListingSubscription(subscriptionId: string | undefined, p
     const subscription = rows[0];
     if (!subscription) return;
     const plan = await fetchSubscriptionPlan(subscription.planId);
-    if (!plan) return;
+    if (!plan) throw new Error("Subscription plan is missing");
     const expiresAt = addMonths(now, plan.validityMonths);
     await db.update(listingSubscriptions).set({
       status: "active",
@@ -2882,7 +2974,7 @@ async function extendListingSubscription(subscriptionId: string | undefined, pay
     const subscription = rows[0];
     if (!subscription) return;
     const plan = await fetchSubscriptionPlan(subscription.planId);
-    if (!plan) return;
+    if (!plan) throw new Error("Subscription plan is missing");
     const baseDate = subscription.expiresAt && subscription.expiresAt > now ? subscription.expiresAt : now;
     const expiresAt = addMonths(baseDate, plan.validityMonths);
     await db.update(listingSubscriptions).set({
@@ -3019,7 +3111,7 @@ function defaultSettings(userId: string): UserSettings {
   };
 }
 
-function toUser(row: typeof users.$inferSelect): User {
+export function toUser(row: typeof users.$inferSelect): User {
   const trial = buildUserTrial(row.trialStartedAt, row.trialEndsAt, row.trialTerminatedAt);
   return {
     id: row.id,
@@ -3032,7 +3124,9 @@ function toUser(row: typeof users.$inferSelect): User {
     locale: row.locale as User["locale"],
     status: row.status as User["status"],
     profileImageKey: row.profileImageKey ?? undefined,
-    profileImageUrl: row.profileImageUrl ?? undefined,
+    profileImageUrl: row.profileImageKey && isOwnedUploadKey(row.profileImageKey, `users/${row.id}/profile/`)
+      ? createSignedReadUrl(row.profileImageKey)
+      : row.profileImageUrl ?? undefined,
     trialStartedAt: trial.startsAt,
     trialEndsAt: trial.endsAt,
     trialTerminatedAt: trial.terminatedAt,
@@ -3056,6 +3150,50 @@ function normalizeOrderImageUrl(value?: string | null) {
 function normalizeListingMediaUrl(value?: string | null, fallbackKey?: string | null) {
   const mediaKey = normalizeBlobReadKey(value) ?? normalizeBlobReadKey(fallbackKey);
   return mediaKey ? createSignedReadUrl(mediaKey) : value ?? "";
+}
+
+function isOwnedUploadKey(key: string, prefix: string) {
+  return key.startsWith(prefix) && /^[a-zA-Z0-9_-]+\.(?:jpe?g|png|gif|webp|avif|pdf)$/.test(key.slice(prefix.length));
+}
+
+async function validateListingMedia(input: ListingMedia[], existing: ListingMedia[], userId: string, listingId: string, checkoutSessionId?: string) {
+  if (!Array.isArray(input) || input.length > maxListingCheckoutPhotoCount + 1) throw new Error("Invalid listing media.");
+  const seen = new Set<string>();
+  const media: ListingMedia[] = [];
+  for (const item of input) {
+    if (!item || typeof item.id !== "string" || seen.has(item.id)) throw new Error("Invalid listing media.");
+    seen.add(item.id);
+    const retained = existing.find((previous) => previous.id === item.id);
+    if (retained) {
+      media.push(retained);
+      continue;
+    }
+    const folder = item.kind === "certificate" ? "certificates" : "media";
+    const prefix = checkoutSessionId ? `listing-checkout-sessions/${checkoutSessionId}/${folder}/` : `users/${userId}/listings/${listingId}/${folder}/`;
+    if ((item.kind !== "photo" && item.kind !== "certificate") || !isOwnedUploadKey(item.id, prefix)
+        || (item.kind === "photo" && item.id.endsWith(".pdf"))) throw new Error("Invalid listing media.");
+    if (!checkoutSessionId) await verifyStoredUpload(item.id);
+    media.push({
+      id: item.id, listingId, kind: item.kind, url: item.id, order: media.length,
+      alt: typeof item.alt === "string" ? item.alt : "", moderationStatus: "not_submitted"
+    });
+  }
+  if (media.filter((item) => item.kind === "photo").length > maxListingCheckoutPhotoCount
+      || media.filter((item) => item.kind === "certificate").length > 1) throw new Error("Invalid listing media.");
+  return withCardThumbnails(media);
+}
+
+async function assertPaidPhotoAllowance(userId: string, listingId: string, media: ListingMedia[]) {
+  const intents = hasDatabase
+    ? (await db.select().from(paymentIntents).where(and(
+      eq(paymentIntents.userId, userId), eq(paymentIntents.listingId, listingId),
+      inArray(paymentIntents.status, ["pending", "succeeded"])
+    )).orderBy(desc(paymentIntents.createdAt)).limit(1)).map(toPaymentIntent)
+    : (await getPaymentIntents(userId)).filter((intent) => intent.listingId === listingId && (intent.status === "pending" || intent.status === "succeeded"));
+  const quote = intents[0]?.quote;
+  if (quote && countListingPhotos(media) > Math.max(quote.photoCount, quote.plan.includedPhotos)) {
+    throw new Error("This listing’s payment covers fewer photos.");
+  }
 }
 
 async function withCardThumbnails(media: ListingMedia[]) {
@@ -3163,7 +3301,7 @@ function toListingSubscription(row: typeof listingSubscriptions.$inferSelect): L
   };
 }
 
-function toPaymentIntent(row: typeof paymentIntents.$inferSelect): PaymentIntent {
+export function toPaymentIntent(row: typeof paymentIntents.$inferSelect): PaymentIntent {
   return {
     id: row.id,
     userId: row.userId,
@@ -3248,4 +3386,18 @@ function receiptNumberForPayment(intent: PaymentIntent) {
 
 function withoutUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+}
+
+export async function getSubscriptionInvoicePayment(userId: string, subscriptionId: string, reconcile = false) {
+  const subscription = await getListingSubscriptionById(subscriptionId);
+  if (!subscription || subscription.userId !== userId) return undefined;
+  const rows = await db.select().from(paymentIntents).where(and(eq(paymentIntents.subscriptionId, subscriptionId), eq(paymentIntents.userId, userId)))
+    .orderBy(desc(paymentIntents.createdAt), desc(paymentIntents.id)).limit(1);
+  const intent = rows[0];
+  if (!intent?.stripeInvoiceId || !intent.stripeSubscriptionId) throw new Error("The renewal invoice is not available. Please contact support.");
+  const invoice = await retrieveInvoicePayment(intent.stripeInvoiceId, intent.stripeSubscriptionId);
+  if (invoice.status === "succeeded" && reconcile) {
+    await recordStripeSubscriptionInvoicePayment({ stripeInvoiceId: invoice.invoiceId, stripeSubscriptionId: intent.stripeSubscriptionId, billingReason: invoice.billingReason });
+  }
+  return { ...invoice, clientSecret: reconcile ? undefined : invoice.clientSecret, subscriptionId };
 }

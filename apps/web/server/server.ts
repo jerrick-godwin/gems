@@ -1,4 +1,6 @@
 import "./env.js";
+import { getAdminCounts, getAdminPage, parseAdminPageQuery } from "./admin-data.js";
+import { waitUntil } from "@vercel/functions";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -7,7 +9,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ViteDevServer } from "vite";
 import type { PublicRenderPayload } from "../src/public/types.js";
 import {
-  getConversations,
   getGemTypes,
   getPublicListing,
   getPublicSeoEntries,
@@ -56,7 +57,9 @@ import {
   getPaymentReceipt,
   getPaymentReceiptPdf,
   getListingCheckoutSession,
+  getListingSubscriptionPlans,
   startListingSubscriptionPayment,
+  getSubscriptionInvoicePayment,
   getAdminOrders,
   getDashboard,
   getMyListings,
@@ -78,8 +81,8 @@ import {
   removeUserListing,
   updateUserListing
 } from "./user-repository.js";
-import { blobKeyFromLocalReadPath, localUploadPath, saveLocalUpload } from "./storage.js";
-import { constructStripeWebhookEvent, retrieveStripeCheckoutSession } from "./stripe.js";
+import { blobKeyFromLocalReadPath, localUploadPath, localUploadsAllowed, saveHostedUpload, saveLocalUpload, verifyUploadPermit } from "./storage.js";
+import { constructStripeWebhookEvent, retrieveStripeCheckoutSession, retrieveStripeSubscription } from "./stripe.js";
 import { ensureDatabaseCompatibility, requireDatabase } from "./db/index.js";
 import { indexNowKey } from "./indexnow.js";
 import { resolvePublicListingMedia } from "./public-listing-media.js";
@@ -87,6 +90,9 @@ import { isAdminDocumentPath } from "./admin-routing.js";
 import { buildSitemapXml } from "./sitemap.js";
 import { isPriorityGemSlug, seoLandingPageFromPath, seoLandingPages } from "../src/shared/seo.js";
 import { paymentReturnLocation } from "./payment-return.js";
+import { paymentOrigin } from "./payment-origin.js";
+import { apiBodyLimit, readRequestBody, RequestBodyTooLarge } from "./request-body.js";
+import { reservePasswordReset } from "./password-reset-limit.js";
 
 const port = Number(process.env.PORT ?? 4100);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -96,41 +102,21 @@ const webRoot = isProduction ? resolve(currentDir, "../dist") : resolve(currentD
 const staticRoot = isProduction ? resolve(webRoot, "client") : resolve(webRoot, "dist/client");
 const ssrRoot = isProduction ? resolve(webRoot, "ssr") : resolve(webRoot, "dist/ssr");
 
-const passwordResetRateLimiter = new Map<string, number[]>();
-const MAX_RESETS_PER_HOUR = 5;
-const RESET_WINDOW_MS = 60 * 60 * 1000;
-const RESET_COOLDOWN_MS = 60 * 1000;
-
-function canRequestPasswordReset(email: string): boolean {
-  const now = Date.now();
-  const requests = passwordResetRateLimiter.get(email) || [];
-  
-  // Clean up old requests
-  const recentRequests = requests.filter(time => now - time < RESET_WINDOW_MS);
-  
-  if (recentRequests.length > 0 && now - recentRequests[recentRequests.length - 1] < RESET_COOLDOWN_MS) {
-    return false; // Less than 1 minute since last request
-  }
-  
-  if (recentRequests.length >= MAX_RESETS_PER_HOUR) {
-    return false; // Too many requests in the last hour
-  }
-  
-  recentRequests.push(now);
-  passwordResetRateLimiter.set(email, recentRequests);
-  
-  // Optional cleanup of map over time (if it grows too large)
-  if (passwordResetRateLimiter.size > 10000) {
-    const expiredKeys = Array.from(passwordResetRateLimiter.entries())
-      .filter(([_, times]) => times.every(time => now - time >= RESET_WINDOW_MS))
-      .map(([key]) => key);
-    expiredKeys.forEach(key => passwordResetRateLimiter.delete(key));
-  }
-  
-  return true;
-}
+const reportOnlyCsp = [
+  "default-src 'self'",
+  "script-src 'self' https://www.googletagmanager.com https://apis.google.com https://js.stripe.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.google-analytics.com https://*.blob.core.windows.net https://api.stripe.com",
+  "frame-src 'self' https://*.firebaseapp.com https://js.stripe.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'"
+].join("; ");
 
 const mimeTypes: Record<string, string> = {
+  ".avif": "image/avif",
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".gif": "image/gif",
@@ -142,7 +128,9 @@ const mimeTypes: Record<string, string> = {
   ".pdf": "application/pdf",
   ".png": "image/png",
   ".svg": "image/svg+xml",
-  ".webp": "image/webp"
+  ".txt": "text/plain; charset=utf-8",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2"
 };
 
 const publicPagePaths = [
@@ -171,8 +159,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
 }
 
 function getPublicSiteUrl(request: IncomingMessage) {
-  const configuredUrl = process.env.PUBLIC_SITE_URL?.replace(/\/+$/, "");
-  if (configuredUrl) return configuredUrl;
+  if (isProduction || process.env.PUBLIC_SITE_URL) return paymentOrigin(process.env.PUBLIC_SITE_URL, isProduction);
 
   const hostHeader = request.headers["x-forwarded-host"] ?? request.headers.host ?? "localhost";
   const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
@@ -206,30 +193,13 @@ async function sendSitemapXml(request: IncomingMessage, response: ServerResponse
 
 
 
-async function readJsonBody(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  }
-  if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
-}
-
-async function readRawBody(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  }
-  return Buffer.concat(chunks);
-}
-
 async function authenticateUser(request: IncomingMessage) {
   const token = readBearerToken(request);
   if (!token) return undefined;
 
   try {
-    const claims = await verifyFirebaseIdToken(token, { allowDevelopmentFallback: !isProduction });
-    return getOrCreateUserFromClaims(claims);
+    const claims = await verifyFirebaseIdToken(token, { allowDevelopmentFallback: localUploadsAllowed });
+    return await getOrCreateUserFromClaims(claims);
   } catch (error) {
     console.warn("User authentication failed:", error);
     return undefined;
@@ -269,9 +239,42 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
   const path = url.pathname;
 
-  if (!path.startsWith("/api/v1")) return false;
+  if (path !== "/api/v1" && !path.startsWith("/api/v1/")) return false;
+  response.setHeader("cache-control", "no-store");
+  const isLocalUpload = path === "/api/v1/storage/local-upload";
+  const isHostedUpload = path === "/api/v1/storage/upload";
+  const isUpload = isLocalUpload || isHostedUpload;
+  const isStripeWebhook = path === "/api/v1/payments/stripe/webhook";
+  const uploadKey = url.searchParams.get("key") ?? "";
+  if (isUpload && (request.method !== "PUT" || (isLocalUpload && !localUploadsAllowed))) {
+    sendJson(response, 404, { error: "Not found" });
+    return true;
+  }
+  if (isUpload && !verifyUploadPermit(uploadKey, url.searchParams.get("permit"), isHostedUpload)) {
+    sendJson(response, 403, { error: "Invalid or expired upload link" });
+    return true;
+  }
+
+  let rawBody = Buffer.alloc(0);
+  let requestBody: unknown = {};
+  if (request.method === "POST" || request.method === "PATCH" || request.method === "PUT") {
+    try {
+      rawBody = await readRequestBody(request, apiBodyLimit(path));
+      if (!isUpload && !isStripeWebhook && rawBody.length > 0) {
+        requestBody = JSON.parse(rawBody.toString("utf8")) as unknown;
+      }
+    } catch (error) {
+      if (error instanceof RequestBodyTooLarge) {
+        response.setHeader("connection", "close");
+        sendJson(response, 413, { error: "Request body is too large" });
+      } else {
+        sendJson(response, 400, { error: "Invalid request body" });
+      }
+      return true;
+    }
+  }
   if (request.method === "POST" && path === "/api/v1/metrics/web-vitals") {
-    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const body = parseObject(requestBody);
     const metrics = Object.fromEntries(["ttfb", "lcp", "inp", "cls"].flatMap((name) => {
       const value = Number(body[name]);
       return Number.isFinite(value) && value >= 0 ? [[name, Math.round(value * 100) / 100]] : [];
@@ -280,12 +283,19 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     sendJson(response, 202, { accepted: true });
     return true;
   }
+  const stripePaymentCancelMatch = path.match(/^\/api\/v1\/payments\/stripe\/([^/]+)\/cancel$/);
+  if (request.method === "GET" && stripePaymentCancelMatch) {
+    response.writeHead(302, { location: paymentReturnLocation(stripePaymentCancelMatch[1], "cancelled") });
+    response.end();
+    return true;
+  }
+
   requireDatabase();
   await ensureDatabaseCompatibility();
 
   if (request.method === "POST" && path === "/api/v1/payments/stripe/webhook") {
     try {
-      const event = constructStripeWebhookEvent(await readRawBody(request), request.headers["stripe-signature"]);
+      const event = constructStripeWebhookEvent(rawBody, request.headers["stripe-signature"]);
       await handleStripeWebhookEvent(event);
       await broadcastMarketplaceInvalidation();
       sendJson(response, 200, { received: true });
@@ -296,20 +306,19 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     return true;
   }
 
-  if (request.method === "PUT" && path === "/api/v1/storage/local-upload") {
-    const blobKey = url.searchParams.get("key") ?? "";
-    if (!blobKey.startsWith("users/") && !blobKey.startsWith("listing-checkout-sessions/")) {
-      sendJson(response, 400, { error: "Invalid upload key" });
-      return true;
+  if (isUpload) {
+    try {
+      await (isHostedUpload ? saveHostedUpload : saveLocalUpload)(uploadKey, rawBody);
+      sendJson(response, 201, { ok: true });
+    } catch {
+      sendJson(response, 400, { error: "Invalid or already uploaded file" });
     }
-    await saveLocalUpload(blobKey, request);
-    sendJson(response, 201, { ok: true });
     return true;
   }
 
   if (request.method === "POST" && path === "/api/v1/listing-checkout-sessions") {
     try {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const body = parseObject(requestBody);
       sendJson(response, 201, await createListingCheckoutSession(body as any, getPublicSiteUrl(request)));
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to create checkout session." });
@@ -319,14 +328,16 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   const listingCheckoutSessionMatch = path.match(/^\/api\/v1\/listing-checkout-sessions\/([^/]+)$/);
   if (request.method === "GET" && listingCheckoutSessionMatch) {
-    const session = await getListingCheckoutSession(decodeURIComponent(listingCheckoutSessionMatch[1]));
+    const user = await authenticateUser(request);
+    const session = await getListingCheckoutSession(decodeURIComponent(listingCheckoutSessionMatch[1]), user?.id);
     sendJson(response, session ? 200 : 404, session ?? { error: "Checkout session not found or expired." });
     return true;
   }
 
   if (request.method === "PATCH" && listingCheckoutSessionMatch) {
     try {
-      const session = await updateListingCheckoutSession(decodeURIComponent(listingCheckoutSessionMatch[1]), parseObject(await readJsonBody(request).catch(() => ({}))));
+      const user = await authenticateUser(request);
+      const session = await updateListingCheckoutSession(decodeURIComponent(listingCheckoutSessionMatch[1]), parseObject(requestBody), user?.id);
       sendJson(response, session ? 200 : 404, session ?? { error: "Checkout session not found or expired." });
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : "Unable to update checkout session." });
@@ -337,10 +348,12 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   const listingCheckoutDraftMatch = path.match(/^\/api\/v1\/listing-checkout-sessions\/([^/]+)\/draft$/);
   if (request.method === "PUT" && listingCheckoutDraftMatch) {
     try {
+      const user = await authenticateUser(request);
       const result = await updateListingCheckoutDraft(
         decodeURIComponent(listingCheckoutDraftMatch[1]),
-        parseObject(await readJsonBody(request).catch(() => ({}))) as any,
-        getPublicSiteUrl(request)
+        parseObject(requestBody) as any,
+        getPublicSiteUrl(request),
+        user?.id
       );
       sendJson(response, result ? 200 : 404, result ?? { error: "Checkout session not found or expired." });
     } catch (error) {
@@ -360,8 +373,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       const intent = await completeListingCheckoutSession(
         user.id,
         decodeURIComponent(listingCheckoutCompleteMatch[1]),
-        parseObject(await readJsonBody(request).catch(() => ({}))),
-        idempotencyKey(request)
+        parseObject(requestBody)
       );
       sendJson(response, intent ? 201 : 404, intent ?? { error: "Checkout session not found or expired." });
     } catch (error) {
@@ -377,6 +389,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   }
 
   if (path.startsWith("/api/v1/admin/")) {
+    const authenticationStarted = performance.now();
     const token = readBearerToken(request);
     let admin: { email: string, role: "admin" } | undefined;
     if (token) {
@@ -386,8 +399,27 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         console.warn("Admin authentication failed:", error);
       }
     }
+    response.setHeader("server-timing", `admin_auth;dur=${(performance.now() - authenticationStarted).toFixed(1)}`);
     if (!admin) {
       sendJson(response, 401, { error: "Admin authorization required" });
+      return true;
+    }
+
+    if (request.method === "GET" && path === "/api/v1/admin/bootstrap") {
+      const started = performance.now();
+      const counts = await getAdminCounts();
+      response.setHeader("server-timing", `${response.getHeader("server-timing")}, admin_counts;dur=${(performance.now() - started).toFixed(1)}`);
+      sendJson(response, 200, { admin, counts });
+      return true;
+    }
+    if (request.method === "GET" && path === "/api/v1/admin/page") {
+      let query;
+      try { query = parseAdminPageQuery(url.searchParams); }
+      catch (error) { sendJson(response, 400, { error: (error as Error).message }); return true; }
+      const started = performance.now();
+      const result = await getAdminPage(query);
+      response.setHeader("server-timing", `${response.getHeader("server-timing")}, admin_page;dur=${(performance.now() - started).toFixed(1)}`);
+      sendJson(response, 200, result);
       return true;
     }
 
@@ -401,7 +433,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         getModerationListings(),
         getReports(),
         getLiveListings(),
-        getAdminOrders(),
+        Promise.resolve([]),
         getAdminPaymentIntents(),
         getReportedListings(),
         getAllUsers(),
@@ -423,7 +455,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     const adminUserTrialMatch = path.match(/^\/api\/v1\/admin\/users\/([^/]+)\/trial$/);
     if (adminUserTrialMatch && request.method === "PATCH") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const body = parseObject(requestBody);
       const endsAtValue = typeof body.endsAt === "string" ? body.endsAt : "";
       const endsAt = new Date(endsAtValue);
       try {
@@ -442,7 +474,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
 
     if (path === "/api/v1/admin/sitewide-trial" && request.method === "PATCH") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const body = parseObject(requestBody);
       const endsAtValue = typeof body.endsAt === "string" ? body.endsAt : "";
       const endsAt = new Date(endsAtValue);
       try {
@@ -539,7 +571,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     const adminOrderStatusMatch = path.match(/^\/api\/v1\/admin\/orders\/([^/]+)\/status$/);
     if (request.method === "PATCH" && adminOrderStatusMatch) {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const body = parseObject(requestBody);
       const status = typeof body.status === "string" ? body.status : "";
       try {
         const order = await updateOrderStatus(adminOrderStatusMatch[1], status as any);
@@ -559,19 +591,20 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     const moderationDecisionMatch = path.match(/^\/api\/v1\/admin\/moderation\/listings\/([^/]+)$/);
     if (request.method === "PATCH" && moderationDecisionMatch) {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const body = parseObject(requestBody);
       const decision = body.decision === "reject" ? "reject" : body.decision === "approve" ? "approve" : undefined;
       const reason = typeof body.reason === "string" ? body.reason : undefined;
       if (!decision) {
         sendJson(response, 400, { error: "decision must be approve or reject" });
         return true;
       }
+      try {
       const listing = await updateListingModeration(moderationDecisionMatch[1], decision, reason);
       if (listing) await broadcastMarketplaceInvalidation(listing);
-      if (listing && decision === "reject") {
-        await cancelListingSubscriptionsForListing(listing.id);
-      }
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid admin action" });
+      }
       return true;
     }
 
@@ -590,20 +623,22 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     const adminListingStatusMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)\/status$/);
     if (request.method === "PATCH" && adminListingStatusMatch) {
-      const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
+      const body = parseObject(requestBody) as any;
       if (body.status !== "live" && body.status !== "paused") {
         sendJson(response, 400, { error: "Invalid status" });
         return true;
       }
+      try {
       const listing = await updateListingStatus(adminListingStatusMatch[1], body.status);
       if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) { sendJson(response, 400, { error: (error as Error).message }); }
       return true;
     }
 
     const createCampaignMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)\/campaigns$/);
     if (request.method === "POST" && createCampaignMatch) {
-      const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
+      const body = parseObject(requestBody) as any;
       if (!body.type || !body.startsAt || !body.endsAt) {
         sendJson(response, 400, { error: "type, startsAt, and endsAt are required" });
         return true;
@@ -615,18 +650,26 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         startsAt: body.startsAt,
         endsAt: body.endsAt
       };
+      try {
       const listing = await createPromotionCampaign(createCampaignMatch[1], campaign);
       if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 201 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid admin action" });
+      }
       return true;
     }
 
     const updateCampaignMatch = path.match(/^\/api\/v1\/admin\/listings\/([^/]+)\/campaigns\/([^/]+)$/);
     if (request.method === "PATCH" && updateCampaignMatch) {
-      const body = parseObject(await readJsonBody(request).catch(() => ({}))) as any;
+      const body = parseObject(requestBody) as any;
+      try {
       const listing = await updatePromotionCampaign(updateCampaignMatch[1], updateCampaignMatch[2], body);
       if (listing) await broadcastMarketplaceInvalidation(listing);
       sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing or campaign not found" });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid admin action" });
+      }
       return true;
     }
   }
@@ -648,18 +691,10 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       response.end();
     } catch (error) {
       console.warn("Stripe checkout verification failed:", error);
-      const confirmed = await confirmPaymentIntent(intent.id, "failed", sessionId, { stripeCheckoutSessionId: sessionId });
-      response.writeHead(302, { location: paymentReturnLocation(intent.id, confirmed?.status ?? "failed") });
+      // An unavailable verifier is not evidence that money was not received.
+      response.writeHead(302, { location: paymentReturnLocation(intent.id, intent.status === "succeeded" ? "succeeded" : "pending") });
       response.end();
     }
-    return true;
-  }
-
-  const stripePaymentCancelMatch = path.match(/^\/api\/v1\/payments\/stripe\/([^/]+)\/cancel$/);
-  if (request.method === "GET" && stripePaymentCancelMatch) {
-    await confirmPaymentIntent(stripePaymentCancelMatch[1], "cancelled", undefined);
-    response.writeHead(302, { location: paymentReturnLocation(stripePaymentCancelMatch[1], "cancelled") });
-    response.end();
     return true;
   }
 
@@ -681,7 +716,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
 
     if (request.method === "PATCH" && path === "/api/v1/users/me") {
-      const body = await readJsonBody(request).catch(() => ({}));
+      const body = requestBody;
       try {
         sendJson(response, 200, await updateUserProfile(user.id, parseObject(body)));
       } catch (error) {
@@ -700,7 +735,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
 
     if (request.method === "PATCH" && path === "/api/v1/users/me/settings") {
-      const body = await readJsonBody(request).catch(() => ({}));
+      const body = requestBody;
       sendJson(response, 200, await updateSettings(user.id, parseObject(body)));
       return true;
     }
@@ -749,6 +784,19 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
     if (request.method === "GET" && path === "/api/v1/users/me/reports") {
       sendJson(response, 200, await getUserReports(user.id));
+      return true;
+    }
+
+    const invoicePaymentMatch = path.match(/^\/api\/v1\/listing-subscriptions\/([^/]+)\/invoice-payment(?:\/(status))?$/);
+    if (invoicePaymentMatch && ((request.method === "POST" && !invoicePaymentMatch[2]) || (request.method === "GET" && invoicePaymentMatch[2]))) {
+      try {
+        const invoice = await getSubscriptionInvoicePayment(user.id, decodeURIComponent(invoicePaymentMatch[1]), Boolean(invoicePaymentMatch[2]));
+        response.setHeader("cache-control", "no-store");
+        sendJson(response, invoice ? 200 : 404, invoice ?? { error: "Subscription not found" });
+      } catch (error) {
+        console.warn("Invoice payment could not be loaded", error);
+        sendJson(response, 503, { error: "Unable to load invoice payment. Please retry." });
+      }
       return true;
     }
 
@@ -804,15 +852,20 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
     }
 
     if (myListingMatch && request.method === "PATCH") {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
-      const listing = await updateUserListing(user.id, myListingMatch[1], body);
-      if (listing) await broadcastMarketplaceInvalidation(listing);
-      sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      const body = parseObject(requestBody);
+      try {
+        const listing = await updateUserListing(user.id, myListingMatch[1], body);
+        if (listing) await broadcastMarketplaceInvalidation(listing);
+        sendJson(response, listing ? 200 : 404, listing ?? { error: "Listing not found" });
+      } catch (error) {
+        if (!(error instanceof Error) || !["Invalid listing media.", "This listing’s payment covers fewer photos."].includes(error.message)) throw error;
+        sendJson(response, 400, { error: error.message });
+      }
       return true;
     }
 
     if (request.method === "POST" && path === "/api/v1/storage/uploads") {
-      const body = await readJsonBody(request).catch(() => ({}));
+      const body = requestBody;
       const uploadRequest = parseObject(body);
       const scope = uploadRequest.scope;
       const fileName = stringBody(uploadRequest.fileName);
@@ -826,7 +879,12 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
         sendJson(response, 400, { error: "listingId is required for listing uploads" });
         return true;
       }
-      sendJson(response, 201, await createStorageUpload(user.id, { scope, fileName, contentType, listingId }));
+      try {
+        const target = await createStorageUpload(user.id, { scope, fileName, contentType, listingId });
+        sendJson(response, target ? 201 : 404, target ?? { error: "Listing not found" });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error && error.message.startsWith("Unsupported upload type") ? error.message : "Upload unavailable" });
+      }
       return true;
     }
 
@@ -844,15 +902,15 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   if (request.method === "POST" && path === "/api/v1/auth/password-reset") {
     try {
-      const body = parseObject(await readJsonBody(request).catch(() => ({})));
+      const body = parseObject(requestBody);
       const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
       
-      if (!email || !email.includes("@")) {
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(email)) {
         sendJson(response, 400, { error: "Invalid email address" });
         return true;
       }
 
-      if (!canRequestPasswordReset(email)) {
+      if (!await reservePasswordReset(email)) {
         // Return success even if rate limited to prevent enumeration/abuse
         sendJson(response, 202, { accepted: true });
         return true;
@@ -861,7 +919,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       const siteUrl = getPublicSiteUrl(request);
       // We don't await the link generation and email sending to return quickly
       // and prevent timing attacks indicating if the user exists.
-      generatePasswordResetLink(email, `${siteUrl}/reset-password`)
+      const delivery = generatePasswordResetLink(email, `${siteUrl}/reset-password`)
         .then(link => {
           const parsed = new URL(link);
           const oobCode = parsed.searchParams.get("oobCode");
@@ -877,6 +935,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
           }
           console.error("Error sending password reset email:", err);
         });
+      if (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview") waitUntil(delivery);
 
       sendJson(response, 202, { accepted: true });
     } catch (error) {
@@ -899,6 +958,11 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   if (request.method === "GET" && path === "/api/v1/gem-types") {
     sendJson(response, 200, await getGemTypes());
+    return true;
+  }
+
+  if (request.method === "GET" && path === "/api/v1/subscription-plans") {
+    sendJson(response, 200, await getListingSubscriptionPlans());
     return true;
   }
 
@@ -963,7 +1027,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, 401, { error: "User authorization required" });
       return true;
     }
-    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const body = parseObject(requestBody);
     const reason = stringBody(body.reason);
     const notes = stringBody(body.notes);
     if (!reason) {
@@ -977,7 +1041,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
 
   const interactionsMatch = path.match(/^\/api\/v1\/listings\/([^/]+)\/interactions$/);
   if (request.method === "POST" && interactionsMatch) {
-    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const body = parseObject(requestBody);
     const type = stringBody(body.type);
     if (type !== "view" && type !== "whatsapp_click") {
       sendJson(response, 400, { error: "Invalid interaction type" });
@@ -994,8 +1058,12 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, 401, { error: "User authorization required" });
       return true;
     }
-    const body = await readJsonBody(request).catch(() => ({}));
-    sendJson(response, 201, await createListing(user.id, parseObject(body), idempotencyKey(request)));
+    const body = parseObject(requestBody);
+    if (body.media !== undefined && (!Array.isArray(body.media) || body.media.length > 0)) {
+      sendJson(response, 400, { error: "Upload media after creating the listing draft." });
+      return true;
+    }
+    sendJson(response, 201, await createListing(user.id, body, idempotencyKey(request)));
     return true;
   }
 
@@ -1006,7 +1074,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
       sendJson(response, 401, { error: "User authorization required" });
       return true;
     }
-    const body = parseObject(await readJsonBody(request).catch(() => ({})));
+    const body = parseObject(requestBody);
     try {
       const intent = await createListingPaymentIntent(user.id, listingPaymentMatch[1], {
         planId: stringBody(body.planId),
@@ -1027,7 +1095,7 @@ export async function handleApi(request: IncomingMessage, response: ServerRespon
   }
 
   if (request.method === "GET" && path === "/api/v1/conversations") {
-    sendJson(response, 200, await getConversations());
+    sendJson(response, 200, []);
     return true;
   }
 
@@ -1120,13 +1188,15 @@ async function handleStripeWebhookEvent(event: ReturnType<typeof constructStripe
   }
 
   if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as any;
-    if (subscription.id) {
+    const subscriptionId = stripeId(event.data.object);
+    if (subscriptionId) {
+      // An older delivery must not replace the current subscription state.
+      const subscription = await retrieveStripeSubscription(subscriptionId);
       await syncStripeSubscriptionStatus({
-        stripeSubscriptionId: subscription.id,
-        status: typeof subscription.status === "string" ? subscription.status : event.type === "customer.subscription.deleted" ? "canceled" : "",
-        cancelAtPeriodEnd: typeof subscription.cancel_at_period_end === "boolean" ? subscription.cancel_at_period_end : undefined,
-        currentPeriodEnd: stripeDate(subscription.current_period_end)
+        stripeSubscriptionId: subscriptionId,
+        status: subscription.status,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        currentPeriodEnd: stripeDate(subscription.items.data[0]?.current_period_end)
       });
     }
   }
@@ -1173,9 +1243,14 @@ async function handleLocalUploadStatic(request: IncomingMessage, response: Serve
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const blobKey = blobKeyFromLocalReadPath(url.pathname);
   if (!blobKey) return false;
+  if (!localUploadsAllowed) {
+    sendJson(response, 404, { error: "Upload not found" });
+    return true;
+  }
 
   try {
     const uploadPath = localUploadPath(blobKey);
+    if (!/\.(?:jpg|jpeg|png|webp|gif|avif|pdf)$/i.test(uploadPath)) throw new Error("Unsupported file type");
     if (existsSync(uploadPath) && statSync(uploadPath).isFile()) {
       sendStaticFile(response, uploadPath);
       return true;
@@ -1215,7 +1290,7 @@ let productionAssets: Promise<PublicRenderPayload["assets"]> | undefined;
 
 function isPublicRenderPath(pathname: string) {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-  return publicPagePaths.includes(normalized) || /^\/listings\/[^/]+$/.test(normalized) || /^\/gemstones\/[^/]+$/.test(normalized);
+  return normalized !== "/listings/pay" && (publicPagePaths.includes(normalized) || /^\/listings\/[^/]+$/.test(normalized) || /^\/gemstones\/[^/]+$/.test(normalized));
 }
 
 async function handlePublicSsr(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
@@ -1277,6 +1352,20 @@ async function handlePublicSsr(request: IncomingMessage, response: ServerRespons
         route = landingPage
           ? { kind: "landing", page: landingPage, gemTypes: await getGemTypes() }
           : { kind: "content", page: pageByPath[normalizedPath] };
+        if (route.kind === "landing" && route.page === "sapphire-price-guide") {
+          const sapphire = route.gemTypes.find((gem) => gem.slug === "sapphire");
+          if (sapphire) {
+            const filters = parseMarketplaceFilters(new URL("/?q=blue&location=Sri+Lanka", getPublicSiteUrl(request)));
+            const result = await loadMarketplacePage({ ...filters, gemType: sapphire.id });
+            route.sapphireExamples = {
+              observedDate: new Intl.DateTimeFormat("en-LK", { dateStyle: "medium", timeZone: "Asia/Colombo" }).format(new Date()),
+              listings: result.data.page.items
+                .filter((item) => /blue|cornflower/i.test(`${item.title} ${item.attributes.color}`) && item.attributes.carat > 0 && item.priceLkr > 0)
+                .slice(0, 3)
+                .map(({ id, title, priceLkr, attributes }) => ({ id, title, priceLkr, carat: attributes.carat }))
+            };
+          }
+        }
       }
     }
   } catch (error) {
@@ -1401,6 +1490,13 @@ async function main() {
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse, vite: ViteDevServer | undefined) {
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("x-frame-options", "DENY");
+  response.setHeader("referrer-policy", "no-referrer");
+  if (isProduction) {
+    response.setHeader("strict-transport-security", "max-age=31536000");
+    response.setHeader("content-security-policy-report-only", reportOnlyCsp);
+  }
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
     const configuredIndexNowKey = indexNowKey();

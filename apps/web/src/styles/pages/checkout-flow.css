@@ -258,14 +258,14 @@
   justify-content: center;
   gap: 8px;
   min-height: 46px;
-  border: 0;
-  border-radius: var(--radius-full);
+  border: 1px solid var(--emerald);
+  border-radius: var(--radius);
   background: var(--emerald);
   color: var(--bg);
   font-size: 15px;
   font-weight: 850;
   cursor: pointer;
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
 }
 
 .checkout-submit:disabled {
@@ -282,7 +282,7 @@
   min-height: 44px;
   padding: 0 18px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius);
   background: var(--panel-strong);
   color: var(--ink);
   font-size: 14px;

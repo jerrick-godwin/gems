@@ -31,8 +31,8 @@ export function CampaignDialog({
     e.preventDefault();
     await campaignAction.run(async () => {
       setBusy("create");
-      const startsAt = new Date(startsAtInput);
-      const endsAt = new Date(endsAtInput);
+      const startsAt = new Date(`${startsAtInput}T00:00:00`);
+      const endsAt = new Date(`${endsAtInput}T00:00:00`);
       endsAt.setHours(23, 59, 59, 999);
       try {
         const updated = await api.createCampaign(token, listing.id, {

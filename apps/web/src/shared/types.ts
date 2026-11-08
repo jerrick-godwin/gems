@@ -1,7 +1,7 @@
-export type View = "market" | "login" | "signup" | "forgot_password" | "reset_password" | "post" | "post_checkout" | "profile" | "reports" | "my_listings" | "receipt" | "terms" | "privacy" | "refund" | "contact";
+export type View = "market" | "login" | "signup" | "forgot_password" | "reset_password" | "post" | "post_checkout" | "profile" | "reports" | "my_listings" | "invoice_payment" | "receipt" | "terms" | "privacy" | "refund" | "contact";
 export type SortKey = "featured" | "newest" | "oldest" | "price-low" | "price-high";
 
-export const protectedViews = new Set<View>(["profile", "my_listings", "reports", "receipt"]);
+export const protectedViews = new Set<View>(["profile", "my_listings", "reports", "receipt", "invoice_payment"]);
 export const signedOutOnlyViews = new Set<View>(["login", "signup", "forgot_password", "reset_password"]);
 
 export const viewPaths: Record<View, string> = {
@@ -16,6 +16,7 @@ export const viewPaths: Record<View, string> = {
   reports: "/reports",
   my_listings: "/listings",
   receipt: "/receipt",
+  invoice_payment: "/listings/pay",
   terms: "/terms-and-conditions",
   privacy: "/privacy-policy",
   refund: "/refund-policy",

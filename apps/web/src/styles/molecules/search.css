@@ -16,7 +16,7 @@
 }
 
 .global-search:focus-within {
-  border-color: var(--brand-yellow-dark);
+  border-color: var(--emerald);
   background: var(--field-bg);
   box-shadow:
     0 0 0 3px var(--focus-ring);
@@ -33,7 +33,7 @@
 .global-search-icon {
   width: 20px;
   height: 20px;
-  color: var(--brand-yellow-dark);
+  color: var(--emerald);
 }
 
 .global-search input {

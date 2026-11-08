@@ -20,8 +20,8 @@ const mobileMenuPanelId = "nav-mobile-menu-panel";
 
 function BrandWordmark() {
   return (
-    <span className="brand-wordmark" aria-label="gemslanka.lk">
-      <span className="brand-wordmark-main" aria-hidden="true">
+    <span className="brand-wordmark">
+      <span className="brand-wordmark-main">
         <span>GEMSLANKA</span>
         <span className="brand-wordmark-domain">.LK</span>
       </span>
@@ -283,7 +283,7 @@ export function AppFrame({
         <div className="topbar-inner customer-topbar-inner">
           <a className="brand" href={hrefForView("market")} onClick={(event) => handleViewLinkClick(event, "market")} aria-label="gemslanka.lk home">
             <span className="brand-mark brand-mark-main">
-              <img src="/assets/gemslanka-logo.png" alt="" />
+              <img src="/assets/gemslanka-logo-64.webp" srcSet="/assets/gemslanka-logo-64.webp 1x, /assets/gemslanka-logo-128.webp 2x" width={64} height={64} alt="" />
             </span>
             <span className="brand-site-name"><BrandWordmark /></span>
           </a>
@@ -424,7 +424,7 @@ export function AppFrame({
           <div className="footer-brand-col">
             <div className="footer-brand">
               <div className="footer-logo-wrap">
-                <img src="/assets/gemslanka-logo.png" alt="gemslanka.lk" />
+                <img src="/assets/gemslanka-logo-64.webp" srcSet="/assets/gemslanka-logo-64.webp 1x, /assets/gemslanka-logo-128.webp 2x" width={64} height={64} alt="" loading="lazy" />
               </div>
               <div className="footer-brand-text">
                 <strong><BrandWordmark /></strong>
@@ -436,7 +436,7 @@ export function AppFrame({
           <div className="footer-links-grid">
             {/* Marketplace links */}
             <div className="footer-col">
-              <h3 className="footer-col-heading">Marketplace</h3>
+              <h2 className="footer-col-heading">Marketplace</h2>
               <nav className="footer-col-links" aria-label="Marketplace">
                 <a href={hrefForView("market")} onClick={(event) => handleViewLinkClick(event, "market")}>Browse Gems</a>
                 <a href="/buy-gemstones">Buy Gemstones</a>
@@ -455,7 +455,7 @@ export function AppFrame({
             </div>
 
             <div className="footer-col">
-              <h3 className="footer-col-heading">Guides &amp; About</h3>
+              <h2 className="footer-col-heading">Guides &amp; About</h2>
               <nav className="footer-col-links" aria-label="Guides and information">
                 <a href="/gemstones">Gemstone Guide</a>
                 <a href="/guides/buying-gemstones-online">Buying Guide</a>
@@ -466,7 +466,7 @@ export function AppFrame({
 
             {/* Legal links */}
             <div className="footer-col">
-              <h3 className="footer-col-heading">Support &amp; Legal</h3>
+              <h2 className="footer-col-heading">Support &amp; Legal</h2>
               <nav className="footer-col-links" aria-label="Support and legal">
                 <a href={hrefForView("contact")} onClick={(event) => handleViewLinkClick(event, "contact")}>Contact Us</a>
                 <a href={hrefForView("terms")} onClick={(event) => handleViewLinkClick(event, "terms")}>Terms &amp; Conditions</a>

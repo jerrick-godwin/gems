@@ -67,6 +67,7 @@ export function CustomerRoot({
   const [publicRevision, setPublicRevision] = useState(0);
   const [LoadedAccount, setLoadedAccount] = useState<ComponentType<AccountSurfaceProps> | undefined>(() => accountComponent);
   const [pendingView, setPendingView] = useState<View | null>(null);
+  const [authRequested, setAuthRequested] = useState(!initialPublicRoute || Boolean(authClientOverride));
   const [authState, setAuthState] = useState<CustomerAuthState>({ status: "resolving", user: null });
   const [resolvedAuthClient, setResolvedAuthClient] = useState<CustomerAuthClient | null>(authClientOverride ?? null);
   const [referenceData, setReferenceData] = useState<MarketplaceReferences>(initialReferences ?? emptyReferences);
@@ -150,6 +151,7 @@ export function CustomerRoot({
   }, [basePath]);
 
   const prepareAccountNavigation = useCallback((nextView: View, options: CustomerNavigationOptions = {}) => {
+    setAuthRequested(true);
     const sequence = ++navigationSequenceRef.current;
     setPendingView(nextView);
     const preparations: Promise<unknown>[] = [ensureAccountLoaded()];
@@ -210,6 +212,24 @@ export function CustomerRoot({
   }, [ensureCurrentPublicEntry]);
 
   useEffect(() => {
+    if (authRequested) return;
+    let timer: number | undefined;
+    const requestAuth = () => setAuthRequested(true);
+    const afterLoad = () => { timer = window.setTimeout(requestAuth, 600); };
+    if (document.readyState === "complete") afterLoad();
+    else window.addEventListener("load", afterLoad, { once: true });
+    window.addEventListener("pointerdown", requestAuth, { once: true, passive: true });
+    window.addEventListener("keydown", requestAuth, { once: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("load", afterLoad);
+      window.removeEventListener("pointerdown", requestAuth);
+      window.removeEventListener("keydown", requestAuth);
+    };
+  }, [authRequested]);
+
+  useEffect(() => {
+    if (!authRequested) return;
     let active = true;
     let unsubscribe: (() => void) | undefined;
     const authClientPromise = authClientOverride ? Promise.resolve(authClientOverride) : import("../firebase.js").then(({ authClient }) => authClient);
@@ -228,7 +248,7 @@ export function CustomerRoot({
       active = false;
       unsubscribe?.();
     };
-  }, [authClientOverride]);
+  }, [authClientOverride, authRequested]);
 
   useEffect(() => {
     if (surface === "public") ensureCurrentPublicEntry();

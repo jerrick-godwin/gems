@@ -22,8 +22,8 @@
   overflow: hidden;
   -webkit-mask-image: -webkit-radial-gradient(white, black);
   background: var(--bg);
-  box-shadow: var(--shadow-xl);
-  animation: floatIn 0.6s var(--ease-out);
+  box-shadow: none;
+  animation: fade-in var(--duration-slow) var(--ease-out);
 }
 
 .login-visual-animated {
@@ -33,21 +33,12 @@
   align-items: center;
   justify-content: center;
   padding: 48px;
-  background: color-mix(in srgb, var(--emerald-subtle) 40%, var(--bg));
+  background: var(--surface-tint);
 }
 
 .login-visual-animated::before,
 .login-visual-animated::after {
-  content: "";
-  position: absolute;
-  width: 60vw;
-  height: 60vw;
-  max-width: 600px;
-  max-height: 600px;
-  border-radius: 50%;
-  filter: blur(100px);
-  animation: floatOrb 12s ease-in-out infinite alternate;
-  z-index: 0;
+  content: none;
 }
 
 .login-visual-animated::before {
@@ -92,8 +83,9 @@
 
 .auth-header h1, .auth-title {
   margin: 0 0 8px;
-  font-size: 32px;
-  font-weight: 800;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(40px, 5vw, 58px);
+  font-weight: 500;
   letter-spacing: -0.03em;
   color: var(--ink);
 }
@@ -143,7 +135,7 @@
 .login-form textarea {
   width: 100%;
   border: 1px solid rgba(var(--foreground-rgb), 0.15);
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: rgba(var(--field-bg-rgb, 255, 255, 255), 0.5);
   color: var(--ink);
   font: inherit;
@@ -226,17 +218,17 @@
 .login-form button[type="submit"] {
   height: 56px;
   margin-top: 12px;
-  border-radius: 18px;
+  border-radius: var(--radius);
   font-size: 16px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: linear-gradient(to bottom, var(--emerald), color-mix(in srgb, var(--emerald) 90%, black));
+  background: var(--emerald);
   color: var(--brand-black);
   border: none;
-  box-shadow: 0 4px 12px var(--emerald-soft), 0 1px 2px rgba(255,255,255,0.3) inset;
+  box-shadow: none;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 

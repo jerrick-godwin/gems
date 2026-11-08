@@ -1,12 +1,29 @@
-import { createWriteStream } from "node:fs";
-import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { IncomingMessage } from "node:http";
+import { access, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import sharp from "sharp";
 import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, StorageSharedKeyCredential } from "@azure/storage-blob";
 import type { StorageUploadRequest, StorageUploadTarget } from "@gems/schemas";
+import { maxLocalUploadBytes } from "./request-body.js";
+
+export const localUploadsAllowed = process.env.NODE_ENV === "development"
+  && (!process.env.VERCEL || process.env.VERCEL_ENV === "development");
+const localUploadSecret = crypto.randomBytes(32);
+const imageExtensions = new Map([
+  ["image/jpeg", ".jpg"], ["image/png", ".png"], ["image/webp", ".webp"],
+  ["image/gif", ".gif"], ["image/avif", ".avif"]
+]);
+
+export function uploadExtension(contentType: string, allowPdf: boolean) {
+  const extension = imageExtensions.get(contentType) ?? (allowPdf && contentType === "application/pdf" ? ".pdf" : undefined);
+  if (!extension) throw new Error("Unsupported upload type. Use JPEG, PNG, WebP, GIF, AVIF or PDF where accepted.");
+  return extension;
+}
+
+function requireLocalUploads() {
+  if (!localUploadsAllowed) throw new Error("Object storage is not configured.");
+}
 
 const AZURE_STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING || "";
 const CONTAINER_NAME = process.env.AZURE_STORAGE_CONTAINER_NAME || "user-uploads";
@@ -35,87 +52,42 @@ if (AZURE_STORAGE_CONNECTION_STRING) {
 }
 
 export async function createUserUploadTarget(userId: string, request: StorageUploadRequest): Promise<StorageUploadTarget> {
-  const blobKey = createUserBlobKey(userId, request);
-  const expiresAt = new Date(Date.now() + uploadUrlTtlMinutes * 60 * 1000);
-
-  if (!blobServiceClient || !sharedKeyCredential) {
-    return {
-      blobKey,
-      uploadUrl: createLocalUploadUrl(blobKey),
-      readUrl: createLocalReadUrl(blobKey),
-      expiresAt: expiresAt.toISOString()
-    };
-  }
-
-  const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
-  await containerClient.createIfNotExists();
-  const blobClient = containerClient.getBlockBlobClient(blobKey);
-  const sas = generateBlobSASQueryParameters(
-    {
-      containerName: CONTAINER_NAME,
-      blobName: blobKey,
-      permissions: BlobSASPermissions.parse("cw"),
-      contentType: request.contentType,
-      expiresOn: expiresAt
-    },
-    sharedKeyCredential
-  ).toString();
-
-  return {
-    blobKey,
-    uploadUrl: `${blobClient.url}?${sas}`,
-    readUrl: createSignedReadUrl(blobKey),
-    expiresAt: expiresAt.toISOString()
-  };
+  return createUploadTarget(createUserBlobKey(userId, request));
 }
 
 export async function createListingCheckoutUploadTarget(
   sessionId: string,
   request: { kind: "photo" | "certificate"; fileName: string; contentType: string }
 ): Promise<StorageUploadTarget> {
-  const blobKey = createListingCheckoutBlobKey(sessionId, request);
+  return createUploadTarget(createListingCheckoutBlobKey(sessionId, request));
+}
+
+function createUploadTarget(blobKey: string): StorageUploadTarget {
+  const hosted = Boolean(blobServiceClient && sharedKeyCredential);
+  if (!hosted) requireLocalUploads();
   const expiresAt = new Date(Date.now() + uploadUrlTtlMinutes * 60 * 1000);
-
-  if (!blobServiceClient || !sharedKeyCredential) {
-    return {
-      blobKey,
-      uploadUrl: createLocalUploadUrl(blobKey),
-      readUrl: createLocalReadUrl(blobKey),
-      expiresAt: expiresAt.toISOString()
-    };
-  }
-
-  const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
-  await containerClient.createIfNotExists();
-  const blobClient = containerClient.getBlockBlobClient(blobKey);
-  const sas = generateBlobSASQueryParameters(
-    {
-      containerName: CONTAINER_NAME,
-      blobName: blobKey,
-      permissions: BlobSASPermissions.parse("cw"),
-      contentType: request.contentType,
-      expiresOn: expiresAt
-    },
-    sharedKeyCredential
-  ).toString();
-
+  const expiry = String(expiresAt.getTime());
+  const path = hosted ? "/api/v1/storage/upload" : "/api/v1/storage/local-upload";
+  const signature = uploadSignature(blobKey, expiry, hosted);
   return {
     blobKey,
-    uploadUrl: `${blobClient.url}?${sas}`,
+    uploadUrl: `${path}?key=${encodeURIComponent(blobKey)}&permit=${expiry}.${signature}`,
     readUrl: createSignedReadUrl(blobKey),
     expiresAt: expiresAt.toISOString()
   };
 }
 
 export function createSignedReadUrl(blobKey: string) {
-  if (!sharedKeyCredential || !accountName) return createLocalReadUrl(blobKey);
+  if (!sharedKeyCredential || !accountName) return localUploadsAllowed ? createLocalReadUrl(blobKey) : "";
 
   const expiresOn = new Date(Date.now() + readUrlTtlMinutes * 60 * 1000);
+  const contentType = contentTypeForKey(blobKey);
   const sas = generateBlobSASQueryParameters(
     {
       containerName: CONTAINER_NAME,
       blobName: blobKey,
       permissions: BlobSASPermissions.parse("r"),
+      contentType,
       expiresOn
     },
     sharedKeyCredential
@@ -137,16 +109,65 @@ export function localUploadPath(blobKey: string) {
   return target;
 }
 
-export async function saveLocalUpload(blobKey: string, request: IncomingMessage) {
+export function verifyUploadPermit(blobKey: string, permit: string | null, hosted: boolean) {
+  if (!permit || (hosted ? !blobServiceClient || !sharedKeyCredential : !localUploadsAllowed)) return false;
+  const [expiry, signature, extra] = permit.split(".");
+  if (extra !== undefined || !signature || !/^\d+$/.test(expiry) || Number(expiry) <= Date.now()) return false;
+  const expected = Buffer.from(uploadSignature(blobKey, expiry, hosted));
+  const supplied = Buffer.from(signature);
+  return expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
+}
+
+async function validateFileBytes(bytes: Buffer, extension: string) {
+  if (!bytes.length || bytes.length > maxLocalUploadBytes) throw new Error("Invalid upload size.");
+  if (extension === ".pdf") {
+    if (bytes.subarray(0, 5).toString() !== "%PDF-") throw new Error("Invalid PDF file.");
+    return;
+  }
+  const { format, compression, width, height } = await sharp(bytes, { limitInputPixels: 25_000_000 }).metadata();
+  if (!width || !height || width * height > 25_000_000) throw new Error("Uploaded image dimensions are too large.");
+  const actual = format === "jpeg" ? ".jpg" : format === "heif" && compression === "av1" ? ".avif" : `.${format}`;
+  if (actual !== (extension === ".jpeg" ? ".jpg" : extension)) throw new Error("Uploaded image type does not match the file.");
+}
+
+export async function saveLocalUpload(blobKey: string, bytes: Buffer) {
+  requireLocalUploads();
   const target = localUploadPath(blobKey);
+  await validateFileBytes(bytes, extname(target));
   await mkdir(dirname(target), { recursive: true });
-  await new Promise<void>((resolveUpload, rejectUpload) => {
-    const stream = createWriteStream(target);
-    request.pipe(stream);
-    request.on("error", rejectUpload);
-    stream.on("error", rejectUpload);
-    stream.on("finish", resolveUpload);
+  await writeFile(target, bytes, { flag: "wx" });
+}
+
+export async function saveHostedUpload(blobKey: string, bytes: Buffer) {
+  if (!blobServiceClient || !sharedKeyCredential) throw new Error("Object storage is not configured.");
+  await validateFileBytes(bytes, extname(blobKey));
+  const container = blobServiceClient.getContainerClient(CONTAINER_NAME);
+  await container.createIfNotExists();
+  await container.getBlockBlobClient(blobKey).uploadData(bytes, {
+    conditions: { ifNoneMatch: "*" },
+    blobHTTPHeaders: { blobContentType: contentTypeForKey(blobKey) }
   });
+}
+
+export async function verifyStoredUpload(blobKey: string, expectedSize?: number) {
+  let bytes: Buffer;
+  if (blobServiceClient && sharedKeyCredential) {
+    const blob = blobServiceClient.getContainerClient(CONTAINER_NAME).getBlockBlobClient(blobKey);
+    const { contentLength, etag } = await blob.getProperties();
+    if (!contentLength || contentLength > maxLocalUploadBytes || (expectedSize !== undefined && contentLength !== expectedSize)) {
+      throw new Error("Invalid upload size.");
+    }
+    bytes = await blob.downloadToBuffer(0, contentLength, { conditions: { ifMatch: etag } });
+  } else {
+    requireLocalUploads();
+    const path = localUploadPath(blobKey);
+    const { size } = await stat(path);
+    if (!size || size > maxLocalUploadBytes || (expectedSize !== undefined && size !== expectedSize)) {
+      throw new Error("Invalid upload size.");
+    }
+    bytes = await readFile(path);
+  }
+  await validateFileBytes(bytes, extname(blobKey));
 }
 
 export async function deleteBlob(blobKey: string) {
@@ -158,7 +179,7 @@ export async function deleteBlob(blobKey: string) {
     } catch (e) {
       console.warn(`Failed to delete blob ${blobKey} from Azure:`, e);
     }
-  } else {
+  } else if (localUploadsAllowed) {
     try {
       const target = localUploadPath(blobKey);
       await unlink(target);
@@ -181,6 +202,7 @@ export async function ensureListingCardThumbnail(blobKey: string) {
       await thumbnailClient.uploadData(thumbnail, { blobHTTPHeaders: { blobContentType: "image/webp", blobCacheControl: "public, max-age=31536000, immutable" } });
     }
   } else {
+    requireLocalUploads();
     const sourcePath = localUploadPath(blobKey);
     const thumbnailPath = localUploadPath(thumbnailKey);
     try {
@@ -194,8 +216,16 @@ export async function ensureListingCardThumbnail(blobKey: string) {
   return { thumbnailKey, thumbnailUrl: createSignedReadUrl(thumbnailKey), width: 800, height: 600 };
 }
 
-function createLocalUploadUrl(blobKey: string) {
-  return `/api/v1/storage/local-upload?key=${encodeURIComponent(blobKey)}`;
+function contentTypeForKey(blobKey: string) {
+  const extension = extname(blobKey).toLowerCase();
+  if (extension === ".pdf") return "application/pdf";
+  if (extension === ".jpeg") return "image/jpeg";
+  return [...imageExtensions].find(([, value]) => value === extension)?.[0];
+}
+
+function uploadSignature(blobKey: string, expiry: string, hosted: boolean) {
+  const secret = hosted ? AZURE_STORAGE_CONNECTION_STRING : localUploadSecret;
+  return crypto.createHmac("sha256", secret).update(JSON.stringify(["gemslanka-upload-v1", blobKey, expiry])).digest("base64url");
 }
 
 function createLocalReadUrl(blobKey: string) {
@@ -208,8 +238,7 @@ function thumbnailKeyFor(blobKey: string) {
 }
 
 function createUserBlobKey(userId: string, request: StorageUploadRequest) {
-  const extension = extname(request.fileName).toLowerCase();
-  const safeExtension = extension && extension.length <= 12 ? extension : "";
+  const safeExtension = uploadExtension(request.contentType, request.scope === "listing-certificate");
   const id = crypto.randomUUID();
 
   if (request.scope === "profile") {
@@ -226,10 +255,9 @@ function createUserBlobKey(userId: string, request: StorageUploadRequest) {
 
 function createListingCheckoutBlobKey(
   sessionId: string,
-  request: { kind: "photo" | "certificate"; fileName: string }
+  request: { kind: "photo" | "certificate"; contentType: string }
 ) {
-  const extension = extname(request.fileName).toLowerCase();
-  const safeExtension = extension && extension.length <= 12 ? extension : "";
+  const safeExtension = uploadExtension(request.contentType, request.kind === "certificate");
   const id = crypto.randomUUID();
   const folder = request.kind === "certificate" ? "certificates" : "media";
   return `listing-checkout-sessions/${sessionId}/${folder}/${id}${safeExtension}`;

@@ -113,6 +113,27 @@
       "when": 1784359031000,
       "tag": "0016_normalize_listing_titles",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788825600000,
+      "tag": "0017_admin_payment_reliability",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794182400000,
+      "tag": "0018_password_reset_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794182401000,
+      "tag": "0019_marketplace_locations",
+      "breakpoints": true
     }
   ]
 }

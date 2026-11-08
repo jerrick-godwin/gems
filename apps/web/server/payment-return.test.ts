@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { paymentReturnLocation } from "./payment-return.js";
 
-test("successful payments return to their receipt", () => {
+test("successful payments return to My Listings", () => {
   assert.equal(
     paymentReturnLocation("intent/with spaces", "succeeded"),
-    "/receipt?paymentIntentId=intent%2Fwith%20spaces"
+    "/listings?payment=success&paymentIntentId=intent%2Fwith%20spaces"
   );
 });
 

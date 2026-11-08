@@ -1,4 +1,4 @@
-import type { GemType } from "@gems/schemas";
+import { formatLkr, type GemType } from "@gems/schemas";
 import type { ReactNode } from "react";
 import {
   gemstoneCategoryIntroduction,
@@ -27,7 +27,12 @@ const sellerSteps = [
   ["Respond transparently", "Answer buyer questions, agree inspection and transaction terms directly, and keep the listing current if availability changes."]
 ] as const;
 
-export function SeoLandingPage({ page, gemTypes }: { page: SeoLandingPageId; gemTypes: GemType[] }) {
+export type SapphirePriceExamples = {
+  observedDate: string;
+  listings: Array<{ id: string; title: string; carat: number; priceLkr: number }>;
+};
+
+export function SeoLandingPage({ page, gemTypes, sapphireExamples }: { page: SeoLandingPageId; gemTypes: GemType[]; sapphireExamples?: SapphirePriceExamples }) {
   const definition = seoLandingPages[page];
   return (
     <article className="seo-page">
@@ -42,8 +47,26 @@ export function SeoLandingPage({ page, gemTypes }: { page: SeoLandingPageId; gem
       {page === "buy" && <StepsSection title="How to assess gemstone listings" steps={buyerSteps} />}
       {page === "sell" && <StepsSection title="How to create a useful gemstone listing" steps={sellerSteps} />}
       {page === "about" && <AboutContent />}
-      {page === "buying-guide" && <BuyingGuideContent />}
-      {page === "certification-guide" && <CertificationContent />}
+      {page === "buying-guide" && <>
+        <BuyingGuideContent />
+        <section className="seo-section seo-prose card card--spacious">
+          <h2>Buying gemstones in Ratnapura</h2>
+          <p>If you plan to visit Ratnapura, check the <a href="https://ngja.gov.lk/gem-tower-ratnapura/">NGJA Gem Tower information</a> for the trading centre and testing services. Ask the seller for the stone’s treatment disclosure and report details before meeting, and arrange an independent inspection before paying.</p>
+          <p>For blue sapphire, <a href={seoLandingPages["sapphire-price-guide"].path}>compare asking prices in LKR per carat</a> for stones with similar features.</p>
+        </section>
+      </>}
+      {page === "certification-guide" && <>
+        <CertificationContent />
+        <section className="seo-section seo-prose card card--spacious">
+          <h2>How to verify an NGJA gem certificate</h2>
+          <ol>
+            <li>Ask the seller for the full report and identify the certificate type and report number.</li>
+            <li>Open the <a href="https://gemlab-certificate.ngja.gov.lk/">official NGJA certificate verifier</a>, select the report type, and enter the requested certificate details.</li>
+            <li>Compare the record’s gemstone, weight, measurements, and treatment wording with the seller’s copy and the stone. Contact the issuing lab if the record is missing or differs.</li>
+          </ol>
+        </section>
+      </>}
+      {page === "sapphire-price-guide" && <SapphirePriceGuide examples={sapphireExamples} />}
       {(page === "gemstones" || page === "buy") && <GemstoneDirectory gemTypes={gemTypes} />}
       {(page === "buying-guide" || page === "certification-guide") && <GuideSources page={page} />}
       <RelatedLandingPages page={page} />
@@ -57,7 +80,7 @@ export function MarketplaceSeoIntro() {
     <section className="marketplace-seo-intro card card--spacious" aria-labelledby="marketplace-heading">
       <div>
         <h1 id="marketplace-heading">Buy and Sell Gemstones Worldwide with Gemslanka</h1>
-        <p>Browse gemstone listings from Sri Lanka and sellers worldwide. Compare disclosed price, origin, treatment, certification, and seller details before contacting a seller directly.</p>
+        <p>Gemslanka (Gems Lanka) is a Sri Lankan gemstone marketplace for buyers and sellers worldwide. Compare disclosed prices, origins, treatments, and lab reports before contacting a seller.</p>
       </div>
       <nav className="seo-sitelink-grid" aria-label="Gemslanka guides and marketplace information">
         <a className="card card--interactive" href={seoLandingPages.buy.path}><strong>Buy Gemstones</strong><span>Browse with a practical comparison process.</span></a>
@@ -78,7 +101,35 @@ export function CategorySeoIntro({ gemType }: { gemType: GemType }) {
       <h1>Buy {gemType.name} Gemstones Online</h1>
       <p>Compare current {gemType.name.toLowerCase()} listings by disclosed price, carat weight, colour, shape, treatment, certification status, seller, and location. Listing information is provided by sellers and should be verified independently.</p>
       <p>{gemstoneCategoryIntroduction(gemType.name, gemType.slug)}</p>
+      {gemType.slug === "sapphire" && <p><a href={seoLandingPages["sapphire-price-guide"].path}>Compare blue sapphire prices in Sri Lanka</a> and see how to work out the asking price per carat.</p>}
+      {gemType.slug === "moonstone" && <p><a href="https://www.srilankabusiness.com/gem-diamond-and-jewellery/about-sri-lanka-gems/ceylon-moonstone.html">Learn about Meetiyagoda moonstone</a> from the Sri Lanka Export Development Board.</p>}
     </header>
+  );
+}
+
+function SapphirePriceGuide({ examples }: { examples?: SapphirePriceExamples }) {
+  return (
+    <section className="seo-section seo-prose card card--spacious">
+      <h2>How to compare blue sapphire prices per carat</h2>
+      <p>Divide the seller’s total asking price in LKR by the weight in carats. For illustration, a 2 ct stone listed at LKR 120,000 works out to LKR 60,000 per carat. Larger stones do not necessarily cost the same per carat as smaller stones.</p>
+      {examples && examples.listings.length > 0 && <>
+        <h2>Seller asking prices observed on {examples.observedDate}</h2>
+        <p>These are advertised prices from live listings at the time shown. Confirm availability, currency, origin, and treatment with the seller.</p>
+        <ul>
+          {examples.listings.map((listing) => (
+            <li key={listing.id}><a href={`/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</a> — {listing.carat} ct at {formatLkr(listing.priceLkr)} asking price, approximately {formatLkr(Math.round(listing.priceLkr / listing.carat))} per carat.</li>
+          ))}
+        </ul>
+      </>}
+      <h2>What to compare before you contact a seller</h2>
+      <ul>
+        <li>Compare colour and cut in similar lighting. Look for dark areas or a pale window in the centre, and ask for additional images when needed.</li>
+        <li>Ask whether the sapphire was heated. Compare the lab’s exact treatment wording with the seller’s description.</li>
+        <li>Use Ceylon sapphire for a stone disclosed as Sri Lankan in origin. Ask for the report and confirm what it says about origin.</li>
+        <li>Compare the stone’s weight and measurements with the report, then agree on inspection and transaction terms directly with the seller.</li>
+      </ul>
+      <p><a href={gemstoneCategoryPath("sapphire")}>Browse current sapphire listings</a> or read <a href="https://www.gia.edu/sapphire-quality-factor">GIA’s sapphire quality factors</a> for more detail.</p>
+    </section>
   );
 }
 

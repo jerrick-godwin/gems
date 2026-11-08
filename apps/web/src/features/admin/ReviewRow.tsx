@@ -58,6 +58,8 @@ export function ReviewRow({
         await onModerate(listing.id, decision, reason);
         if (decision === "reject") setShowRejectPrompt(false);
         if (decision === "approve") setShowApprovePrompt(false);
+      } catch {
+        // The parent displays the error; keep the confirmation open for retry.
       } finally {
         setBusy(null);
       }

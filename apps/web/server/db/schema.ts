@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import type {
   CheckoutDetails,
   GemAttributes,
@@ -139,7 +139,8 @@ export const listingCheckoutSessions = pgTable("listing_checkout_sessions", {
 export const listingSubscriptions = pgTable("listing_subscriptions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id).notNull(),
-  listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  // Retain the historical listing identifier after an admin removes the listing.
+  listingId: varchar("listing_id").notNull(),
   planId: varchar("plan_id").references(() => subscriptionPlans.id).notNull(),
   status: varchar("status").$type<ListingSubscriptionStatus>().notNull().default("pending_payment"),
   source: varchar("source").$type<ListingSubscriptionSource>().notNull().default("paid"),
@@ -155,7 +156,8 @@ export const listingSubscriptions = pgTable("listing_subscriptions", {
 export const paymentIntents = pgTable("payment_intents", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id).notNull(),
-  listingId: varchar("listing_id").references(() => listings.id).notNull(),
+  // Retain the historical listing identifier after an admin removes the listing.
+  listingId: varchar("listing_id").notNull(),
   idempotencyKey: varchar("idempotency_key"),
   subscriptionId: varchar("subscription_id"),
   purpose: varchar("purpose").$type<PaymentPurpose>().notNull(),
@@ -295,3 +297,11 @@ export const merchantDisclosure = pgTable("merchant_disclosure", {
   email: varchar("email").notNull(),
   licenceNumber: varchar("licence_number").notNull()
 });
+
+
+export const passwordResetLimits = pgTable("password_reset_limits", {
+  emailHash: varchar("email_hash").primaryKey(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+  lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }).notNull(),
+  requestCount: integer("request_count").notNull()
+}, (table) => [index("password_reset_limits_last_requested_idx").on(table.lastRequestedAt)]);

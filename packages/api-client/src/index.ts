@@ -87,6 +87,31 @@ export interface AdminModerationSnapshot {
   sellers: SellerProfile[];
 }
 
+export interface InvoicePayment {
+  invoiceId: string; subscriptionId: string; status: "succeeded" | "pending" | "unavailable";
+  clientSecret?: string; publishableKey?: string; amount: number; currency: string;
+}
+
+export interface AdminCounts {
+  listings: number; live: number; queued: number; unpaid: number; rejected: number; archived: number;
+  checked: number; reports: number; users: number; activeTrials: number; expiredTrials: number;
+  terminatedTrials: number; payments: number; succeeded: number; pending: number; failed: number;
+}
+export interface AdminPageQuery {
+  view: "overview" | "moderation" | "listings" | "users" | "payments";
+  page: number;
+  search: string;
+  target?: { kind: "listing" | "report" | "subscription"; id: string };
+}
+export interface AdminPage {
+  snapshot: AdminModerationSnapshot;
+  counts: AdminCounts;
+  page: number;
+  total: number;
+  pageSize: number;
+  view: AdminPageQuery["view"];
+}
+
 function normalizeApiBaseUrl(baseUrl: string) {
   const trimmed = baseUrl.trim().replace(/\/+$/, "");
   return trimmed.endsWith("/api/v1") ? trimmed : `${trimmed}/api/v1`;
@@ -123,6 +148,12 @@ export class GemsApiClient {
       throw new Error("Gem types and locations are temporarily unavailable");
     }
     return { gemTypes, locations };
+  }
+
+  async listingSubscriptionPlans(signal?: AbortSignal): Promise<ListingSubscriptionPlan[]> {
+    const response = await fetch(`${this.baseUrl}/subscription-plans`, { signal });
+    if (!response.ok) throw new Error("Unable to load listing fees.");
+    return response.json() as Promise<ListingSubscriptionPlan[]>;
   }
 
   async marketplace(params: URLSearchParams | Record<string, string> = {}): Promise<MarketplaceListingPage> {
@@ -212,29 +243,15 @@ export class GemsApiClient {
   }
 
   async listingCheckoutSession(token: string): Promise<ListingCheckoutSession> {
-    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions/${encodeURIComponent(token)}`);
-    if (!response.ok) throw new Error(await readApiError(response));
-    return response.json() as Promise<ListingCheckoutSession>;
+    return this.authJson(`/listing-checkout-sessions/${encodeURIComponent(token)}`);
   }
 
   async updateListingCheckoutSession(token: string, input: UpdateListingCheckoutSessionRequest): Promise<ListingCheckoutSession> {
-    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions/${encodeURIComponent(token)}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input)
-    });
-    if (!response.ok) throw new Error(await readApiError(response));
-    return response.json() as Promise<ListingCheckoutSession>;
+    return this.authJson(`/listing-checkout-sessions/${encodeURIComponent(token)}`, { method: "PATCH", body: JSON.stringify(input) });
   }
 
   async updateListingCheckoutDraft(token: string, input: UpdateListingCheckoutDraftRequest): Promise<CreateListingCheckoutSessionResponse> {
-    const response = await fetch(`${this.baseUrl}/listing-checkout-sessions/${encodeURIComponent(token)}/draft`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input)
-    });
-    if (!response.ok) throw new Error(await readApiError(response));
-    return response.json() as Promise<CreateListingCheckoutSessionResponse>;
+    return this.authJson(`/listing-checkout-sessions/${encodeURIComponent(token)}/draft`, { method: "PUT", body: JSON.stringify(input) });
   }
 
   async completeListingCheckoutSession(token: string, input: UpdateListingCheckoutSessionRequest, options: IdempotentRequestOptions = {}): Promise<ListingCheckoutCompletionResult> {
@@ -255,6 +272,10 @@ export class GemsApiClient {
 
   async createListingPaymentIntent(listingId: string, request: { planId: ListingSubscriptionPlanId; photoCount: number; acceptedPolicies: boolean }, options: IdempotentRequestOptions = {}): Promise<PaymentIntent> {
     return this.authJson(`/listings/${listingId}/payment-intents`, { method: "POST", body: JSON.stringify(request) }, options);
+  }
+
+  async invoicePayment(subscriptionId: string, statusOnly = false): Promise<InvoicePayment> {
+    return this.authJson(`/listing-subscriptions/${encodeURIComponent(subscriptionId)}/invoice-payment${statusOnly ? "/status" : ""}`, { method: statusOnly ? "GET" : "POST" });
   }
 
   async startListingSubscriptionPayment(subscriptionId: string, options: IdempotentRequestOptions = {}): Promise<ListingPaymentRecoveryResponse> {
@@ -343,6 +364,20 @@ export class GemsAdminApiClient {
   }
 
 
+
+  async bootstrap(token: string): Promise<{ admin: AdminSession; counts: AdminCounts }> {
+    const response = await fetch(`${this.baseUrl}/admin/bootstrap`, { headers: adminHeaders(token), signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new ApiResponseError("Unable to load admin overview", response.status);
+    return response.json();
+  }
+
+  async page(token: string, query: AdminPageQuery): Promise<AdminPage> {
+    const params = new URLSearchParams({ view: query.view, page: String(query.page), search: query.search });
+    if (query.target) { params.set("kind", query.target.kind); params.set("id", query.target.id); }
+    const response = await fetch(`${this.baseUrl}/admin/page?${params}`, { headers: adminHeaders(token), signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new ApiResponseError("Unable to load admin section", response.status);
+    return response.json();
+  }
 
   async me(token: string): Promise<AdminSession> {
     const response = await fetch(`${this.baseUrl}/admin/auth/me`, {

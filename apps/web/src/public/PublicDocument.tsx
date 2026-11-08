@@ -5,6 +5,8 @@ import {
   gemstoneCategoryIntroduction,
   gemstoneCategoryPath,
   publicListingPhotoPath,
+  marketplaceTitle,
+  siteAlias,
   seoLandingPages
 } from "../shared/seo.js";
 import type { PublicRenderPayload, PublicRouteData } from "./types.js";
@@ -21,7 +23,7 @@ const defaultSocialImagePath = "/assets/gem-triptych.png";
 export function PublicDocument(props: PublicDocumentProps) {
   const metadata = metadataFor(props);
   return (
-    <html lang="en" data-theme={props.theme}>
+    <html lang="en" data-theme={props.theme} data-analytics-id={analyticsMeasurementId}>
       <head>
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -29,7 +31,7 @@ export function PublicDocument(props: PublicDocumentProps) {
         <meta name="robots" content={metadata.robots} />
         {props.verification?.google && <meta name="google-site-verification" content={props.verification.google} />}
         {props.verification?.bing && <meta name="msvalidate.01" content={props.verification.bing} />}
-        <meta name="theme-color" content="#fdd404" />
+        <meta name="theme-color" content="#f5f3ec" />
         <meta name="application-name" content="Gemslanka" />
         <meta name="google-adsense-account" content={adsensePublisherId} />
         <meta property="og:site_name" content="Gemslanka" />
@@ -50,16 +52,10 @@ export function PublicDocument(props: PublicDocumentProps) {
         <link rel="icon" type="image/png" sizes="192x192" href="/assets/logo-mark-rounded-192.png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon-rounded.png" />
         <link rel="manifest" href="/site.webmanifest" crossOrigin="use-credentials" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet" />
         {props.assets.stylesheets.map((href) => <link key={href} rel="stylesheet" href={href} />)}
         {props.assets.modulePreloads.map((href) => <link key={href} rel="modulepreload" href={href} />)}
         {props.assets.reactRefreshPreamble && <script type="module" dangerouslySetInnerHTML={{ __html: reactRefreshPreamble }} />}
         <title>{metadata.title}</title>
-        <script async src={`https://www.googletagmanager.com/gtag/js?id=${analyticsMeasurementId}`} />
-        <script dangerouslySetInnerHTML={{ __html: googleTagBootstrap }} />
-        <script async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsensePublisherId}`} crossOrigin="anonymous" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: metadata.structuredData }} />
       </head>
       <body>
@@ -77,13 +73,6 @@ RefreshRuntime.injectIntoGlobalHook(window);
 window.$RefreshReg$ = () => {};
 window.$RefreshSig$ = () => (type) => type;
 window.__vite_plugin_react_preamble_installed__ = true;
-`;
-
-const googleTagBootstrap = `
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', '${analyticsMeasurementId}');
 `;
 
 export function PublicApp({ initialRoute, initialTheme }: { initialUrl: string; initialRoute: PublicRouteData; initialTheme: "light" | "dark"; year: number }) {
@@ -106,7 +95,7 @@ function marketplaceHref(filters: MarketplacePageData["filters"], basePath = "/"
 
 export function metadataFor(props: PublicRenderPayload) {
   const fallbackDescription = "Browse gemstone listings from Sri Lanka and sellers worldwide, compare disclosed details, and contact sellers directly on Gemslanka.";
-  let title = "Gemslanka | Buy and Sell Gemstones Worldwide";
+  let title = marketplaceTitle;
   let description = fallbackDescription;
   let robots = "index,follow,max-image-preview:large";
   let image = new URL(defaultSocialImagePath, props.origin).href;
@@ -127,7 +116,9 @@ export function metadataFor(props: PublicRenderPayload) {
     const indexableFilters = !filters.q && !filters.locations.length && !filters.treatment && !filters.certificate && filters.sort === "featured" && !current.searchParams.has("limit");
     if (!props.route.indexable || !indexableFilters) robots = "noindex,follow";
     canonicalPath = marketplaceHref({ ...filters, gemType: props.route.gemType.id, limit: 20 }, gemstoneCategoryPath(props.route.gemType.slug), props.route.gemType.id);
-    title = `Buy ${props.route.gemType.name} Gemstones Online${filters.page > 1 ? ` – Page ${filters.page}` : ""} | Gemslanka`;
+    title = props.route.gemType.slug === "sapphire" && filters.page === 1
+      ? "Sapphire Listings | Compare Blue Sapphires | Gemslanka"
+      : `Buy ${props.route.gemType.name} Gemstones Online${filters.page > 1 ? ` – Page ${filters.page}` : ""} | Gemslanka`;
     description = filters.page > 1
       ? `Browse page ${filters.page} of ${props.route.gemType.name.toLowerCase()} gemstone listings on Gemslanka.`
       : `${gemstoneCategoryIntroduction(props.route.gemType.name, props.route.gemType.slug).slice(0, 154).trimEnd()}`;
@@ -166,7 +157,7 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
     "@type": "Organization",
     "@id": `${props.origin}/#organization`,
     name: "Gemslanka",
-    alternateName: ["Gemslanka.lk", "Gemslanka LK"],
+    alternateName: [siteAlias, "Gemslanka.lk", "Gemslanka LK"],
     legalName: "KRISTIANA MAGRET GEM & JEWELLERY",
     url: `${props.origin}/`,
     logo: new URL("/assets/logo-mark-512.png", props.origin).href,
@@ -264,7 +255,7 @@ function structuredDataFor(props: PublicRenderPayload, metadata: { canonical: st
           "@id": `${props.origin}/#website`,
           url: `${props.origin}/`,
           name: "Gemslanka",
-          alternateName: ["Gemslanka.lk", "Gemslanka LK"],
+          alternateName: [siteAlias, "Gemslanka.lk", "Gemslanka LK"],
           description: metadata.description,
           publisher: { "@id": organization["@id"] },
           inLanguage: "en"

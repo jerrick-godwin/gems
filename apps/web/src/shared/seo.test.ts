@@ -29,7 +29,7 @@ test("filename image labels receive a descriptive fallback", () => {
 
 test("every SEO landing page has three safe, unique cross-links and a distinct inline link", () => {
   const pageIds = Object.keys(seoLandingPages) as SeoLandingPageId[];
-  assert.equal(pageIds.length, 6);
+  assert.equal(pageIds.length, 7);
   assert.deepEqual(Object.keys(seoLandingCrossLinks).sort(), [...pageIds].sort());
 
   for (const pageId of pageIds) {
